@@ -415,7 +415,7 @@ fn a_cancelled_wait_consumes_the_trial() {
         })
     ));
     assert_eq!(rig.sim.now(), start, "the second wait ran nothing");
-    assert!(running.stop().is_ok());
+    assert!(running.stop(&mut rig.journal).is_ok());
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn a_trial_is_waited_on_once() {
         })
     ));
     assert_eq!(rig.sim.now(), now, "the second wait ran nothing");
-    assert!(running.stop().is_ok());
+    assert!(running.stop(&mut rig.journal).is_ok());
 }
 
 #[test]

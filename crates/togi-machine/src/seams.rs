@@ -1,8 +1,9 @@
 use crate::object_only;
 use crate::{
     Backend, BankType, BiosContext, BootId, CancellationToken, Condition, ContentId, CoreId,
-    CoreInfo, CpuId, Error, KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime,
-    ResetKind, Signal, TargetOffset, TrialConditions, TrialRole, WorkloadId,
+    CoreInfo, CpuId, Error, FrequencyEvent, FrequencyJournal, KernelCursor, LoadSchedule,
+    ObservedOffset, Partial, PerCore, Regime, ResetKind, Signal, TargetOffset, TrialConditions,
+    TrialRole, WorkloadId,
 };
 use jiff::Timestamp;
 use serde::Serialize;
@@ -217,6 +218,13 @@ pub trait Reporter {
     fn progress(&mut self, detail: &str);
     fn sample(&mut self, sample: Sample);
     fn signal(&mut self, core: CoreId, signal: Signal, pid: Option<u32>, detail: &str);
+    /// Acknowledges durable frequency evidence before the runner may write a limit.
+    fn frequency(&mut self, _event: FrequencyEvent) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "frequency journal is unavailable",
+        ))
+    }
 }
 
 pub trait Running {
@@ -231,7 +239,7 @@ pub trait Running {
         report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>>;
     /// Cancels and joins, and proves every workload stopped.
-    fn stop(self: Box<Self>) -> Result<Stopped, Error>;
+    fn stop(self: Box<Self>, journal: &mut dyn FrequencyJournal) -> Result<Stopped, Error>;
 }
 
 /// The outcome of clearing leftovers of earlier runs.
@@ -242,7 +250,15 @@ pub struct Swept {
 }
 
 pub trait Trials {
+    /// Stops and joins leftover workloads without requiring a writable journal.
     fn sweep(&mut self, cancel: &CancellationToken) -> Result<Swept, Error>;
+    /// Recovers pending frequency limits after the workload sweep. Cleanup is uncancellable;
+    /// every limit write still requires the journal's durable acknowledgement.
+    fn recover_frequency(
+        &mut self,
+        stopped: &Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error>;
     /// Needs the proof that nothing runs. The partial value is `Some` when the failed start's
     /// rollback confirmed nothing runs.
     fn start(
@@ -250,6 +266,7 @@ pub trait Trials {
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>>;
     fn ended(&mut self, id: &str) -> Result<(), Error>;
     /// What `workload` actually runs: its backend, the bytes of the executable the backend

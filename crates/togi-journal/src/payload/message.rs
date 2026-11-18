@@ -44,6 +44,16 @@ impl Payload {
             Self::SessionCarried(p) => session_carried(p),
             Self::ConfigLoaded(p) => config_loaded(p),
             Self::PreflightCheck(p) => preflight_check(p),
+            Self::FrequencyIntent(p) => frequency_intent(p),
+            Self::FrequencyReadback(p) => format!(
+                "{}; observed scaling_max_freq {} kHz",
+                frequency_intent(&p.intent),
+                p.observed_khz
+            ),
+            Self::FrequencyDiscarded(p) => format!(
+                "discarded controller frequency recovery record from boot {}: {}",
+                p.boot, p.reason
+            ),
             Self::SmuIntent(p) => smu_intent(p),
             Self::SmuWrite(p) => smu_write(p),
             Self::SmuReadback(p) => smu_readback(p),
@@ -283,6 +293,25 @@ fn preflight_check(p: &PreflightCheck) -> String {
     } else {
         format!("preflight {}: FAILED ({})", p.check, p.detail)
     }
+}
+
+fn frequency_intent(p: &togi_machine::FrequencyIntent) -> String {
+    let (action, requested) = match p.action {
+        togi_machine::FrequencyAction::Cap => ("cap", p.cap_khz),
+        togi_machine::FrequencyAction::Restore => ("restore", p.original_khz),
+    };
+    let cpus = p
+        .related_cpus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "controller frequency {action} policy{} (CPUs {cpus}): scaling_max_freq {requested} kHz, original {} kHz, cap {} kHz",
+        p.policy.get(),
+        p.original_khz,
+        p.cap_khz
+    )
 }
 
 fn command_text(command: SmuCommand) -> String {

@@ -4,8 +4,9 @@ use std::time::Duration;
 use jiff::Timestamp;
 use rustix::time::{ClockId, clock_gettime};
 use togi_machine::{
-    CancellationToken, Clock, CoreId, Error, ObservedOffset, Partial, PmTable, PmTableReader,
-    Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec, Trials,
+    CancellationToken, Clock, CoreId, Error, FrequencyJournal, ObservedOffset, Partial, PmTable,
+    PmTableReader, Running, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions,
+    TrialSpec, Trials,
 };
 use togi_smu::Driver;
 use togi_trial::Runner;
@@ -140,13 +141,22 @@ impl<R: Trials> Trials for RunnerHandle<R> {
         lock(&self.0).sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, Error> {
+        lock(&self.0).recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-        lock(&self.0).start(cancel, spec, ready)
+        lock(&self.0).start(cancel, spec, ready, journal)
     }
 
     fn ended(&mut self, id: &str) -> Result<(), Error> {

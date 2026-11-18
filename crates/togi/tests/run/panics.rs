@@ -20,9 +20,10 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use togi_journal::EventKind;
 use togi_machine::{
-    BootId, CancellationToken, CoreId, Error as MachineError, Kernel, KernelCursor, KernelRead,
-    Machine, Mce, ObservedOffset, Partial, PstoreRecord, Reporter, ResetReason, Running, Smu,
-    SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult, TrialSpec, Trials,
+    BootId, CancellationToken, CoreId, Error as MachineError, FrequencyJournal, Kernel,
+    KernelCursor, KernelRead, Machine, Mce, ObservedOffset, Partial, PstoreRecord, Reporter,
+    ResetReason, Running, Smu, SmuValidated, Started, Stopped, Swept, TargetOffset, TrialResult,
+    TrialSpec, Trials,
 };
 
 use crate::support::{Fake, simulator, written};
@@ -186,14 +187,23 @@ impl Trials for PanickingTrials {
         self.inner.sweep(cancel)
     }
 
+    fn recover_frequency(
+        &mut self,
+        stopped: &Stopped,
+        journal: &mut dyn FrequencyJournal,
+    ) -> Result<String, MachineError> {
+        self.inner.recover_frequency(stopped, journal)
+    }
+
     fn start(
         &mut self,
         cancel: &CancellationToken,
         spec: TrialSpec,
         ready: Stopped,
+        journal: &mut dyn FrequencyJournal,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
         let armed = written(&spec);
-        let inner = self.inner.start(cancel, spec, ready)?;
+        let inner = self.inner.start(cancel, spec, ready, journal)?;
         Ok(Box::new(PanickingRunning {
             inner,
             order: self.order.clone(),
@@ -244,12 +254,12 @@ impl Running for PanickingRunning {
         panic!("injected panic while a trial runs");
     }
 
-    fn stop(self: Box<Self>) -> Result<Stopped, MachineError> {
+    fn stop(self: Box<Self>, journal: &mut dyn FrequencyJournal) -> Result<Stopped, MachineError> {
         if !self.armed {
-            return self.inner.stop();
+            return self.inner.stop(journal);
         }
         self.order.note("stop");
-        let stopped = self.inner.stop()?;
+        let stopped = self.inner.stop(journal)?;
         if self.faults.unconfirmed_stop {
             return Err(MachineError::Other(
                 "the teardown could not be confirmed".into(),

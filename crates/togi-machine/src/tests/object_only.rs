@@ -29,6 +29,42 @@ fn pstore_record_refuses_a_positional_array() {
 }
 
 #[test]
+fn frequency_intent_refuses_a_positional_array_and_unknown_fields() {
+    assert_object_only::<FrequencyIntent>(
+        r#"{"policy":0,"related_cpus":[0],"original_khz":5000000,"cap_khz":3000000,"action":"cap"}"#,
+        r#"[0,[0],5000000,3000000,"cap"]"#,
+    );
+    assert!(serde_json::from_str::<FrequencyIntent>(
+        r#"{"policy":0,"related_cpus":[0],"original_khz":5000000,"cap_khz":3000000,"action":"cap","extra":1}"#
+    ).is_err());
+}
+
+#[test]
+fn frequency_readback_refuses_a_positional_array_and_unknown_fields() {
+    assert_object_only::<FrequencyReadback>(
+        r#"{"intent":{"policy":0,"related_cpus":[0],"original_khz":5000000,"cap_khz":3000000,"action":"restore"},"observed_khz":5000000}"#,
+        r#"[{"policy":0,"related_cpus":[0],"original_khz":5000000,"cap_khz":3000000,"action":"restore"},5000000]"#,
+    );
+    assert!(serde_json::from_str::<FrequencyReadback>(
+        r#"{"intent":{"policy":0,"related_cpus":[0],"original_khz":5000000,"cap_khz":3000000,"action":"restore"},"observed_khz":5000000,"extra":1}"#
+    ).is_err());
+}
+
+#[test]
+fn frequency_discarded_refuses_a_positional_array_and_unknown_fields() {
+    assert_object_only::<FrequencyDiscarded>(
+        r#"{"boot":"prior","reason":"different boot"}"#,
+        r#"["prior","different boot"]"#,
+    );
+    assert!(
+        serde_json::from_str::<FrequencyDiscarded>(
+            r#"{"boot":"prior","reason":"different boot","extra":1}"#
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn load_schedule_refuses_a_sequence_with_the_tag_first() {
     assert_object_only::<LoadSchedule>(r#"{"kind":"random","seed":7}"#, r#"["random",7]"#);
     assert_object_only::<LoadSchedule>(r#"{"kind":"duty","pct":50}"#, r#"["duty",50]"#);

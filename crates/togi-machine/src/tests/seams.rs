@@ -71,7 +71,7 @@ impl Running for FailingRunning {
         })
     }
 
-    fn stop(self: Box<Self>) -> Result<Stopped, Error> {
+    fn stop(self: Box<Self>, _journal: &mut dyn FrequencyJournal) -> Result<Stopped, Error> {
         #[expect(
             clippy::disallowed_methods,
             reason = "the test double stands for a seam that confirmed teardown"
@@ -90,6 +90,17 @@ impl Reporter for NoReporter {
 
 fn propagate(running: &mut dyn Running) -> Result<TrialResult, Box<dyn std::error::Error>> {
     Ok(running.wait(&CancellationToken::new(), &mut NoReporter)?)
+}
+
+#[test]
+fn a_reporter_without_a_frequency_sink_refuses_the_write_acknowledgement() {
+    let error = NoReporter
+        .frequency(FrequencyEvent::Discarded(FrequencyDiscarded {
+            boot: BootId::from("prior".to_owned()),
+            reason: "different boot".to_owned(),
+        }))
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
 }
 
 #[test]

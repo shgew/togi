@@ -316,11 +316,21 @@ impl Rig {
     }
 
     pub(super) async fn start(&self, spec: TrialSpec) -> Result<Handle, Partial<Option<Stopped>>> {
+        self.start_journaled(spec, crate::frequency::Journal::recorded())
+            .await
+    }
+
+    pub(super) async fn start_journaled(
+        &self,
+        spec: TrialSpec,
+        journal: crate::frequency::Journal,
+    ) -> Result<Handle, Partial<Option<Stopped>>> {
         start(
             Rc::clone(&self.env),
             CancellationToken::new(),
             spec,
             nothing_runs(),
+            journal,
         )
         .await
     }
@@ -330,8 +340,20 @@ impl Rig {
         cancel: &CancellationToken,
         spec: TrialSpec,
     ) -> Result<Handle, Partial<Option<Stopped>>> {
-        start(Rc::clone(&self.env), cancel.clone(), spec, nothing_runs()).await
+        start(
+            Rc::clone(&self.env),
+            cancel.clone(),
+            spec,
+            nothing_runs(),
+            crate::frequency::Journal::recorded(),
+        )
+        .await
     }
+}
+
+/// Acknowledges a frequency request as durable so the restoration waiting on it can finish.
+pub(super) fn acknowledge(request: crate::frequency::Request) {
+    let _ = request.reply.send(Ok(()));
 }
 
 /// What a trial reported on its way to the end.
@@ -392,6 +414,7 @@ pub(super) async fn finish(handle: &Handle) -> Run {
                     finished: *finished,
                 };
             }
+            Ok(Event::Frequency(request)) => acknowledge(request),
             Ok(event) => events.push(event),
             Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
         }

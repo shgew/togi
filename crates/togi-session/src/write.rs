@@ -55,8 +55,9 @@ use crate::error::{AppendFailure, JournalFailure};
 ///     cancel: &togi_machine::CancellationToken,
 ///     spec: togi_machine::TrialSpec,
 ///     ready: togi_machine::Stopped,
+///     journal: &mut dyn togi_machine::FrequencyJournal,
 /// ) {
-///     let _ = authority::start(trials, cancel, (), spec, ready);
+///     let _ = authority::start(trials, cancel, (), spec, ready, journal);
 /// }
 /// ```
 ///
@@ -68,8 +69,9 @@ use crate::error::{AppendFailure, JournalFailure};
 ///     verified: &authority::Verified,
 ///     spec: togi_machine::TrialSpec,
 ///     ready: togi_machine::Stopped,
+///     journal: &mut dyn togi_machine::FrequencyJournal,
 /// ) {
-///     let _ = authority::start(trials, cancel, verified, spec, ready);
+///     let _ = authority::start(trials, cancel, verified, spec, ready, journal);
 /// }
 /// ```
 ///
@@ -81,8 +83,9 @@ use crate::error::{AppendFailure, JournalFailure};
 ///     verified: &authority::Verified,
 ///     spec: togi_machine::TrialSpec,
 ///     ready: togi_machine::Stopped,
+///     journal: &mut dyn togi_machine::FrequencyJournal,
 /// ) {
-///     let _ = authority::start(trials, cancel, authority::authorize(verified), spec, ready);
+///     let _ = authority::start(trials, cancel, authority::authorize(verified), spec, ready, journal);
 /// }
 /// ```
 ///

@@ -1,7 +1,7 @@
 use togi_journal::{Seq, SmuCommand, SmuIntentReceipt};
 use togi_machine::{
-    CancellationToken, CoreId, Error, Partial, Running, Smu, Stopped, TargetOffset, TrialSpec,
-    Trials,
+    CancellationToken, CoreId, Error, FrequencyJournal, Partial, Running, Smu, Stopped,
+    TargetOffset, TrialSpec, Trials,
 };
 
 /// Proof that every command of a transaction reached the machine and its readbacks agreed. Only the write
@@ -83,6 +83,7 @@ pub(crate) fn start(
     _authorized: Authorized<'_>,
     spec: TrialSpec,
     ready: Stopped,
+    journal: &mut dyn FrequencyJournal,
 ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>> {
-    trials.start(cancel, spec, ready)
+    trials.start(cancel, spec, ready, journal)
 }

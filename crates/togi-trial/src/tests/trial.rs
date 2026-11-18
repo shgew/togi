@@ -770,6 +770,7 @@ fn a_computation_error_that_follows_a_thread_read_loss_is_not_replaced_by_the_lo
                 CancellationToken::new(),
                 spec(Regime::R1, &[0], secs(30)),
                 nothing_runs(),
+                crate::frequency::Journal::recorded(),
             )
             .await
             .unwrap();
@@ -802,6 +803,7 @@ fn a_stall_that_follows_a_thread_read_loss_is_not_replaced_by_the_loss() {
                 CancellationToken::new(),
                 spec(Regime::R1, &[0], secs(120)),
                 nothing_runs(),
+                crate::frequency::Journal::recorded(),
             )
             .await
             .unwrap();

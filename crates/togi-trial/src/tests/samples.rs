@@ -376,8 +376,10 @@ fn gated_open(
 /// Whether the supervisor has published its end; reading it would hand it to nobody else.
 fn ended(handle: &Handle) -> bool {
     while let Ok(event) = handle.events.try_recv() {
-        if matches!(event, Event::Finished(_)) {
-            return true;
+        match event {
+            Event::Finished(_) => return true,
+            Event::Frequency(request) => super::harness::acknowledge(request),
+            Event::Progress(_) | Event::Sample(_) | Event::Signal { .. } => {}
         }
     }
     false
