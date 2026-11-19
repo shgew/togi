@@ -98,9 +98,6 @@ fn check(name: &str, body: &str) {
         "problem-once-120x33",
         "problem-once-160x45",
         "problem-once-240x67",
-        "starting-120x33",
-        "starting-160x45",
-        "starting-240x67",
     };
     let (_, expected) = snapshot
         .strip_prefix("---\n")
@@ -387,7 +384,6 @@ fn journal_state_frames(mut visit: impl FnMut(&str, &Buffer, Form)) {
         let once = screen_of(View::Main, size, Colours::None, 0, true);
         for (state, journal, sc) in [
             ("missing", Journal::Missing, &live),
-            ("starting", Journal::Starting, &live),
             ("problem", Journal::Problem(&unreadable), &live),
             ("problem-once", Journal::Problem(&unreadable), &once),
         ] {

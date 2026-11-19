@@ -17,8 +17,7 @@ use togi_tuner::policy::{
 use togi_tuner::unit::{UnitId, UnitProfile};
 
 use super::{
-    last_lines, narrator_lines, operation, problem_story, resting_band, starting_story, story,
-    trial_where,
+    last_lines, narrator_lines, operation, problem_story, resting_band, story, trial_where,
 };
 use crate::frames::colours::Paint;
 use crate::frames::fit::{inert, plain};
@@ -226,13 +225,6 @@ mod the_story {
         assert_eq!(said.label, "NO SESSION YET");
         assert!(said.lines[0].contains("togi run"));
         assert!(said.brief.is_empty());
-    }
-
-    #[test]
-    fn starting_checks_the_machine_before_the_first_trial() {
-        let starting = starting_story();
-        assert_eq!(starting.label, "STARTING");
-        assert!(starting.lines[0].starts_with("Checking the machine and the journal"));
     }
 
     #[test]

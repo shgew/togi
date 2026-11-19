@@ -66,7 +66,6 @@ impl Identity {
 
 enum Content {
     Missing,
-    Starting,
     Problem(SourceError),
     /// The folded journal, how many of its events are in the model, and the last of them.
     Ready(Box<Model>, usize, Box<Event>),
@@ -84,9 +83,6 @@ pub(super) struct Source {
     path: PathBuf,
     #[cfg(test)]
     memory: Option<MemoryJournal>,
-    /// With a run to wait for, the journal counts as starting until it holds an event after this sequence number:
-    /// the last one before this run's session started.
-    since: Option<u64>,
     identity: Option<Identity>,
     stat_error: Option<String>,
     content: Content,
@@ -110,10 +106,9 @@ fn is_not_found(error: &FileError) -> bool {
 }
 
 impl Source {
-    pub(super) fn new(directory: &Path, since: Option<u64>) -> Self {
+    pub(super) fn new(directory: &Path) -> Self {
         Self {
             path: directory.join("events.jsonl"),
-            since,
             #[cfg(test)]
             memory: None,
             identity: None,
@@ -124,26 +119,12 @@ impl Source {
     }
 
     /// Loads a one-frame snapshot through an explicit filesystem, without consulting host metadata.
-    pub(super) fn read_in(
-        fs: &dyn togi_journal::fs::Fs,
-        directory: &Path,
-        since: Option<u64>,
-    ) -> Self {
-        let mut source = Self::new(directory, since);
+    pub(super) fn read_in(fs: &dyn togi_journal::fs::Fs, directory: &Path) -> Self {
+        let mut source = Self::new(directory);
         let recording = Recording::read_in_lenient(fs, &source.path);
         source.fold_recording(recording, false);
         source
     }
-
-    /// What the journal shows when there is no session in it.
-    fn absent(&self) -> Content {
-        if self.since.is_some() {
-            Content::Starting
-        } else {
-            Content::Missing
-        }
-    }
-
     /// Reloads the journal if its file is a different one or changed size or modification time since the last
     /// load. Reports whether what is shown changed.
     pub(super) fn reload(&mut self) -> bool {
@@ -198,7 +179,7 @@ impl Source {
         self.identity = None;
         self.stat_error = Some(text);
         self.content = if source.kind() == io::ErrorKind::NotFound {
-            self.absent()
+            Content::Missing
         } else {
             Content::Problem(SourceError::Stat {
                 path: self.path.clone(),
@@ -217,7 +198,7 @@ impl Source {
         let recording = match recording {
             Ok(recording) => recording,
             Err(error) if is_not_found(&error) => {
-                self.content = self.absent();
+                self.content = Content::Missing;
                 return;
             }
             Err(FileError {
@@ -246,13 +227,6 @@ impl Source {
                 return;
             }
         }
-        let waiting = self
-            .since
-            .is_some_and(|since| events.last().is_none_or(|last| last.seq.get() <= since));
-        if waiting {
-            self.content = Content::Starting;
-            return;
-        }
         let Some(last) = events.last().cloned() else {
             self.content = Content::Missing;
             return;
@@ -272,7 +246,7 @@ impl Source {
                 self.held = None;
                 (Box::new(Model::new()), 0)
             }
-            Content::Missing | Content::Starting | Content::Problem(_) | Content::Ready(..) => {
+            Content::Missing | Content::Problem(_) | Content::Ready(..) => {
                 (Box::new(Model::new()), 0)
             }
         };
@@ -327,7 +301,6 @@ impl Source {
         self.hold(screen);
         match &self.content {
             Content::Missing => Journal::Missing,
-            Content::Starting => Journal::Starting,
             Content::Problem(error) => Journal::Problem(error),
             Content::Ready(model, ..) => {
                 if let Some(error) = model.problem() {
@@ -352,7 +325,7 @@ impl Source {
         match self.content {
             Content::Problem(error) => Some(error),
             Content::Ready(model, ..) => model.problem().cloned().map(SourceError::Fold),
-            Content::Missing | Content::Starting => None,
+            Content::Missing => None,
         }
     }
 
@@ -363,10 +336,10 @@ impl Source {
             Content::Problem(SourceError::Foreign(_)) => {
                 match std::mem::replace(&mut self.content, Content::Missing) {
                     Content::Problem(error) => Some(error),
-                    Content::Missing | Content::Starting | Content::Ready(..) => None,
+                    Content::Missing | Content::Ready(..) => None,
                 }
             }
-            Content::Missing | Content::Starting | Content::Problem(_) | Content::Ready(..) => None,
+            Content::Missing | Content::Problem(_) | Content::Ready(..) => None,
         }
     }
 }
@@ -387,8 +360,8 @@ impl super::Feed for Source {
 
 #[cfg(test)]
 impl Source {
-    pub(super) fn memory(journal: &MemoryJournal, since: Option<u64>) -> Self {
-        let mut source = Self::new(Path::new("memory"), since);
+    pub(super) fn memory(journal: &MemoryJournal) -> Self {
+        let mut source = Self::new(Path::new("memory"));
         source.memory = Some(journal.clone());
         source
     }
@@ -397,7 +370,7 @@ impl Source {
     fn model_address(&self) -> Option<usize> {
         match &self.content {
             Content::Ready(model, ..) => Some(std::ptr::from_ref::<Model>(model) as usize),
-            Content::Missing | Content::Starting | Content::Problem(_) => None,
+            Content::Missing | Content::Problem(_) => None,
         }
     }
 }
@@ -501,7 +474,6 @@ mod tests {
     #[derive(Debug, PartialEq, Eq)]
     enum Shown {
         Missing,
-        Starting,
         Problem(String),
         Ready {
             messages: Vec<String>,
@@ -534,7 +506,6 @@ mod tests {
     fn show(source: &mut Source, screen: &Screen) -> Shown {
         match source.journal(screen) {
             Journal::Missing => Shown::Missing,
-            Journal::Starting => Shown::Starting,
             Journal::Problem(error) => Shown::Problem(togi_render::error_chain(error)),
             Journal::Ready { log, .. } => Shown::Ready {
                 messages: log.entries.iter().map(|entry| entry.msg.clone()).collect(),
@@ -551,7 +522,7 @@ mod tests {
                 total,
                 arrived,
             } => (messages, *total, *arrived),
-            other @ (Shown::Missing | Shown::Starting | Shown::Problem(_)) => {
+            other @ (Shown::Missing | Shown::Problem(_)) => {
                 panic!("not a journal: {other:?}")
             }
         }
@@ -583,7 +554,7 @@ mod tests {
             b"{\"seq\":3,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"boot-1\",\"kind\":\"future.thing\",\"msg\":\"x\",\"data\":{}}\n",
         );
         dir.append(&lines(&[warning(4, "after")]));
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         assert!(source.reload());
         let Journal::Ready { snapshot, log } = source.journal(&main_screen()) else {
             panic!("the journal is not shown");
@@ -605,7 +576,7 @@ mod tests {
     #[test]
     fn reload_follows_a_replaced_grown_rewritten_removed_and_restored_journal() {
         let dir = MemoryJournal::new();
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         assert!(source.reload());
         assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
 
@@ -643,7 +614,7 @@ mod tests {
     fn real_fs_a_replacement_with_the_same_size_and_time_is_a_new_file() {
         let dir = TempDir::new().unwrap();
         real_fs_write_journal(dir.path(), &journal_of("original"));
-        let mut source = Source::new(dir.path(), None);
+        let mut source = Source::new(dir.path());
         assert!(source.reload());
         let before = source.identity.unwrap();
         real_fs_replace(dir.path(), &lines(&journal_of("replaced")));
@@ -657,7 +628,7 @@ mod tests {
     #[test]
     fn an_unchanged_journal_and_an_unchanged_absence_are_not_reloaded() {
         let dir = MemoryJournal::new();
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         assert!(source.reload());
         assert!(
             !source.reload(),
@@ -672,7 +643,7 @@ mod tests {
     fn an_append_folds_only_the_new_events_and_a_replacement_builds_a_fresh_model() {
         let dir = MemoryJournal::new();
         dir.write(&lines(&session_with_warnings(5)));
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         let first = source.model_address().unwrap();
         dir.append(&lines(&[warning(7, "w7")]));
@@ -740,13 +711,13 @@ mod tests {
             directory.join("events.jsonl"),
             lines(&journal_of("from the journal")),
         );
-        let mut plain = Source::read_in(&fs, directory, None);
+        let mut plain = Source::read_in(&fs, directory);
         assert!(contains(&mut plain, "from the journal"));
 
         fs.put(directory.join("state.json"), "{torn");
         fs.record_history();
         let before = fs.mutations();
-        let mut with_legacy = Source::read_in(&fs, directory, None);
+        let mut with_legacy = Source::read_in(&fs, directory);
         assert_eq!(
             show(&mut plain, &main_screen()),
             show(&mut with_legacy, &main_screen())
@@ -762,7 +733,7 @@ mod tests {
         let newer = text.replace("\"schema\":1", "\"schema\":2");
         assert_ne!(text, newer);
         dir.write(newer.as_bytes());
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         let Shown::Problem(text) = show(&mut source, &main_screen()) else {
             panic!("a newer journal was shown");
@@ -773,7 +744,7 @@ mod tests {
     #[test]
     fn a_journal_that_does_not_decode_is_a_problem_until_it_does() {
         let dir = MemoryJournal::new();
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         dir.write(&undecodable_journal());
         assert!(source.reload());
@@ -791,7 +762,7 @@ mod tests {
     fn a_journal_the_model_cannot_fold_is_a_problem_and_the_error_of_a_one_frame_print() {
         let dir = MemoryJournal::new();
         dir.write(&lines(&[session_start(1), session_start(2)]));
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         assert_eq!(
             show(&mut source, &main_screen()),
@@ -804,13 +775,13 @@ mod tests {
     #[test]
     fn real_fs_missing_and_unreadable_are_distinct() {
         let dir = TempDir::new().unwrap();
-        let mut source = Source::new(dir.path(), None);
+        let mut source = Source::new(dir.path());
         source.reload();
         assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
         assert!(source.into_problem().is_none());
 
         fs::create_dir(dir.path().join("events.jsonl")).unwrap();
-        let mut source = Source::new(dir.path(), None);
+        let mut source = Source::new(dir.path());
         source.reload();
         assert!(
             matches!(show(&mut source, &main_screen()), Shown::Problem(_)),
@@ -825,7 +796,7 @@ mod tests {
             real_fs_write_journal(&inner, &journal_of("hidden"));
             fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o000))
                 .unwrap();
-            let mut source = Source::new(&inner, None);
+            let mut source = Source::new(&inner);
             source.reload();
             let shown = show(&mut source, &main_screen());
             fs::set_permissions(&inner, std::os::unix::fs::PermissionsExt::from_mode(0o755))
@@ -838,48 +809,15 @@ mod tests {
     fn an_empty_journal_has_no_session_yet() {
         let dir = MemoryJournal::new();
         dir.write(b"");
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         assert_eq!(show(&mut source, &main_screen()), Shown::Missing);
     }
-
     #[test]
-    fn a_run_in_progress_starts_with_the_run_not_the_journal_it_found() {
-        let dir = MemoryJournal::new();
-        let mut source = Source::memory(&dir, Some(2));
-        source.reload();
-        assert_eq!(show(&mut source, &main_screen()), Shown::Starting);
-        dir.write(&lines(&journal_of("from an earlier run")));
-        assert!(source.reload());
-        assert_eq!(
-            show(&mut source, &main_screen()),
-            Shown::Starting,
-            "an earlier run's journal was shown"
-        );
-        dir.append(&lines(&[warning(3, "this run")]));
-        assert!(source.reload());
-        assert!(contains(&mut source, "this run"));
-        assert!(contains(&mut source, "from an earlier run"));
-    }
-
-    #[test]
-    fn a_run_in_progress_still_reports_a_journal_it_cannot_read() {
-        let dir = MemoryJournal::new();
-        dir.write(&undecodable_journal());
-        let mut source = Source::memory(&dir, Some(0));
-        source.reload();
-        assert!(matches!(
-            show(&mut source, &main_screen()),
-            Shown::Problem(_)
-        ));
-    }
-
-    #[test_case::test_case(None; "from start")]
-    #[test_case::test_case(Some(0); "since zero")]
-    fn another_builds_journal_is_a_refusal_the_source_hands_over_once(since: Option<u64>) {
+    fn another_builds_journal_is_a_refusal_the_source_hands_over_once() {
         let dir = MemoryJournal::new();
         dir.write(&go_journal());
-        let mut source = Source::memory(&dir, since);
+        let mut source = Source::memory(&dir);
         assert!(source.reload());
         let Shown::Problem(text) = show(&mut source, &main_screen()) else {
             panic!("another build's journal was shown");
@@ -900,7 +838,7 @@ mod tests {
     fn every_other_problem_stays_to_be_shown_and_is_not_a_refusal() {
         let dir = MemoryJournal::new();
         dir.write(&undecodable_journal());
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         assert!(matches!(
             show(&mut source, &main_screen()),
@@ -913,7 +851,7 @@ mod tests {
     #[test]
     fn a_journal_that_turns_into_another_builds_after_a_missing_one_is_a_refusal() {
         let dir = MemoryJournal::new();
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         assert!(source.refusal().is_none());
         dir.write(&go_journal());
@@ -930,7 +868,7 @@ mod tests {
         events: &[crate::terminal::testing::TestEvent],
     ) -> (Source, Screen) {
         dir.write(&lines(events));
-        let mut source = Source::memory(dir, None);
+        let mut source = Source::memory(dir);
         assert!(source.reload());
         show(&mut source, &screen(View::Log, FOLLOWING));
         let back = screen(View::Log, 0);
@@ -949,7 +887,7 @@ mod tests {
         let dir = MemoryJournal::new();
         let full = u64::try_from(LOG_LIMIT).unwrap() + 50;
         dir.write(&lines(&session_with_warnings(full)));
-        let mut source = Source::memory(&dir, None);
+        let mut source = Source::memory(&dir);
         source.reload();
         let following = screen(View::Log, FOLLOWING);
         let shown = show(&mut source, &following);

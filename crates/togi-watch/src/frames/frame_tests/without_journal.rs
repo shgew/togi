@@ -1,10 +1,10 @@
-//! The frames of a journal that is missing, still starting or unreadable.
+//! The frames of a journal that is missing or unreadable.
 
 use jiff::tz::TimeZone;
 
 use super::{
     ALL_SIZES, PROFILES, SIZES, VIEWS, assert_glyphs_safe, draw_journal, main_screen, one_frame,
-    some_time, text, words,
+    some_time, words,
 };
 use crate::frames::testing::screen;
 use crate::screen::{Hold, Journal, Screen};
@@ -18,13 +18,9 @@ fn problem(text: &str) -> std::io::Error {
 }
 
 #[test]
-fn a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds() {
+fn a_journal_that_is_missing_or_unreadable_stays_in_bounds_and_never_holds() {
     let error = problem(REASON);
-    for journal in [
-        Journal::Missing,
-        Journal::Starting,
-        Journal::Problem(&error),
-    ] {
+    for journal in [Journal::Missing, Journal::Problem(&error)] {
         for (width, height) in ALL_SIZES {
             for view in VIEWS {
                 for colours in PROFILES {
@@ -125,26 +121,4 @@ fn an_unreadable_journal_is_not_a_missing_one_live_and_in_one_frame() {
     let missing = words(&missing).to_lowercase();
     assert!(missing.contains("no session yet"), "{missing}");
     assert!(!missing.contains("can't read journal"), "{missing}");
-}
-
-#[test]
-fn the_starting_screen_says_so_and_names_no_earlier_run() {
-    for (width, height) in SIZES {
-        let (buf, drawn) = draw_journal(
-            &Journal::Starting,
-            &main_screen(width, height),
-            some_time(),
-            &TimeZone::UTC,
-        );
-        let shown = text(&buf);
-        assert!(shown.contains("STARTING"), "{width}x{height}:\n{shown}");
-        assert!(shown.contains("starting"), "{width}x{height}:\n{shown}");
-        for stale in ["NO SESSION YET", "STOPPED", "no session yet", "session 0h"] {
-            assert!(
-                !shown.contains(stale),
-                "{width}x{height} shows {stale:?}:\n{shown}"
-            );
-        }
-        assert_eq!(drawn.hold, Hold::Never);
-    }
 }

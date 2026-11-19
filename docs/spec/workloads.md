@@ -126,7 +126,7 @@ On a single-CCD machine the [controller placement](#controller-placement) keeps 
 
 ## Controller placement
 
-The controller is togi's session, journal, supervisors, Tokio runtime, sampler and in-process dashboard. Every Ruleset 13 trial uses managed placement ([ADR 0078](../adr/0078-controller-clock-and-rotation.md)); no legacy-placement evidence qualifies it. The trial's purpose distinguishes isolated mapping from exact-profile qualification.
+The controller is togi's session, journal, supervisors, Tokio runtime and sampler. Every Ruleset 13 trial uses managed placement ([ADR 0078](../adr/0078-controller-clock-and-rotation.md)); no legacy-placement evidence qualifies it. The trial's purpose distinguishes isolated mapping from exact-profile qualification.
 
 Placement is computed before any backend launches, from the loaded physical cores, their logical CPUs and the applied, read-back offsets. A suspended role remains loaded for this purpose. A missing offset is not CO 0. The rules, in order:
 

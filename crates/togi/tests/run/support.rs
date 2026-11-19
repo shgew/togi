@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use togi_cli::dashboard::{Stop, Surface};
 use togi_cli::system::System;
 use togi_config::Config;
 use togi_hardware::{Diagnosis, Error, RebootError};
@@ -27,7 +26,6 @@ use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_tuningboot::night::{SETUP_PATH, Setup};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
-use togi_watch::terminal;
 
 const CONFIG: &str = "config.json";
 
@@ -174,15 +172,6 @@ impl Bootloader for Grub {
     }
 }
 
-/// A dashboard that does what the test says.
-pub(crate) struct Scripted<F>(pub F);
-
-impl<F: Fn(&Stop) -> Result<(), terminal::Error> + Send + Sync> Surface for Scripted<F> {
-    fn draw(&self, _: &Path, _: u64, stop: &Stop) -> Result<(), terminal::Error> {
-        (self.0)(stop)
-    }
-}
-
 type WrapMachine = dyn Fn(Machine<'static>, &CancellationToken) -> Machine<'static>;
 
 #[expect(
@@ -204,14 +193,12 @@ pub(crate) struct Fake {
     /// The default configuration file: absent unless a test writes it.
     pub(crate) default_config: PathBuf,
     pub(crate) supported: bool,
-    pub(crate) interactive: bool,
     /// What the host says about its stderr: terminal, colour, journald.
     pub(crate) facts: OutputFacts,
     /// Whether `systemctl reboot` fails.
     pub(crate) fail_reboot: bool,
     pub(crate) stderr: Capture,
     pub(crate) grub: Grub,
-    pub(crate) surface: Arc<dyn Surface>,
     pub(crate) wrap: Box<WrapMachine>,
     pub(crate) opened: Cell<u32>,
     pub(crate) boots_read: Cell<u32>,
@@ -279,15 +266,10 @@ impl Fake {
             real_host,
             cancel: RefCell::default(),
             supported: true,
-            interactive: false,
             facts: OutputFacts::default(),
             fail_reboot: false,
             stderr: Capture::default(),
             grub: Grub::default(),
-            surface: Arc::new(Scripted(|stop: &Stop| {
-                stop.wait();
-                Ok(())
-            })),
             wrap: Box::new(|machine, _| machine),
             opened: Cell::new(0),
             boots_read: Cell::new(0),
@@ -557,23 +539,8 @@ impl System for Fake {
         ))
     }
 
-    fn dashboard(&self, state: &Path, since: u64) -> togi_cli::dashboard::Dashboard {
-        if self.real_host {
-            togi_cli::dashboard::Dashboard::new(self.surface(), state, since)
-        } else {
-            let stderr = self.stderr.clone();
-            togi_cli::dashboard::Dashboard::isolated(self.surface(), state, since, move |failure| {
-                let _ = writeln!(
-                    stderr.clone(),
-                    "togi run: dashboard: {}; printing events instead",
-                    togi_render::escape_text(&togi_render::error_chain(failure))
-                );
-            })
-        }
-    }
-
     fn interactive(&self) -> bool {
-        self.interactive
+        false
     }
 
     fn stderr(&self) -> Box<dyn Write> {
@@ -666,10 +633,6 @@ impl System for Fake {
 
     fn remove_retry_marker(&self) -> io::Result<()> {
         panic!("run does not touch the retry marker")
-    }
-
-    fn surface(&self) -> Arc<dyn Surface> {
-        Arc::clone(&self.surface)
     }
 }
 

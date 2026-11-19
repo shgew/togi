@@ -1,8 +1,7 @@
-//! Ctrl-C at a terminal: `run` shows the dashboard on a pseudo-terminal, the dashboard closes, and SIGINT still
-//! reaches `run`'s own listener, which stops the session as on any SIGINT. The child is this test binary run
-//! again on one test (`helper`), as in `panics`.
+//! Run at a pseudo-terminal: signals still stop the session, and run writes event lines without changing terminal state.
 
 use std::ffi::OsString;
+use std::fs::File;
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -13,38 +12,27 @@ use std::time::{Duration, Instant};
 use rustix::process::{Pid, Signal, kill_process};
 use rustix::termios::{LocalModes, tcgetattr};
 use tempfile::TempDir;
-use togi_cli::dashboard::Stop;
 use togi_journal::{EventKind, Payload, ShutdownReason};
 use togi_machine::{
     CancellationToken, Error as MachineError, FrequencyJournal, Machine, Partial, Reporter,
-    Running, Started, Stopped, Swept, TrialResult, TrialSpec, Trials,
+    Running, Started, Stopped, Swept, TargetOffset, TrialResult, TrialSpec, Trials,
 };
 use togi_render::open_pty;
 
-use crate::support::{CORES, Fake, Scripted, simulator, written};
+use crate::support::{CORES, Fake, simulator, written};
 
 const SCENARIO: &str = "TOGI_RUN_TEST_PTY";
 const DIR: &str = "TOGI_RUN_TEST_PTY_DIR";
 // Match the real_process_ slow-timeout in both nextest profiles: five 60-second periods.
 // Host load can delay the helper; the runner, not a shorter local bound, owns the test limit.
 const BOUND: Duration = Duration::from_mins(5);
-/// The file in [`DIR`] that lets a `real-panic` trial panic.
-const GO: &str = "panic-now";
+const RUN: &str = "run";
+const PANIC: &str = "panic";
 
-/// Trials that run until the run is cancelled, or panic as [`Panic`] says, from the first
-/// nonzero mapping trial.
-struct Endless(Box<dyn Trials>, Panic);
+/// Trials that wait for cancellation at the first nonzero mapping trial.
+struct Endless(Box<dyn Trials>, bool);
 
-struct EndlessRunning(Box<dyn Running>, Panic);
-
-/// When a trial's wait panics.
-#[derive(Clone)]
-enum Panic {
-    Never,
-    Now,
-    /// Once the file exists: the test makes it after it saw the dashboard draw.
-    Once(PathBuf),
-}
+struct EndlessRunning(Box<dyn Running>, bool);
 
 impl Trials for Endless {
     fn controller_pid(&self) -> u32 {
@@ -82,7 +70,7 @@ impl Trials for Endless {
         if !endless {
             return Ok(running);
         }
-        Ok(Box::new(EndlessRunning(running, self.1.clone())))
+        Ok(Box::new(EndlessRunning(running, self.1)))
     }
 
     fn ended(&mut self, id: &str) -> Result<(), MachineError> {
@@ -109,14 +97,7 @@ impl Running for EndlessRunning {
         cancel: &CancellationToken,
         report: &mut dyn Reporter,
     ) -> Result<TrialResult, Partial<TrialResult>> {
-        match &self.1 {
-            Panic::Never => {}
-            Panic::Now => panic!("injected panic while the dashboard shows"),
-            Panic::Once(go) => {
-                wait_until("the test to see the dashboard", || go.exists());
-                panic!("injected panic while the dashboard shows");
-            }
-        }
+        assert!(!self.1, "injected panic while a trial runs");
         cancel.wait();
         self.0.wait(cancel, report)
     }
@@ -135,20 +116,10 @@ fn real_process_helper() {
     let mut fake = Fake::in_dir(simulator(1000), &dir);
     fake.attest_stock();
     fake.real_stderr = true;
-    fake.interactive = true;
-    let scenario = std::env::var(SCENARIO).unwrap_or_default();
-    if matches!(scenario.as_str(), "real" | "real-panic") {
-        fake.surface = std::sync::Arc::new(togi_cli::dashboard::Watch);
-    } else {
-        fake.surface = std::sync::Arc::new(Scripted(|_: &Stop| Ok(())));
-    }
-    let panic = match scenario.as_str() {
-        "panic" => Panic::Now,
-        "real-panic" => Panic::Once(dir.join(GO)),
-        _ => Panic::Never,
-    };
+    let scenario = std::env::var(SCENARIO).unwrap();
+    let panic = scenario == PANIC;
     fake.wrap = Box::new(move |machine, _| Machine {
-        trials: Box::new(Endless(machine.trials, panic.clone())),
+        trials: Box::new(Endless(machine.trials, panic)),
         ..machine
     });
     let args: Vec<OsString> = fake
@@ -157,7 +128,7 @@ fn real_process_helper() {
         .map(Into::into)
         .collect();
     let exit = togi_cli::run_process(args, &fake);
-    if scenario == "run" {
+    if !panic {
         let mut smu = fake.sim.seams().smu;
         for core in 0..CORES {
             assert_eq!(
@@ -206,33 +177,38 @@ fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     }
 }
 
-#[test]
-fn real_process_ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_the_session_stops()
-{
-    stopped_by_signal(Signal::INT);
-}
-
-pub(super) fn stopped_by_signal(signal: Signal) {
-    let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty().unwrap();
+fn start(dir: &Path, scenario: &str, slave: File) -> std::process::Child {
     #[expect(
         clippy::disallowed_methods,
         reason = "real_process tests control the run helper over a PTY"
     )]
-    let mut child = Command::new(std::env::current_exe().unwrap())
+    Command::new(std::env::current_exe().unwrap())
         .args([
             "pty::real_process_helper",
             "--exact",
             "--nocapture",
             "--test-threads=1",
         ])
-        .env(SCENARIO, "run")
-        .env(DIR, dir.path())
+        .env(SCENARIO, scenario)
+        .env(DIR, dir)
+        .env("TERM", "linux")
         .stdin(Stdio::from(slave.try_clone().unwrap()))
         .stdout(Stdio::null())
         .stderr(Stdio::from(slave))
         .spawn()
-        .unwrap();
+        .unwrap()
+}
+
+#[test_case::test_case(Signal::INT; "sigint")]
+#[test_case::test_case(Signal::HUP; "sighup")]
+#[test_case::test_case(Signal::TERM; "sigterm")]
+fn real_process_signals_stop_a_run_at_a_terminal_with_a_live_event_log(signal: Signal) {
+    let dir = TempDir::new().unwrap();
+    let (master, slave) = open_pty().unwrap();
+    let before = tcgetattr(&master).unwrap().local_modes;
+    assert!(before.contains(LocalModes::ISIG));
+    let mut child = start(dir.path(), RUN, slave);
+    let (seen, reader) = record(&master);
 
     wait_until("a trial at a written offset to run", || {
         let events = events_of(dir.path());
@@ -241,16 +217,10 @@ pub(super) fn stopped_by_signal(signal: Signal) {
             .skip_while(|event| event.kind() != EventKind::SmuIntent)
             .any(|event| event.kind() == EventKind::TrialStart)
     });
-    let quiet = tcgetattr(&master).unwrap();
-    assert!(
-        !quiet.local_modes.contains(LocalModes::ECHO)
-            && !quiet.local_modes.contains(LocalModes::ICANON),
-        "the dashboard turns echo and line buffering off"
-    );
-    assert!(
-        quiet.local_modes.contains(LocalModes::ISIG),
-        "the signal keys stay on, so Ctrl-C still stops run"
-    );
+    assert_eq!(tcgetattr(&master).unwrap().local_modes, before);
+    wait_until("a live event line", || {
+        String::from_utf8_lossy(&seen.lock().unwrap()).contains(" trial.start ")
+    });
 
     kill_process(Pid::from_child(&child), signal).unwrap();
     let status = wait_for_exit(&mut child);
@@ -271,11 +241,23 @@ pub(super) fn stopped_by_signal(signal: Signal) {
             .iter()
             .any(|event| event.kind() == EventKind::ProfileRestored)
     );
-    let restored = tcgetattr(&master).unwrap();
+    drop(child);
+    reader.join().unwrap();
+    assert_eq!(tcgetattr(&master).unwrap().local_modes, before);
+    let seen = seen.lock().unwrap();
+    let text = String::from_utf8_lossy(&seen);
+    assert_no_screen(&text);
+    let applied = events
+        .iter()
+        .filter(|event| event.kind() == EventKind::ProfileApplied)
+        .count();
+    assert!(applied > 0, "no profile application in the journal");
+    assert_eq!(text.matches(" profile.applied ").count(), applied, "{text}");
+    assert_eq!(text.matches(" profile.restored ").count(), 1, "{text}");
+    assert_eq!(text.matches(" shutdown ").count(), 1, "{text}");
     assert!(
-        restored.local_modes.contains(LocalModes::ECHO)
-            && restored.local_modes.contains(LocalModes::ICANON),
-        "the previous settings are back once run stops"
+        text.find(" profile.restored ") < text.find(" shutdown "),
+        "{text}"
     );
 }
 
@@ -287,193 +269,42 @@ fn wait_for_exit(child: &mut std::process::Child) -> std::process::ExitStatus {
         }
         if Instant::now() >= deadline {
             child.kill().unwrap();
-            panic!("run did not stop after SIGINT");
+            panic!("run did not exit");
         }
         std::thread::sleep(Duration::from_millis(20));
     }
 }
 
 #[test]
-fn real_process_a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates()
- {
+fn real_process_a_panic_at_a_terminal_logs_restoration_before_exiting_two() {
     let dir = TempDir::new().unwrap();
     let (master, slave) = open_pty().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the real_process test checks panic terminal restoration"
-    )]
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "pty::real_process_helper",
-            "--exact",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .env(SCENARIO, "panic")
-        .env(DIR, dir.path())
-        .stdin(Stdio::from(slave.try_clone().unwrap()))
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(slave))
-        .spawn()
-        .unwrap();
+    let before = tcgetattr(&master).unwrap().local_modes;
+    let mut child = start(dir.path(), PANIC, slave);
     let (seen, reader) = record(&master);
     let status = wait_for_exit(&mut child);
     assert_eq!(status.code(), Some(2));
+    assert!(events_of(dir.path()).iter().any(|event| matches!(
+        &event.payload,
+        Payload::ProfileRestored(restored) if restored.offsets.iter().all(|(_, offset)| offset == TargetOffset::ZERO)
+    )));
     drop(child);
     reader.join().unwrap();
-    let restored = tcgetattr(&master).unwrap();
-    assert!(
-        restored.local_modes.contains(LocalModes::ECHO)
-            && restored.local_modes.contains(LocalModes::ICANON),
-        "the previous input settings are back"
-    );
-    let seen = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
-    assert!(
-        seen.contains("panic: injected panic while the dashboard shows"),
-        "{seen}"
-    );
-}
-
-const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
-const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
-}
-
-#[test]
-fn real_process_ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() {
-    let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the real_process test sends Ctrl-C through a PTY"
-    )]
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "pty::real_process_helper",
-            "--exact",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .env(SCENARIO, "real")
-        .env(DIR, dir.path())
-        .env("TERM", "xterm-256color")
-        .env_remove("NO_COLOR")
-        .stdin(Stdio::from(slave.try_clone().unwrap()))
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(slave))
-        .spawn()
-        .unwrap();
-    let (seen, reader) = record(&master);
-    wait_until("a trial to run", || {
-        events_of(dir.path())
-            .iter()
-            .any(|event| event.kind() == EventKind::TrialStart)
-    });
-    wait_until("the dashboard to draw", || {
-        contains(&seen.lock().unwrap(), HIDE_CURSOR)
-    });
-
-    kill_process(Pid::from_child(&child), Signal::INT).unwrap();
-    let status = wait_for_exit(&mut child);
-    assert_eq!(status.code(), Some(0));
-    drop(child);
-    reader.join().unwrap();
-
-    let seen = seen.lock().unwrap();
-    let hidden = seen
-        .windows(HIDE_CURSOR.len())
-        .rposition(|window| window == HIDE_CURSOR)
-        .unwrap();
-    assert!(
-        contains(&seen[hidden..], SHOW_CURSOR),
-        "the cursor is shown again after the last time it was hidden"
-    );
-    assert!(matches!(
-        &events_of(dir.path()).last().unwrap().payload,
-        Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal
-    ));
-    let restored = tcgetattr(&master).unwrap();
-    assert!(
-        restored
-            .local_modes
-            .contains(LocalModes::ECHO | LocalModes::ICANON)
-    );
-}
-
-const PALETTE_SET: &[u8] = b"\x1b]P0000000";
-const PALETTE_RESET: &[u8] = b"\x1b]R";
-
-fn last(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .rposition(|window| window == needle)
-}
-
-/// The real dashboard on the Linux console hides the cursor and sets the palette, then the session
-/// panics and both are restored before the panic shows.
-#[test]
-fn real_process_a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette()
- {
-    let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty().unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the real_process test checks console restoration after panic"
-    )]
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "pty::real_process_helper",
-            "--exact",
-            "--nocapture",
-            "--test-threads=1",
-        ])
-        .env(SCENARIO, "real-panic")
-        .env(DIR, dir.path())
-        .env("TERM", "linux")
-        .env_remove("NO_COLOR")
-        .env_remove("JOURNAL_STREAM")
-        .stdin(Stdio::from(slave.try_clone().unwrap()))
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(slave))
-        .spawn()
-        .unwrap();
-    let (seen, reader) = record(&master);
-    wait_until(
-        "the dashboard to hide the cursor and set the palette",
-        || {
-            let seen = seen.lock().unwrap();
-            contains(&seen, HIDE_CURSOR) && contains(&seen, PALETTE_SET)
-        },
-    );
-    std::fs::write(dir.path().join(GO), b"").unwrap();
-    let status = wait_for_exit(&mut child);
-    assert_eq!(status.code(), Some(2));
-    drop(child);
-    reader.join().unwrap();
-
+    assert_eq!(tcgetattr(&master).unwrap().local_modes, before);
     let seen = seen.lock().unwrap();
     let text = String::from_utf8_lossy(&seen);
+    assert_no_screen(&text);
+    let restored = text.find(" profile.restored ").expect("restoration line");
+    let panic = text
+        .find("panic: injected panic while a trial runs")
+        .expect("panic line");
+    assert!(restored < panic, "{text}");
+}
+
+fn assert_no_screen(text: &str) {
+    assert!(!text.contains("\x1b[?25l"), "run hid the cursor: {text}");
     assert!(
-        last(&seen, SHOW_CURSOR) > last(&seen, HIDE_CURSOR),
-        "the cursor is shown again after the last time it was hidden: {text:?}"
-    );
-    assert!(
-        last(&seen, PALETTE_RESET) > last(&seen, b"\x1b]P"),
-        "the palette is reset after the last time it was set: {text:?}"
-    );
-    assert!(
-        text.contains("panic: injected panic while the dashboard shows"),
-        "{text:?}"
-    );
-    let restored = tcgetattr(&master).unwrap();
-    assert!(
-        restored
-            .local_modes
-            .contains(LocalModes::ECHO | LocalModes::ICANON),
-        "the previous input settings are back"
+        !text.contains("\x1b]P0000000"),
+        "run changed the palette: {text}"
     );
 }

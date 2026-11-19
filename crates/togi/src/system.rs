@@ -2,7 +2,7 @@
 //!
 //! Every command reaches the host through [`System`]: the platform, the host lock, the default
 //! configuration file, the boot id, the clock, the hardware checks, the boot loader, the reboot, the machine
-//! `run` tunes and the process's own terminal, stderr and dashboard. [`Real`] is the host;
+//! `run` tunes and the process's own terminal and stderr. [`Real`] is the host;
 //! [`crate::run()`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
 //! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), acquire a
 //! descriptor-free host lock, read configuration and journals from an in-memory filesystem, or
@@ -30,7 +30,7 @@ use togi_machine::{BiosContext, BootId, CancellationToken, Clock, Error, Machine
 use togi_render::OutputFacts;
 use togi_tuningboot::{Bootloader, RETRY_MARKER};
 
-use crate::dashboard::{Surface, Watch};
+use rustix::termios::{QueueSelector, tcflush};
 
 /// What a command needs from the host.
 pub trait System {
@@ -231,14 +231,6 @@ pub trait System {
     /// A handle on standard error that outlives the command's borrowed streams: the event lines of
     /// a run and the report of its emergency.
     fn stderr(&self) -> Box<dyn Write>;
-
-    /// What draws the dashboard when `run` shows one.
-    fn surface(&self) -> Arc<dyn Surface>;
-
-    /// Assembles the dashboard with this host's terminal effects.
-    fn dashboard(&self, state: &Path, since: u64) -> crate::dashboard::Dashboard {
-        crate::dashboard::Dashboard::new(self.surface(), state, since)
-    }
 }
 
 /// The host the process runs on.
@@ -372,7 +364,7 @@ impl System for Real {
     }
 
     fn answer(&self) -> io::Result<Option<String>> {
-        crate::dashboard::discard_typed_ahead();
+        discard_typed_ahead(rustix::stdio::stdin());
         let mut line = String::new();
         let read = io::stdin().read_line(&mut line)?;
         Ok((read > 0).then_some(line))
@@ -448,10 +440,11 @@ impl System for Real {
     fn stderr(&self) -> Box<dyn Write> {
         Box::new(io::stderr())
     }
+}
 
-    fn surface(&self) -> Arc<dyn Surface> {
-        Arc::new(Watch)
-    }
+/// Drops input typed before a confirmation prompt.
+fn discard_typed_ahead(fd: std::os::fd::BorrowedFd<'_>) {
+    let _ = tcflush(fd, QueueSelector::IFlush);
 }
 
 /// Whether both streams are terminals, as a terminal ioctl says: a character device such as
