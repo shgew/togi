@@ -203,20 +203,16 @@ fn control(
     let status = match exchange(&Request::State)? {
         Reply::State { status } => status,
         Reply::Refused { reason } => return Err(socket::Error::Refused(reason).into()),
-        Reply::Questions { .. }
-        | Reply::Controlled { .. }
-        | Reply::Answered
-        | Reply::Recorded { .. }
-        | Reply::Reapplied => return Err(ControlError::Unexpected),
+        Reply::Questions { .. } | Reply::Controlled { .. } | Reply::Answered | Reply::Reapplied => {
+            return Err(ControlError::Unexpected);
+        }
     };
     match exchange(&control_request(action, &status))? {
         Reply::Controlled { .. } => Ok(()),
         Reply::Refused { reason } => Err(socket::Error::Refused(reason).into()),
-        Reply::Questions { .. }
-        | Reply::State { .. }
-        | Reply::Answered
-        | Reply::Recorded { .. }
-        | Reply::Reapplied => Err(ControlError::Unexpected),
+        Reply::Questions { .. } | Reply::State { .. } | Reply::Answered | Reply::Reapplied => {
+            Err(ControlError::Unexpected)
+        }
     }
 }
 

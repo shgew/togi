@@ -1,4 +1,4 @@
-//! Local, credential-checked transport for day questions and crash records. Only the observer owns the journal
+//! Local, credential-checked transport for day questions and controls. Only the observer owns the journal
 //! writer.
 
 use std::io::{self, BufRead as _, Read as _, Write as _};
@@ -9,11 +9,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{
-    DayAnswer, DayAnswerKind, DayQuestions, DayRecord, DayUncleanEnd, Journal, PauseState, Seq,
-    SessionId,
+    DayAnswer, DayAnswerKind, DayQuestions, DayUncleanEnd, Journal, PauseState, Seq, SessionId,
 };
 use togi_machine::{BootId, Clock, object_only};
-use togi_session::{AppendRecordError, append_record};
 
 /// An authenticated control operation. Identity always comes from the socket credentials.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,17 +64,12 @@ pub struct ControlStatus {
 }
 
 pub const PATH: &str = "/run/togi/day.sock";
-/// Room for a crash record of every core with a long note; the deadline, not this, bounds a slow peer.
 const LIMIT: u64 = 16 * 1024;
 /// Total time one client may hold the observer loop, matching its one-second tick.
 const EXCHANGE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one request per connection, decoded once; boxing the record would only add an allocation"
-)]
 pub enum Request {
     Questions,
     State,
@@ -89,12 +82,6 @@ pub enum Request {
     Answer {
         boot: BootId,
         answer: DayAnswerKind,
-    },
-    /// A crash record the user confirmed, drafted against `session`; the service appends it only when its live
-    /// journal is that session, after checking it against that journal.
-    Record {
-        session: SessionId,
-        record: DayRecord,
     },
     /// Root only: reapply the day profile after resume; answered only once the transaction succeeded.
     Reapply,
@@ -149,9 +136,6 @@ pub enum Reply {
         status: ControlStatus,
     },
     Answered,
-    Recorded {
-        seq: Seq,
-    },
     Reapplied,
     Refused {
         reason: String,
@@ -501,36 +485,6 @@ pub fn respond(
             control(journal, clock, Control::Reapply)?;
             Ok(Reply::Reapplied)
         }
-        Request::Record { session, record } => {
-            // Answering is open to the day group; recording a crash needs root, as the command does.
-            if uid != 0 {
-                return Ok(Reply::Refused {
-                    reason: "recording a crash needs root".into(),
-                });
-            }
-            // The command drafted against the state directory it was given, which need not be the service's.
-            let live = journal.session();
-            if live != Some(session) {
-                return Ok(Reply::Refused {
-                    reason: live.map_or_else(
-                        || format!("the day service journal has no session, not session {session}"),
-                        |live| {
-                            format!("the day service records session {live}, not session {session}")
-                        },
-                    ),
-                });
-            }
-            if let Err(refusal) = super::record::check(journal.events(), &record) {
-                return Ok(Reply::Refused {
-                    reason: togi_render::error_chain(&refusal),
-                });
-            }
-            let seq = append_record(journal, clock, record).map_err(|error| match error {
-                AppendRecordError::Append(source) => super::Error::Append(source),
-                AppendRecordError::Clock(source) => super::Error::Observe(source),
-            })?;
-            Ok(Reply::Recorded { seq })
-        }
     }
 }
 
@@ -556,8 +510,7 @@ pub fn request(request: &Request) -> Result<Reply, Error> {
     request_at(Path::new(PATH), request)
 }
 
-/// Only a socket path that does not exist or that nothing listens at means no service runs; the command then
-/// writes the journal itself, so every other connect failure stays an error.
+/// Distinguishes an absent service from other connection errors.
 fn connect_error(error: io::Error) -> Error {
     if matches!(
         error.kind(),
@@ -594,7 +547,6 @@ fn request_at(path: &Path, request: &Request) -> Result<Reply, Error> {
         | Reply::State { .. }
         | Reply::Controlled { .. }
         | Reply::Answered
-        | Reply::Recorded { .. }
         | Reply::Reapplied => Ok(reply),
     }
 }

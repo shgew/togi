@@ -58,32 +58,22 @@ complete -c togi -n "__fish_togi_using_subcommand run" -l tuning-boot -d 'Run as
 complete -c togi -n "__fish_togi_using_subcommand run" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand run" -l no-tui -d 'Print one line per event instead of the dashboard on a terminal'
 complete -c togi -n "__fish_togi_using_subcommand run" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "notify" -d 'Send pending questions and the morning evidence report to this graphical session'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "reapply" -d 'Reapply the committed profile after system resume; used by the system sleep hook'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "record" -d 'Record a crash togi did not observe'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "pause" -d 'Keep every core at stock until the next cold boot or a deadline'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "resume" -d 'End the pause early and verify committed-profile reapplication'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "freeze" -d 'Keep the committed profile and prevent promotions, never safety retreats'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "unfreeze" -d 'Lift the promotion freeze'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply record pause resume freeze unfreeze help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "notify" -d 'Send pending questions and the morning evidence report to this graphical session'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "reapply" -d 'Reapply the committed profile after system resume; used by the system sleep hook'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "pause" -d 'Keep every core at stock until the next cold boot or a deadline'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "resume" -d 'End the pause early and verify committed-profile reapplication'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "freeze" -d 'Keep the committed profile and prevent promotions, never safety retreats'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "unfreeze" -d 'Lift the promotion freeze'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify reapply pause resume freeze unfreeze help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from answer" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from answer" -s h -l help -d 'Print help'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from notify" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from notify" -s h -l help -d 'Print help'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from reapply" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from reapply" -s h -l help -d 'Print help'
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l boot -d 'The crashed boot: the ID of a boot with a recorded unclean end' -r
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l unobserved-at -d 'When a crash happened that has no recorded unclean end' -r
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l offset -d 'An offset the crashed boot ran: all=N, ccdI=N or coreI=N; repeat for more' -r
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l entered-at -d 'When the offsets given with --offset were entered in firmware setup' -r
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l running -d 'What was running: idle, desktop, build, game, other or unknown' -r
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l note -d 'Free text about what was running' -r
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l yes -d 'Append without asking first at a terminal'
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from pause" -l until -d 'Pause until the next occurrence of this local time (HH:MM)' -r
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from pause" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from pause" -s h -l help -d 'Print help'
@@ -96,7 +86,6 @@ complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcomman
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "notify" -d 'Send pending questions and the morning evidence report to this graphical session'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "reapply" -d 'Reapply the committed profile after system resume; used by the system sleep hook'
-complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "record" -d 'Record a crash togi did not observe'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "pause" -d 'Keep every core at stock until the next cold boot or a deadline'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "resume" -d 'End the pause early and verify committed-profile reapplication'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "freeze" -d 'Keep the committed profile and prevent promotions, never safety retreats'
@@ -152,7 +141,6 @@ complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subc
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "notify" -d 'Send pending questions and the morning evidence report to this graphical session'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "reapply" -d 'Reapply the committed profile after system resume; used by the system sleep hook'
-complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "record" -d 'Record a crash togi did not observe'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "pause" -d 'Keep every core at stock until the next cold boot or a deadline'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "resume" -d 'End the pause early and verify committed-profile reapplication'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "freeze" -d 'Keep the committed profile and prevent promotions, never safety retreats'

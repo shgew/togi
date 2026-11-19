@@ -184,6 +184,7 @@ fn real_process_a_usage_error_on_a_full_stdout_stays_exit_2() {
 const SCOPE: &str = "--config applies only to doctor and run";
 
 #[test_case(&["bogus"], "unrecognized subcommand 'bogus'" ; "unknown subcommand")]
+#[test_case(&["day", "record"], "unrecognized subcommand 'record'" ; "retired day record subcommand")]
 #[test_case(&["--bogus"], "unexpected argument '--bogus'" ; "unknown flag")]
 #[test_case(&["--state-dir"], "a value is required for '--state-dir <path>'" ; "state dir without a value")]
 #[test_case(&["completion"], "required arguments were not provided" ; "completion without a shell")]

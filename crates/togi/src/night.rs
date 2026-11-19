@@ -179,7 +179,6 @@ fn attest(ctx: &mut Context<'_>) -> Result<Option<togi_hostlock::HostLock>, Exit
                     Reply::Questions { .. }
                     | Reply::State { .. }
                     | Reply::Answered
-                    | Reply::Recorded { .. }
                     | Reply::Reapplied,
                 ) => {
                     return Err(fail(ctx, COMMAND, "unexpected day service reply"));
