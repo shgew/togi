@@ -8,14 +8,12 @@
 let
   inherit (pkgs) lib;
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
-  evaluate =
-    mirrors: selectedPackage: hardwareTestGroup:
-    evaluateDay mirrors selectedPackage hardwareTestGroup { };
+  evaluate = mirrors: selectedPackage: evaluateDay mirrors selectedPackage { };
   evaluateDay =
-    mirrors: selectedPackage: hardwareTestGroup: day:
-    evaluateLoader mirrors selectedPackage hardwareTestGroup day { };
+    mirrors: selectedPackage: day:
+    evaluateLoader mirrors selectedPackage day { };
   evaluateLoader =
-    mirrors: selectedPackage: hardwareTestGroup: day: loader:
+    mirrors: selectedPackage: day: loader:
     (import (pkgs.path + "/nixos/lib/eval-config.nix") {
       inherit pkgs;
       system = pkgs.stdenv.hostPlatform.system;
@@ -58,19 +56,13 @@ let
             inherit day;
             enable = true;
             package = lib.mkIf (selectedPackage != null) selectedPackage;
-            inherit hardwareTestGroup;
             tuning.enable = true;
             settings = {
               dead_ends.inconclusive_in_a_row = 4;
             };
           };
           hardware.cpu.amd.ryzen-smu.enable = false;
-          users.groups = {
-            svc = { };
-          }
-          // lib.optionalAttrs (hardwareTestGroup != null) {
-            ${hardwareTestGroup} = { };
-          };
+          users.groups.svc = { };
           users.users = {
             alice.isNormalUser = true;
             bob.isNormalUser = true;
@@ -86,41 +78,40 @@ let
     inherit path;
     devices = [ "nodev" ];
   };
-  zero = evaluate [ ] null null;
-  one = evaluate [ (mirror "/boot") ] null null;
+  zero = evaluate [ ] null;
+  one = evaluate [ (mirror "/boot") ] null;
   two = evaluate [
     (mirror "/boot")
     (mirror "/boot2")
-  ] null null;
+  ] null;
   systemdLoader = {
     grub.enable = false;
     systemd-boot.enable = true;
   };
-  systemd = evaluateLoader [ ] null null { } systemdLoader;
-  bothLoaders = evaluateLoader [ (mirror "/boot") ] null null { } {
+  systemd = evaluateLoader [ ] null { } systemdLoader;
+  bothLoaders = evaluateLoader [ (mirror "/boot") ] null { } {
     systemd-boot.enable = true;
   };
-  neitherLoader = evaluateLoader [ ] null null { } {
+  neitherLoader = evaluateLoader [ ] null { } {
     grub.enable = false;
   };
-  overridden = evaluate [ (mirror "/boot") ] pkgs.hello null;
-  delegated = evaluate [ (mirror "/boot") ] null "togi-hardware";
+  overridden = evaluate [ (mirror "/boot") ] pkgs.hello;
   overriddenTuning = overridden.specialisation.togi.configuration;
-  day = evaluateDay [ (mirror "/boot") ] null null { enable = true; };
+  day = evaluateDay [ (mirror "/boot") ] null { enable = true; };
   dayTuning = day.specialisation.togi.configuration;
-  dayUsers = evaluateDay [ (mirror "/boot") ] null null {
+  dayUsers = evaluateDay [ (mirror "/boot") ] null {
     enable = true;
     users = [ "alice" ];
   };
   dayUsersTuning = dayUsers.specialisation.togi.configuration;
-  dayTwoUsers = evaluateDay [ (mirror "/boot") ] null null {
+  dayTwoUsers = evaluateDay [ (mirror "/boot") ] null {
     enable = true;
     users = [
       "alice"
       "bob"
     ];
   };
-  daySystemUser = evaluateDay [ (mirror "/boot") ] null null {
+  daySystemUser = evaluateDay [ (mirror "/boot") ] null {
     enable = true;
     users = [ "svc" ];
   };
@@ -311,8 +302,9 @@ assert builtins.elem pkgs.grub2 consoleWatch.path;
 assert builtins.elem pkgs.grub2 one.environment.systemPackages;
 assert nightSetup.target == "togi/night.json";
 assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" one.systemd.tmpfiles.rules;
-assert builtins.elem "f /run/lock/togi.lock :0660 :root :togi-hardware - -"
-  delegated.systemd.tmpfiles.rules;
+assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" tuning.systemd.tmpfiles.rules;
+assert builtins.elem "systemd-tmpfiles-setup.service" togiService.after;
+assert builtins.elem "systemd-tmpfiles-setup.service" day.systemd.services.togi-day.after;
 assert
   lib.sort lib.lessThan (
     map lib.toInt (

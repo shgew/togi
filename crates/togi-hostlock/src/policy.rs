@@ -26,6 +26,7 @@ pub(crate) struct LockFacts {
     pub(crate) file_type: FileType,
     pub(crate) single_link: bool,
     pub(crate) owner: u32,
+    pub(crate) group: u32,
     pub(crate) mode: Mode,
 }
 
@@ -62,6 +63,9 @@ pub(crate) fn lock_verdict(
         return Err(LockProblem::ForeignOwner);
     }
     let private = Mode::RUSR | Mode::WUSR;
+    if policy == Policy::Host && (facts.mode != private || facts.group != 0) {
+        return Err(LockProblem::InvalidHostMetadata);
+    }
     if facts.mode != private && facts.mode != private | Mode::RGRP | Mode::WGRP {
         if facts.owner != caller {
             return Err(LockProblem::LegacyModeNotOwner);
@@ -207,6 +211,7 @@ mod tests {
             file_type: FileType::RegularFile,
             single_link: true,
             owner,
+            group: 0,
             mode: mode(bits),
         }
     }
@@ -226,6 +231,26 @@ mod tests {
             verdict(Policy::Private, FOREIGN),
             Err(LockProblem::ForeignOwner)
         );
+    }
+
+    #[test_case(0, 0o600, Ok(Mend::Keep); "old root-only manual lock")]
+    #[test_case(1002, 0o660, Err(LockProblem::InvalidHostMetadata); "old delegated manual lock")]
+    #[test_case(0, 0o660, Err(LockProblem::InvalidHostMetadata); "group-writable root group")]
+    #[test_case(1002, 0o600, Err(LockProblem::InvalidHostMetadata); "private mode wrong group")]
+    #[test_case(0, 0o640, Err(LockProblem::InvalidHostMetadata); "group readable")]
+    #[test_case(0, 0o644, Err(LockProblem::InvalidHostMetadata); "public readable")]
+    fn host_locks_require_the_installed_owner_group_and_mode(
+        group: u32,
+        bits: RawMode,
+        want: Result<Mend, LockProblem>,
+    ) {
+        let mut metadata = facts(0, bits);
+        metadata.group = group;
+        let verdict = lock_verdict(metadata, 0, Policy::Host, Access::ReadWrite);
+        assert_eq!(verdict, want);
+        if let Err(problem) = verdict {
+            assert!(problem.to_string().contains("reboot"));
+        }
     }
 
     #[test_case(0o644; "world readable")]

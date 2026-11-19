@@ -159,12 +159,12 @@ fn open_lock(
         errno => io_error(path, Operation::Open, errno),
     };
     let read_write = match open(OFlags::RDWR) {
+        Err(Errno::NOENT) if policy == Policy::Host => {
+            return Err(Error::NotProvisioned {
+                path: path.to_owned(),
+            });
+        }
         Err(Errno::NOENT) => {
-            if policy == Policy::Host && !geteuid().is_root() {
-                return Err(Error::NotProvisioned {
-                    path: path.to_owned(),
-                });
-            }
             let create = OFlags::RDWR | OFlags::CREATE | OFlags::EXCL;
             match openat(directory, name, base | create, Mode::RUSR | Mode::WUSR) {
                 Err(Errno::EXIST) => open(OFlags::RDWR),
@@ -189,6 +189,7 @@ fn secure_lock(file: &File, path: &Path, policy: Policy, access: Access) -> Resu
         file_type: FileType::from_raw_mode(stat.st_mode),
         single_link: stat.st_nlink == 1,
         owner: stat.st_uid,
+        group: stat.st_gid,
         mode: Mode::from_raw_mode(stat.st_mode),
     };
     match lock_verdict(facts, geteuid().as_raw(), policy, access) {

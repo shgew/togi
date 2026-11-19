@@ -8,10 +8,7 @@ use rustix::fs::Mode;
 pub enum Error {
     #[error("another togi process holds the host lock {}", path.display())]
     Busy { path: PathBuf },
-    #[error(
-        "host lock {} does not exist and only root may create it: root must provision it",
-        path.display()
-    )]
+    #[error("host lock {} is missing: enable the togi NixOS module and reboot", path.display())]
     NotProvisioned { path: PathBuf },
     #[error(
         "host lock {}: directory {} (uid {uid}, mode {mode:o}) {problem}",
@@ -55,6 +52,10 @@ pub enum LockProblem {
     LegacyModeNotOwner,
     #[error("is opened read-only, which is not delegated access")]
     ReadOnly,
+    #[error(
+        "must be root:root with mode 0600: reboot into the system with the togi NixOS module enabled"
+    )]
+    InvalidHostMetadata,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
