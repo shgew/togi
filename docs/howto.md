@@ -61,7 +61,7 @@ mprime and y-cruncher come from the host's `nixpkgs`. Updating one of them, for 
 
 The NixOS module creates one root-only [host lock](spec/runtime.md#host-lock), `/run/lock/togi.lock`, before the tuning and day services start. `run`, `reset` and the root-only [hardware tests](development.md#rust-test-execution) share it. A busy lock exits 3. Never delete the lock to unblock it: another process can still hold the old inode, allowing two owners.
 
-If the lock is missing or refused, boot into the system with the module enabled. A fresh boot recreates `/run` and its lock. On macOS, only `reset` of a copied journal uses a [separate private lock](spec/runtime.md#host-lock); hardware tuning remains Linux-only.
+Use `sudo` to reset on Linux. On macOS, `reset` of a copied journal can run without root using its [separate private lock](spec/runtime.md#host-lock); hardware tuning remains Linux-only.
 
 ## 2. Rebuild, then boot fresh
 

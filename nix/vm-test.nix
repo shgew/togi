@@ -165,7 +165,7 @@ let
         contention_boot = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip()
         contention_inode = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
         contention_state = machine.succeed("find /var/lib/togi -type f -exec sha256sum {} + | sort")
-        machine.succeed("grub-set-default 'NixOS - togi'")
+        machine.succeed("grub-set-default 'NixOS - togi'; chmod 0644 /run/lock/togi.lock")
         machine.succeed(
             "systemd-run --unit=togi-test-holder --property=Type=exec /bin/sh -c "
             "'set -e; exec 9</run/lock/togi.lock; ${pkgs.util-linux}/bin/flock --exclusive 9; "
@@ -307,8 +307,8 @@ let
       '';
     };
 
-    # The boot-provisioned lock must retain its inode and mode across contention, and opening
-    # it as root must refuse foreign ownership and legacy permissions without changing the inode.
+    # The installed binary refuses foreign locks, tightens root-owned locks without changing
+    # the inode or breaking contention, and can reach emergency recovery after loss of the lock.
     host-lock = {
       name = "togi-host-lock";
 
@@ -360,14 +360,15 @@ let
         assert stat(lock, "%d:%i:%u:%g:%a") == foreign_identity
         machine.succeed(f"test ! -e /tmp/foreign-lock-state; chown root {lock}")
 
-        for mode in ["640", "644", "660"]:
-            machine.succeed(f"chmod {mode} {lock}; systemd-tmpfiles --create --prefix={lock}")
-            output = exits("togi --state-dir /tmp/legacy-lock-state reset --all", 1)
-            assert "reboot into the system with the togi NixOS module enabled" in output, output
+        # The group is not checked or changed, and the holder stays on the same inode.
+        for group, mode in [("root", "640"), ("root", "644"), ("root", "660"), ("users", "600"), ("users", "660")]:
+            machine.succeed(f"chgrp {group} {lock}; chmod {mode} {lock}; systemd-tmpfiles --create --prefix={lock}")
+            assert stat(lock, "%U:%G:%a") == f"root:{group}:{mode}"
+            exits("togi --state-dir /tmp/legacy-lock-state reset --all", 3)
             assert stat(lock, "%d:%i") == lock_identity
-            assert stat(lock, "%a") == mode
+            assert stat(lock, "%U:%G:%a") == f"root:{group}:600"
             machine.succeed("test ! -e /tmp/legacy-lock-state")
-        machine.succeed(f"chmod 0600 {lock}")
+        machine.succeed(f"chgrp root {lock}")
         for state_dir in ["/tmp/host-lock-state-a", "/tmp/host-lock-state-b"]:
             exits(f"togi --state-dir {state_dir} reset --all", 3)
             machine.succeed(f"test ! -e {state_dir}")
@@ -380,6 +381,20 @@ let
         assert stat(lock, "%d:%i") == lock_identity
         assert stat(lock, "%U:%G:%a") == "root:root:600"
         assert machine.succeed(f"cat {lock}") == "retained"
+
+        # Without an SMU driver the hook fails after acquisition, not at the lock.
+        machine.succeed(f"chmod 0644 {lock}")
+        output = exits("togi emergency-stop", 1)
+        assert "host lock" not in output, output
+        assert stat(lock, "%d:%i") == lock_identity
+        assert stat(lock, "%U:%G:%a") == "root:root:600"
+        assert machine.succeed(f"cat {lock}") == "retained"
+
+        machine.succeed(f"rm {lock}")
+        output = exits("togi emergency-stop", 1)
+        assert "host lock" not in output, output
+        assert stat(lock, "%U:%G:%a") == "root:root:600"
+        assert stat(lock, "%h") == "1"
       '';
     };
 

@@ -121,7 +121,8 @@ in
             StateDirectory = "togi";
           };
           # A killed process cannot run its journaled stop transaction. This hook has only zero
-          # authority and does not need the journal; lock/identity/topology refusals still stand.
+          # authority and does not need the journal. It can recover a missing or legacy lock
+          # under the usual host-lock rule; a busy or unsafe lock still prevents any write.
           postStop = ''
             [ "''${SERVICE_RESULT:-}" != success ] || exit 0
             exec ${lib.getExe cfg.package} emergency-stop
@@ -265,8 +266,8 @@ in
               StateDirectory = "togi";
             };
             # An abnormal exit, whatever its status, may leave workloads and offsets applied through RestartSec, so
-            # only a success skips the hook. `togi emergency-stop` takes the host lock and validates the SMU before
-            # it writes, so a contended lock or an unsupported host exits with offsets untouched.
+            # only a success skips the hook. `togi emergency-stop` uses the same host-lock rule (including repair)
+            # and validates the SMU before it writes; a busy or unsafe lock or an unsupported host prevents any write.
             postStop = ''
               [ "''${SERVICE_RESULT:-}" != success ] || exit 0
               exec ${lib.getExe cfg.package} emergency-stop

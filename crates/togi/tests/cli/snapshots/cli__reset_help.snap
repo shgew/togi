@@ -6,7 +6,7 @@ Archive the whole session
 
 Archive the whole session, so the next run starts a new one. The reset is a permanent boundary: the new session imports no record from the archived session or anything before it.
 
---all archives a journal of any ruleset, schema or evidence epoch, but on a journal of the same schema refuses an unknown event kind or field; install the build that wrote them. Only one run or reset can own this machine, even with different state directories. A busy host lock stops reset before it changes the session.
+--all archives a journal of any ruleset, schema or evidence epoch, but on a journal of the same schema refuses an unknown event kind or field; install the build that wrote them. Only one run or reset can own this machine, even with different state directories. A busy host lock stops reset before it changes the session. On Linux, reset needs root to take the host lock.
 
 Usage: togi reset [OPTIONS] --all
 

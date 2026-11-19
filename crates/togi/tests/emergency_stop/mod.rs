@@ -17,6 +17,7 @@ use std::rc::Rc;
 
 use support::{Host, Ran};
 use togi_cli::Exit;
+use togi_hostlock::Policy;
 use togi_machine::{
     BiosContext, BootId, CancellationToken, Check, CoreId, CoreInfo, CoreRank, Error,
     FrequencyJournal, Host as MachineHost, Machine, Partial, Running, SmuValidated, Stopped, Swept,
@@ -237,6 +238,26 @@ impl Rig {
             "emergency-stop created the state directory"
         );
     }
+
+    fn assert_swept_and_zeroed(&self, ran: &Ran) {
+        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+        assert_eq!(ran.out, "");
+        assert_eq!(
+            ran.err,
+            format!(
+                "togi emergency-stop: trial scopes: simulated machine has no leftover trial scopes\n{}togi emergency-stop: every core read back 0 (16 cores)\n",
+                readbacks(|number| format!("core {number:02} read back 0")),
+            )
+        );
+        let mut expected = vec!["sweep".to_owned(), "set-all".to_owned()];
+        expected.extend((0..CORES).map(|number| format!("read {number:02}")));
+        assert_eq!(self.ops(), expected);
+        assert_eq!(self.offsets(), vec![0; usize::from(CORES)]);
+        assert!(
+            !self.host.exists(&self.state),
+            "emergency-stop created the state directory"
+        );
+    }
 }
 
 fn readbacks(text: impl Fn(u8) -> String) -> String {
@@ -250,24 +271,66 @@ fn readbacks(text: impl Fn(u8) -> String) -> String {
 #[test]
 fn a_stop_sweeps_then_zeroes_every_core_and_reads_each_back() {
     let rig = Rig::new();
+    rig.assert_swept_and_zeroed(&rig.run());
+}
+
+#[test_case::test_case(None; "missing lock")]
+#[test_case::test_case(Some(0o644); "legacy lock")]
+fn real_fs_emergency_stop_recovers_missing_or_legacy_host_locks_as_root(mode: Option<u32>) {
+    let mut rig = Rig::new();
+    let mut host = Host::real();
+    host.lock_policy = Policy::Host;
+    *host.machine.borrow_mut() = rig.host.machine.borrow_mut().take();
+    rig.state = host.lock.with_file_name("state");
+    rig.host = host;
+    let path = &rig.host.lock;
+    fs::set_permissions(path.parent().unwrap(), Permissions::from_mode(0o700)).unwrap();
+    let before = mode.map(|mode| {
+        fs::write(path, "retained").unwrap();
+        fs::set_permissions(path, Permissions::from_mode(mode)).unwrap();
+        let meta = fs::symlink_metadata(path).unwrap();
+        (meta.dev(), meta.ino())
+    });
+
     let ran = rig.run();
-    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-    assert_eq!(ran.out, "");
-    assert_eq!(
-        ran.err,
-        format!(
-            "togi emergency-stop: trial scopes: simulated machine has no leftover trial scopes\n{}togi emergency-stop: every core read back 0 (16 cores)\n",
-            readbacks(|number| format!("core {number:02} read back 0")),
-        )
-    );
-    let mut expected = vec!["sweep".to_owned(), "set-all".to_owned()];
-    expected.extend((0..CORES).map(|number| format!("read {number:02}")));
-    assert_eq!(rig.ops(), expected);
-    assert_eq!(rig.offsets(), vec![0; usize::from(CORES)]);
-    assert!(
-        !rig.host.exists(&rig.state),
-        "emergency-stop created the state directory"
-    );
+    assert_eq!(rig.host.lock_acquisitions.get(), 1);
+    if rustix::process::geteuid().is_root() {
+        rig.assert_swept_and_zeroed(&ran);
+        let meta = fs::symlink_metadata(path).unwrap();
+        assert!(meta.is_file());
+        assert_eq!(meta.uid(), 0);
+        assert_eq!(meta.nlink(), 1);
+        assert_eq!(meta.mode() & 0o7777, 0o600);
+        if let Some(identity) = before {
+            assert_eq!((meta.dev(), meta.ino()), identity);
+            assert_eq!(fs::read_to_string(path).unwrap(), "retained");
+        }
+    } else {
+        // This test's simulated root does not grant the process filesystem privileges.
+        // The installed binary's success at this acquisition is also covered in the VM.
+        assert_eq!(ran.exit, Exit::Error);
+        assert_eq!(ran.out, "");
+        let problem = if let Some(mode) = mode {
+            let meta = fs::symlink_metadata(path).unwrap();
+            assert_eq!(Some((meta.dev(), meta.ino())), before);
+            assert_eq!(meta.mode() & 0o7777, mode);
+            assert_eq!(fs::read_to_string(path).unwrap(), "retained");
+            "is owned by another user"
+        } else {
+            assert!(!path.exists());
+            "does not exist and only root may create it"
+        };
+        assert_eq!(
+            ran.err,
+            format!(
+                "togi emergency-stop: host lock {} {problem}; offsets unchanged\n",
+                path.display()
+            )
+        );
+        assert!(rig.unopened());
+        assert_eq!(rig.ops(), Vec::<String>::new());
+        rig.assert_untouched();
+    }
 }
 
 #[test]
