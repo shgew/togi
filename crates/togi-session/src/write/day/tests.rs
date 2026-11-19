@@ -160,6 +160,12 @@ fn a_nonzero_request_zeroes_then_writes_each_core_then_reads_every_core() {
     let events = day.rig.events();
     let chain: Vec<_> = events[1..].iter().map(|event| event.seq).collect();
     assert_eq!(applied.transactions, chain);
+    crate::testing::assert_day_chain(
+        events,
+        &applied.transactions,
+        &applied.target,
+        &applied.readbacks,
+    );
 
     // The zeroing: the write cites its intent and each readback the write.
     assert_eq!(events[2].cause, [events[1].seq]);
