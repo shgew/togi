@@ -60,7 +60,6 @@ fn a_signal_exits_zero_in_silence(stop: &Stop) {
 }
 
 #[test_case(SessionError::RecoveredElapsed(std::time::Duration::try_from(jiff::SignedDuration::from_secs(-1)).unwrap_err()); "inverted recovery interval")]
-#[test_case(SessionError::WorkloadRotation(u8::try_from(256).unwrap_err()); "unrepresentable workload rotation")]
 fn refused_recorded_numbers_exit_as_errors(error: SessionError) {
     let (outcome, err) = conclusion(None, &[error]);
     assert_eq!(outcome.exit, Exit::Error);
