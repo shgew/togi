@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::LocalSet;
 
 use crate::clock::Clock;
-use crate::error::Error;
+use crate::error::{CleanupFailure, Error};
 use crate::os::Os;
 use crate::supervisor::{Env, Handle, TrialCommand, start};
 use crate::sweep;
@@ -276,10 +276,10 @@ impl Task {
     }
 }
 
-/// Ends everything in flight within one shared slot, so dropping the runtime never leaves a
-/// workload running. Every live supervisor is asked to tear down at once, and the registry
-/// abandons any a pending start adds later, so rollbacks and teardowns overlap in the slot.
-/// Whatever is still running at the end of the slot is reported.
+/// Gives everything in flight one shared shutdown slot. Every live supervisor is asked to tear
+/// down at once, and the registry abandons any a pending start adds later, so rollbacks and
+/// teardowns overlap in the slot.
+/// Reports failed joins and work that misses the slot separately.
 async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
     let deadline = tokio::time::Instant::now() + env.timing.stop_bound();
     for task in &tasks {
@@ -287,30 +287,38 @@ async fn contain_all<O: Os>(env: &Env<O>, tasks: Vec<Task>) {
             cancel.cancel();
         }
     }
-    let mut live = env.supervisors.borrow_mut().close();
+    let mut supervisors = env.supervisors.borrow_mut().close();
     for task in tasks {
-        if tokio::time::timeout_at(deadline, task.handle)
-            .await
-            .is_err()
-        {
-            report(&format!(
+        match tokio::time::timeout_at(deadline, task.handle).await {
+            Ok(Ok(())) => {}
+            Ok(Err(source)) => report_failed_join(task.what.into(), source),
+            Err(_) => report(&format!(
                 "a {} was still running when its runner shut down",
                 task.what
-            ));
+            )),
         }
     }
-    live.extend(env.supervisors.borrow_mut().close());
-    for supervised in live {
-        if tokio::time::timeout_at(deadline, supervised.task)
-            .await
-            .is_err()
-        {
-            report(&format!(
+    supervisors.extend(env.supervisors.borrow_mut().close());
+    for supervised in supervisors {
+        match tokio::time::timeout_at(deadline, supervised.task).await {
+            Ok(Ok(())) => {}
+            Ok(Err(source)) => {
+                report_failed_join(format!("teardown of trial {}", supervised.trial), source);
+            }
+            Err(_) => report(&format!(
                 "trial {} was still not torn down when its runner shut down",
                 supervised.trial
-            ));
+            )),
         }
     }
+}
+
+fn report_failed_join(operation: String, source: tokio::task::JoinError) {
+    let error = CleanupFailure::Join { operation, source };
+    report(&format!(
+        "runtime shutdown: {}",
+        togi_machine::error_chain(&error)
+    ));
 }
 
 #[cfg(test)]

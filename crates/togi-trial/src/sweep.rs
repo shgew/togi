@@ -127,7 +127,19 @@ async fn each_scope<O: Os>(
             (scope, outcome, stopped)
         });
     }
-    while let Some(Ok((scope, outcome, stopped))) = calls.join_next().await {
+    while let Some(joined) = calls.join_next().await {
+        let (scope, outcome, stopped) = match joined {
+            Ok(result) => result,
+            Err(source) => {
+                let operation = if stop {
+                    format!("sweep {} and stop", signal.name())
+                } else {
+                    format!("sweep {}", signal.name())
+                };
+                failures.push(CleanupFailure::Join { operation, source });
+                continue;
+            }
+        };
         if let Err(source) = outcome {
             failures.push(CleanupFailure::KillScope {
                 scope: scope.to_string(),
