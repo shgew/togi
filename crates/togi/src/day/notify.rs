@@ -119,7 +119,6 @@ impl PauseNotices {
                 Reply::Questions { .. }
                 | Reply::Controlled { .. }
                 | Reply::Answered
-                | Reply::Recorded { .. }
                 | Reply::Reapplied
                 | Reply::Refused { .. },
             ) => {
@@ -173,7 +172,6 @@ impl PauseNotices {
                                 Reply::Questions { .. }
                                 | Reply::State { .. }
                                 | Reply::Answered
-                                | Reply::Recorded { .. }
                                 | Reply::Reapplied
                                 | Reply::Refused { .. },
                             ) => {
@@ -241,7 +239,6 @@ fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clo
                 Reply::State { .. }
                 | Reply::Controlled { .. }
                 | Reply::Answered
-                | Reply::Recorded { .. }
                 | Reply::Reapplied
                 | Reply::Refused { .. },
             ) => {
@@ -309,7 +306,6 @@ fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clo
                         Reply::Questions { .. }
                         | Reply::State { .. }
                         | Reply::Controlled { .. }
-                        | Reply::Recorded { .. }
                         | Reply::Reapplied
                         | Reply::Refused { .. },
                     ) => {
@@ -542,10 +538,6 @@ mod tests {
             Err(std::io::Error::other("test host has no terminal answer"))
         }
 
-        fn prompt_line(&self) -> std::io::Result<Option<String>> {
-            Err(std::io::Error::other("test host has no terminal input"))
-        }
-
         fn reboot(&self) -> Result<(), togi_hardware::RebootError> {
             panic!("notify does not reboot")
         }
@@ -582,13 +574,12 @@ mod tests {
                 Request::State => Seen::State,
                 Request::Extend(ExtendRequest { revision }) => Seen::Extend(*revision),
                 Request::Answer { boot, answer } => Seen::Answer(boot.clone(), *answer),
-                Request::Record { .. }
-                | Request::Reapply
+                Request::Reapply
                 | Request::AttestStock(_)
                 | Request::Resume
                 | Request::Pause(_)
                 | Request::Freeze(_) => {
-                    panic!("notifier must not request record, reapply or an unconditional pause")
+                    panic!("notifier must not reapply, attest stock or set a pause")
                 }
             });
             if matches!(request, Request::State) {

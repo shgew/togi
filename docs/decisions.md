@@ -52,6 +52,7 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - Permanent stops, sticky vetoes and guarded restoration are rejected; unstable values remain retryable at an increasing cost.
 - Scheduled or shutdown-triggered nights are rejected; only explicit owner-started nights may take over the desktop.
 - Crash questions and a "that was me" annotation are rejected; automatic back-off makes a wrongly blamed crash cheap without another interface.
+- Entering a crash the day service did not observe is rejected; use automatic unclean-end evidence rather than a second source of new crash records. Existing manual records keep their meaning until the fresh-journal cutover.
 - A predictive simulator, fitted machine models and successor scores are rejected; synthetic forecasts cannot decide how the target desktop tunes.
 - Mandatory reproduction nights are rejected; retained failures and the doubling wait suffice without another gate.
 - Old-journal decoding and import after the new loop's cutover are rejected; they preserve superseded policy and compatibility work.

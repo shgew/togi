@@ -45,19 +45,6 @@ module completions {
     --help(-h)                # Print help
   ]
 
-  # Record a crash togi did not observe
-  export extern "togi day record" [
-    --boot: string            # The crashed boot: the ID of a boot with a recorded unclean end
-    --unobserved-at: string   # When a crash happened that has no recorded unclean end
-    --offset: string          # An offset the crashed boot ran: all=N, ccdI=N or coreI=N; repeat for more
-    --entered-at: string      # When the offsets given with --offset were entered in firmware setup
-    --running: string         # What was running: idle, desktop, build, game, other or unknown
-    --note: string            # Free text about what was running
-    --yes                     # Append without asking first at a terminal
-    --state-dir: directory    # State directory
-    --help(-h)                # Print help (see more with '--help')
-  ]
-
   # Keep every core at stock until the next cold boot or a deadline
   export extern "togi day pause" [
     --until: string           # Pause until the next occurrence of this local time (HH:MM)
@@ -98,10 +85,6 @@ module completions {
 
   # Reapply the committed profile after system resume; used by the system sleep hook
   export extern "togi day help reapply" [
-  ]
-
-  # Record a crash togi did not observe
-  export extern "togi day help record" [
   ]
 
   # Keep every core at stock until the next cold boot or a deadline
@@ -207,10 +190,6 @@ module completions {
 
   # Reapply the committed profile after system resume; used by the system sleep hook
   export extern "togi help day reapply" [
-  ]
-
-  # Record a crash togi did not observe
-  export extern "togi help day record" [
   ]
 
   # Keep every core at stock until the next cold boot or a deadline

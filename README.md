@@ -45,7 +45,6 @@ sudo togi run                          # foreground tuning with event lines; nee
 sudo togi night                        # GRUB: confirm stock stability, remember the day's selection and reboot into tuning
 sudo togi day                          # apply permitted D and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
-sudo togi day record                   # record a missed crash through the live service; no stop needed
 togi day pause                         # verify stock until the next cold boot
 togi day pause 3h                      # or use --until 18:30; timed pauses survive restart and reboot
 togi day resume                        # end the pause and verify the still-permitted committed D

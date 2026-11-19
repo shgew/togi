@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
@@ -463,27 +461,6 @@ pub enum Running {
 }
 
 impl Running {
-    pub const ALL: [Self; 6] = [
-        Self::Idle,
-        Self::Desktop,
-        Self::Build,
-        Self::Game,
-        Self::Other,
-        Self::Unknown,
-    ];
-
-    /// The category as the journal and the command line name it.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Idle => "idle",
-            Self::Desktop => "desktop",
-            Self::Build => "build",
-            Self::Game => "game",
-            Self::Other => "other",
-            Self::Unknown => "unknown",
-        }
-    }
-
     /// What the category says, as a phrase.
     pub const fn meaning(self) -> &'static str {
         match self {
@@ -549,8 +526,7 @@ impl From<RecordedOffsets> for PerCore<ObservedOffset> {
 }
 
 object_only! {
-    /// A crash togi did not observe, recorded with `togi day record`. The envelope's boot is the one it was
-    /// recorded in.
+    /// A historical manual crash record. The envelope's boot is the one it was recorded in.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct DayRecord {
@@ -562,13 +538,6 @@ object_only! {
         /// Free text about what was running.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub note: Option<String>,
-    }
-}
-
-impl DayRecord {
-    /// What Ruleset 13 will do with the record, in words, so the user reads it before it is appended.
-    pub fn effect(&self) -> String {
-        super::message::day_record_effect(self)
     }
 }
 
@@ -606,18 +575,6 @@ object_only! {
         pub state: PauseState,
         pub source: PauseSource,
     }
-}
-
-/// An unclean end a crash record can name.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecordableEnd {
-    pub end: DayUncleanEnd,
-    /// When the observer of that boot last read its offsets back: its last `day.boot_start`,
-    /// `day.offsets_changed` or `day.checkpoint`. A checkpoint counts because the observer read the offsets
-    /// and found them unchanged.
-    pub read_back: Option<Timestamp>,
-    /// The first `day.record` that names this boot.
-    pub recorded: Option<Seq>,
 }
 
 /// The latest raw observation of one day boot.
@@ -777,67 +734,5 @@ impl DayIntervals {
             .iter_mut()
             .rev()
             .find(|known| known.boot == *boot)
-    }
-}
-
-/// The unclean ends a crash record can name, folded from the journal.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct DayCrashes {
-    ends: Vec<RecordableEnd>,
-    last_read: BTreeMap<BootId, Timestamp>,
-}
-
-impl DayCrashes {
-    pub fn of(events: &[Event]) -> Self {
-        let mut crashes = Self::default();
-        for event in events {
-            crashes.apply(event);
-        }
-        crashes
-    }
-
-    /// Folds one event, in journal order. An unclean end opens one entry per boot; the first record naming it
-    /// marks it recorded.
-    pub fn apply(&mut self, event: &Event) {
-        if matches!(
-            event.payload,
-            Payload::DayBootStart(_) | Payload::DayOffsetsChanged(_) | Payload::DayCheckpoint(_)
-        ) {
-            self.last_read.insert(event.boot.clone(), event.time);
-        }
-        if let Payload::DayUncleanEnd(end) = &event.payload
-            && self.get(&end.boot).is_none()
-        {
-            self.ends.push(RecordableEnd {
-                end: end.clone(),
-                read_back: self.last_read.get(&end.boot).copied(),
-                recorded: None,
-            });
-        }
-        if let Payload::DayRecord(record) = &event.payload
-            && let CrashedBoot::UncleanEnd { boot } = &record.boot
-            && let Some(named) = self.ends.iter_mut().find(|named| named.end.boot == *boot)
-            && named.recorded.is_none()
-        {
-            named.recorded = Some(event.seq);
-        }
-    }
-
-    /// Every unclean end, in journal order.
-    pub fn ends(&self) -> &[RecordableEnd] {
-        &self.ends
-    }
-
-    /// The unclean end of `boot`.
-    pub fn get(&self, boot: &BootId) -> Option<&RecordableEnd> {
-        self.ends.iter().find(|named| named.end.boot == *boot)
-    }
-
-    /// The newest unclean end no record names yet.
-    pub fn newest_unrecorded(&self) -> Option<&RecordableEnd> {
-        self.ends
-            .iter()
-            .rev()
-            .find(|named| named.recorded.is_none())
     }
 }

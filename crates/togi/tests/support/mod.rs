@@ -119,22 +119,14 @@ pub struct Host {
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
     pub day_answers: RefCell<Vec<(togi_machine::BootId, togi_journal::DayAnswerKind)>>,
-    /// What a running day service answers a crash record with, once; `None` means no service runs unless
-    /// `day_journal` holds one.
+    /// An override for the next reply from the day service to a control request.
     pub day_service:
         RefCell<Option<Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error>>>,
-    /// The live journal of a running day service, which answers crash records the way the service does.
+    /// The running day service's live journal, used by stock-attestation tests.
     pub day_journal: RefCell<Option<togi_journal::Journal>>,
-    /// The crash records handed to the day service, with the session each was drafted from.
-    pub day_records: RefCell<Vec<(togi_journal::SessionId, togi_journal::DayRecord)>>,
-    /// What happens to the machine while a crash record is on its way to the day service, once.
-    pub day_meanwhile: RefCell<Option<Box<dyn FnOnce()>>>,
     /// Socket controls received from the rootless CLI, with a fixed authenticated test uid.
     pub day_controls: RefCell<Vec<togi_cli::day::socket::Control>>,
     pub day_status: RefCell<togi_cli::day::socket::ControlStatus>,
-    /// Whether stdin and stderr are terminals, and the lines typed at them.
-    pub terminal: Cell<bool>,
-    pub typed: RefCell<std::collections::VecDeque<String>>,
     /// Whether a second claim on the host lock was refused as busy while `diagnose` ran; `None`
     /// when it did not run as root.
     pub lock_busy_in_diagnose: Cell<Option<bool>>,
@@ -179,16 +171,12 @@ impl Host {
             day_answers: RefCell::default(),
             day_service: RefCell::new(None),
             day_journal: RefCell::new(None),
-            day_records: RefCell::default(),
-            day_meanwhile: RefCell::new(None),
             day_controls: RefCell::default(),
             day_status: RefCell::new(togi_cli::day::socket::ControlStatus {
                 pause: togi_journal::PauseState::Running {},
                 frozen: false,
                 revision: None,
             }),
-            terminal: Cell::new(false),
-            typed: RefCell::default(),
             lock_busy_in_diagnose: Cell::new(None),
             machine: RefCell::new(None),
             topology: vec![togi_machine::CoreInfo {
@@ -372,43 +360,6 @@ impl System for Host {
             Request::Answer { boot, answer } => {
                 self.day_answers.borrow_mut().push((boot.clone(), *answer));
                 Ok(Reply::Answered)
-            }
-            Request::Record { session, record } => {
-                self.day_records
-                    .borrow_mut()
-                    .push((*session, record.clone()));
-                if let Some(meanwhile) = self.day_meanwhile.borrow_mut().take() {
-                    meanwhile();
-                }
-                if let Some(journal) = self.day_journal.borrow_mut().as_mut() {
-                    let reply = togi_cli::day::socket::respond(
-                        journal,
-                        &togi_cli::system::SystemClock(self),
-                        0,
-                        Request::Record {
-                            session: *session,
-                            record: record.clone(),
-                        },
-                        &mut |_, _, _| panic!("a crash record must not control the day"),
-                    )
-                    .unwrap();
-                    return match reply {
-                        Reply::Refused { reason } => {
-                            Err(togi_cli::day::socket::Error::Refused(reason))
-                        }
-                        Reply::Questions { .. }
-                        | Reply::Answered
-                        | Reply::Recorded { .. }
-                        | Reply::State { .. }
-                        | Reply::Controlled { .. }
-                        | Reply::Reapplied => Ok(reply),
-                    };
-                }
-                self.day_service.borrow_mut().take().unwrap_or_else(|| {
-                    Err(togi_cli::day::socket::Error::Absent(io::Error::from(
-                        io::ErrorKind::NotFound,
-                    )))
-                })
             }
             Request::Reapply | Request::AttestStock(_) => Err(
                 togi_cli::day::socket::Error::Absent(io::Error::from(io::ErrorKind::NotFound)),
@@ -615,11 +566,7 @@ impl System for Host {
     }
 
     fn interactive(&self) -> bool {
-        self.terminal.get()
-    }
-
-    fn prompt_line(&self) -> io::Result<Option<String>> {
-        Ok(self.typed.borrow_mut().pop_front().map(|line| line + "\n"))
+        false
     }
 
     fn stderr(&self) -> Box<dyn Write> {
