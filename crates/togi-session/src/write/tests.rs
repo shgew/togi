@@ -2,7 +2,9 @@ use std::cell::Cell;
 use std::rc::Rc;
 use test_case::test_case;
 
-use togi_journal::{DeadEndCondition, Payload, SmuOp};
+use togi_journal::{
+    DeadEndCondition, Event, Payload, ProfileApplied, Seq, SmuCommand, SmuOp, SmuReadback,
+};
 use togi_machine::{Condition, CoreId, Error, ObservedOffset, PerCore, TargetOffset};
 use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
@@ -75,22 +77,49 @@ impl Rig {
     }
 }
 
+fn assert_set_chain(events: &[Event], core: CoreId, target: TargetOffset, receipt: Seq) {
+    let [intent, write, readback] = events else {
+        panic!("expected intent, write and readback, got {events:?}");
+    };
+    let Payload::SmuIntent(record) = &intent.payload else {
+        panic!("expected a write intent, got {:?}", intent.payload);
+    };
+    let command = SmuCommand::Set {
+        core,
+        offset: target,
+    };
+    assert_eq!(record.command(), command);
+    let Payload::SmuWrite(record) = &write.payload else {
+        panic!("expected a write, got {:?}", write.payload);
+    };
+    assert_eq!(record.command(), command);
+    assert_eq!(write.cause, [intent.seq]);
+    assert_eq!(
+        readback.payload,
+        Payload::SmuReadback(SmuReadback {
+            core,
+            offset: target.observed(),
+            expected: Some(target),
+        })
+    );
+    assert_eq!(readback.cause, [write.seq]);
+    assert_eq!(readback.seq, receipt);
+}
+
 #[test]
 fn a_write_is_intent_then_write_then_readback() {
     let mut rig = Rig::new(4);
     rig.start_at_zero();
-    let start = rig.kinds().len();
+    let start = rig.events().len();
     let verified = rig.set(0, -10).unwrap();
+    let [receipt] = verified.readbacks() else {
+        panic!("expected one readback receipt, got {verified:?}");
+    };
+    assert_set_chain(&rig.events()[start..], core(0), target(-10), *receipt);
     assert_eq!(
-        rig.kinds()[start..],
-        ["smu.intent", "smu.write", "smu.readback"]
+        [rig.offset(0), rig.offset(1), rig.offset(2), rig.offset(3)],
+        [-10, 0, 0, 0]
     );
-    let events = &rig.events()[start..];
-    assert_eq!(events[1].cause, [events[0].seq]);
-    assert_eq!(events[2].cause, [events[1].seq]);
-    assert_eq!(verified.readbacks(), [events[2].seq]);
-    assert_eq!(verified.targets(), [(core(0), target(-10))]);
-    assert_eq!(rig.offset(0), -10);
     assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Known(target(-10))));
     assert_fold_consistent(&rig.appender);
 }
@@ -125,18 +154,31 @@ fn a_profile_zeroes_an_unknown_machine_then_writes_shallower_before_deeper() {
     let mut rig = Rig::new(4);
     rig.put(&[-30, -20, -10, -30]).unwrap();
     assert_eq!(rig.intents()[0], (None, 0));
-    let start = rig.intents().len();
-    let verified = rig.put(&[-31, -19, -11, -29]).unwrap();
-    let steps: Vec<_> = rig.intents()[start..]
-        .iter()
-        .map(|(core, offset)| (core.unwrap().get(), *offset))
-        .collect();
-    assert_eq!(steps, [(1, -19), (3, -29), (0, -31), (2, -11)]);
-    let record = verified.profile().unwrap();
-    let event = rig.appender.journal().event(record).unwrap();
-    assert_eq!(event.kind().as_str(), "profile.applied");
+    let start = rig.events().len();
+    let offsets = [-31, -19, -11, -29];
+    let verified = rig.put(&offsets).unwrap();
+    let [chain @ .., event] = &rig.events()[start..] else {
+        panic!("missing the profile transaction");
+    };
+    assert_eq!(
+        event.payload,
+        Payload::ProfileApplied(ProfileApplied {
+            offsets: profile(&offsets),
+            condition: Condition::Together,
+        })
+    );
     assert_eq!(event.cause, verified.readbacks());
     assert_eq!(verified.readbacks().len(), 4);
+    let steps = [(1, -19), (3, -29), (0, -31), (2, -11)];
+    assert_eq!(chain.len(), steps.len() * 3);
+    let (chains, _) = chain.as_chunks::<3>();
+    for ((events, (id, offset)), &receipt) in chains.iter().zip(steps).zip(verified.readbacks()) {
+        assert_set_chain(events, core(id), target(offset), receipt);
+    }
+    assert_eq!(
+        [rig.offset(0), rig.offset(1), rig.offset(2), rig.offset(3)],
+        offsets
+    );
     assert_fold_consistent(&rig.appender);
 }
 

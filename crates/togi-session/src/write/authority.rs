@@ -1,7 +1,6 @@
 use togi_journal::{Seq, SmuCommand, SmuIntentReceipt};
 use togi_machine::{
-    CancellationToken, CoreId, Error, FrequencyJournal, Partial, Running, Smu, Stopped,
-    TargetOffset, TrialSpec, Trials,
+    CancellationToken, Error, FrequencyJournal, Partial, Running, Smu, Stopped, TrialSpec, Trials,
 };
 
 /// Proof that every command of a transaction reached the machine and its readbacks agreed. Only the write
@@ -9,38 +8,16 @@ use togi_machine::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Verified {
     readbacks: Vec<Seq>,
-    targets: Vec<(CoreId, TargetOffset)>,
-    profile: Option<Seq>,
 }
 
 impl Verified {
-    pub(super) const fn new(
-        readbacks: Vec<Seq>,
-        targets: Vec<(CoreId, TargetOffset)>,
-        profile: Option<Seq>,
-    ) -> Self {
-        Self {
-            readbacks,
-            targets,
-            profile,
-        }
+    pub(super) const fn new(readbacks: Vec<Seq>) -> Self {
+        Self { readbacks }
     }
 
     /// The `smu.readback` events that confirmed it, oldest first.
     pub(crate) fn readbacks(&self) -> &[Seq] {
         &self.readbacks
-    }
-
-    /// The offsets confirmed, by core.
-    #[cfg(test)]
-    pub(crate) fn targets(&self) -> &[(CoreId, TargetOffset)] {
-        &self.targets
-    }
-
-    /// The `profile.applied` or `profile.restored` that recorded a profile transaction.
-    #[cfg(test)]
-    pub(crate) const fn profile(&self) -> Option<Seq> {
-        self.profile
     }
 }
 
