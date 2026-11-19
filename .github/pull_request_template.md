@@ -17,6 +17,6 @@
 
 **Blast Radius:** <!-- one word -->
 
-<!-- Name affected behavior or safety invariants. If existing journals become unreadable or recorded decisions unrepeatable, say which SCHEMA or RULESET changed and that old journals are refused. Before 1.0, no breaking title/label or new changelog fragment. Map every removed/narrowed test assertion to its surviving proof or approved retirement. -->
+<!-- Name affected behavior or safety invariants. If existing journals become unreadable or recorded decisions unrepeatable, say which SCHEMA or RULESET changed and that old journals are refused. Follow the pre-1.0 delivery rules in AGENTS.md (Keeping docs current). Map every removed/narrowed test assertion to its surviving proof or approved retirement. -->
 
 <!-- Closes #N only when all Acceptance is met; otherwise Refs #N. Omit for a direct request without an issue. -->

@@ -71,17 +71,18 @@ The NixOS tuning specialisation requires GRUB. `sudo togi night` selects it pers
 
 [docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists operator-facing commands, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 
+Before 1.0, the target desktop installs the flake's default package from `main` when the owner chooses to update. The [changelog](CHANGELOG.md) and existing tags are historical records, not a release schedule.
+
 ## Documentation
 
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
 |[docs/how-togi-tunes.md](docs/how-togi-tunes.md)|Two-ends tuning: nights and days, D/C/U, holds, campaign allowance and history|
-|[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
+|[Build identity](docs/development.md#build-identity)|The version and revision reported by each build|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, and writing a run's retro|
 |[docs/benchmarking.md](docs/benchmarking.md)|Comparing scripted journals and auditing recorded sessions|
-|[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, profiles, nights and days, D, S and U|
 |[docs/spec/tuner-ruleset14.md](docs/spec/tuner-ruleset14.md)|The normative Ruleset 14 policy; [Ruleset 13 history and retained contracts](docs/spec/tuner.md)|
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
@@ -103,7 +104,7 @@ Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General
 
 ## Development
 
-Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv; recipes that run cargo or `gh` stop with that hint outside it. `just test` is the tight loop. `just gate` checks formatting, lint, the other supported platform through clippy, the NixOS module's evaluation, changelog fragments, local nextest checks, doc tests, cargo-deny's bans, licenses and sources, cargo-shear, and the board, coverage-selection and SQL fixtures. `just push-fix` runs the review-fix checks. These commands and `just check` skip CI-tier checks on every host; `just vm [names]` opts into VM builds on Linux with writable KVM. PR CI gates landing on `main` and the release dispatches every Linux flake check, including the CI tier ([check tiers](docs/development.md#shell-and-checks)). `just check-main` dispatches and follows that full run; `just check` builds every local-tier flake check, including `package` and cargo-deny's advisory audit beyond the gate. Run `just` to list recipes; [Development](docs/development.md#shell-and-checks) owns the check ladder and tiers.
+Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv; recipes that run Cargo or `gh` stop with that hint outside it. `just test` is the tight loop. `just gate` runs the local checks required before pushing, and `just push-fix` runs the review-fix checks. Both skip CI-tier checks, as does `just check`. PR CI gates landing on `main` and selects every Linux flake check, including the CI tier. `just check-main` dispatches and follows the same full check set on `main`; `just check` builds every local-tier flake check, including `package` and cargo-deny's advisory audit beyond the gate. Use `just vm [names]` to opt into VM checks on Linux with writable KVM. Run `just` to list recipes; [Development](docs/development.md#shell-and-checks) owns the check ladder and tiers.
 
 `just sim` runs the real session on a scripted fake without hardware. The on-demand `just same` and `just smoke` compare normalized journal bytes for five and two named mechanics cases, respectively, under scripted input contract v1. Neither predicts tuning results. Use `just recovery` for all eight recovery partitions; see [development checks](docs/development.md#safety-evidence-ledger).
 
@@ -120,4 +121,4 @@ or run `cachix use togi` as a user listed in `trusted-users`. After changing the
 
 Hardware tests run as root and share the [host lock](docs/spec/runtime.md#host-lock) that the NixOS module creates for `run` and `reset`.
 
-togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS you can build, test, simulate, replay recordings, and read a copied journal with `status` or a redirected `watch`. Hardware runs and live watching require Linux. [CI runs only on Linux](docs/development.md#ci-and-release-gates).
+togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS you can build, test, simulate, replay recordings, and read a copied journal with `status` or a redirected `watch`. Hardware runs and live watching require Linux. [CI runs only on Linux](docs/development.md#ci-checks).
