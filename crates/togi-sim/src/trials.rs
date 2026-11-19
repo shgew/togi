@@ -1,5 +1,5 @@
-//! Simulated trials: no process runs; a trial's outcome is a recorded fact if the replay has one, else a
-//! scripted outcome, else the earliest of the model's competing exponential failure draws.
+//! Simulated trials: answers from a typed mechanics script or the fitted model's facts, scripts
+//! and draws. Both use the same trial, clock, reset and evidence machinery.
 
 use rand::RngExt;
 use rand::rngs::StdRng;
@@ -8,14 +8,16 @@ use std::time::Duration;
 use togi_machine::{
     CancellationToken, Condition, ContentId, CoreId, CoreSet, CpuId, Error, FrequencyJournal,
     LoadSchedule, Partial, Regime, Reporter, ResetKind, Running, Signal, Started, Stopped, Swept,
-    TargetOffset, TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials, WorkloadId,
+    TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 
+use crate::Model;
 use crate::hazard::{HazardSource, Load, SourceKind};
 use crate::random::{Domain, stream, text_part};
-use crate::replay::ReplayOutcome;
+use crate::replay::{Replay, ReplayOutcome};
 use crate::runtime::{ArithmeticError, PendingMce, Runtime, Shared};
 use crate::samples::LastTrial;
+use crate::source::{MachineSource, TrialOutcome};
 use crate::vocab::regime_key;
 
 const BURST: Duration = Duration::from_millis(100);
@@ -335,6 +337,71 @@ impl Failure {
     }
 }
 
+struct PlannedFailure {
+    at: Duration,
+    effect: Effect,
+}
+
+enum Effect {
+    Backend {
+        core: CoreId,
+        signal: Signal,
+    },
+    Corrected {
+        mce: PendingMce,
+        ran: Duration,
+    },
+    Crash {
+        reset: Option<ResetKind>,
+        stalled: Option<CoreId>,
+        mce: Option<PendingMce>,
+        report: CrashReport,
+    },
+}
+
+enum CrashReport {
+    Progress,
+    RecordedProgress,
+    Signal(CoreId, Signal),
+    Uncorrected(CoreId, &'static str),
+    Quiet,
+}
+
+impl CrashReport {
+    fn report(self, spec: &TrialSpec, result: &TrialResult, events: &mut Vec<Event>) {
+        match self {
+            Self::Progress => {}
+            Self::RecordedProgress => events.push(Event::Progress(
+                "simulated replayed crash at recorded exposure".to_owned(),
+            )),
+            Self::Signal(core, signal) => events.push(Event::Signal(
+                core,
+                signal,
+                format!("simulated {} on core {core}", signal.as_str()),
+            )),
+            Self::Uncorrected(core, detail) => {
+                events.push(Event::Signal(
+                    core,
+                    Signal::UncorrectedMce,
+                    detail.to_owned(),
+                ));
+                return;
+            }
+            Self::Quiet => return,
+        }
+        progress(spec, result, events);
+    }
+}
+
+const fn load_store_mce(core: CoreId) -> PendingMce {
+    PendingMce {
+        core,
+        bank: 0,
+        bank_type: togi_machine::BankType::LoadStore,
+        corrected: false,
+    }
+}
+
 const fn condition_index(condition: Condition) -> u64 {
     match condition {
         Condition::Alone => 0,
@@ -387,9 +454,15 @@ impl Runtime {
 
     fn run(&mut self, spec: &TrialSpec, escape: bool) -> Result<Outcome, Error> {
         let load = load_of(spec);
-        let planned = self
-            .plan(spec, &load, &self.regs)
-            .map_err(|error| Error::Other(Box::new(error)))?;
+        let planned = match &self.source {
+            MachineSource::Fitted { model, replay } => self
+                .plan_fitted(model, replay.as_deref(), spec, &load)
+                .map_err(|error| Error::Other(Box::new(error)))?
+                .map(|failure| self.resolve_fitted(model, spec, &failure)),
+            MachineSource::Scripted(script) => {
+                self.resolve_scripted(spec, (script.outcome)(spec, &self.regs))?
+            }
+        };
         let start = self.clock();
         let mut result = TrialResult {
             ran: spec.duration,
@@ -399,7 +472,7 @@ impl Runtime {
             let mut rng = stream(self.seed, Domain::Tctl, self.key(spec, first).words());
             result.tctl_max_c = Some(62 + rng.random_range(0..15));
             if escape {
-                result.escaped = CpuId::try_from(first.index() + 2 * self.model.cores())
+                result.escaped = CpuId::try_from(first.index() + 2 * self.regs.len())
                     .into_iter()
                     .collect();
             }
@@ -418,7 +491,7 @@ impl Runtime {
     fn conclude(
         &mut self,
         spec: &TrialSpec,
-        planned: Option<Failure>,
+        planned: Option<PlannedFailure>,
         start: Duration,
         mut result: TrialResult,
         events: &mut Vec<Event>,
@@ -430,129 +503,184 @@ impl Runtime {
             progress(spec, &result, events);
             return Ok(Ok(result));
         };
-        let mut rng = stream(
-            self.seed,
-            Domain::Signal,
-            self.key(spec, failure.core).words(),
-        );
-        let drawn = self.model.signal_mix(spec.regime).pick(rng.random());
-        let signal = failure.signal.unwrap_or(drawn);
         let at = start
             .checked_add(failure.at)
             .ok_or(ArithmeticError::ClockAdvance)?;
-        let detail = |what: &str| format!("simulated {what} on core {}", failure.core);
-        if failure.then_crash {
-            *stalled = Some(failure.core);
-            self.set_clock(at)?;
-            if signal != Signal::Crash {
-                events.push(Event::Signal(failure.core, signal, detail(signal.as_str())));
-            }
-            if let Some(reset) = failure.reset {
-                self.set_next_reset(reset);
-            }
-            result.ran = failure.at;
-            count(spec, &mut result);
-            progress(spec, &result, events);
-            self.crash();
-            return Ok(Err(result));
-        }
-        Ok(match signal {
-            Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
+        Ok(match failure.effect {
+            Effect::Backend { core, signal } => {
                 self.set_clock(at)?;
                 result.ran = failure.at;
                 result.failure = Some(TrialFailure {
                     signal,
-                    core: failure.core,
+                    core,
                     pid: None,
                 });
                 count(spec, &mut result);
                 if signal == Signal::ComputationError {
                     events.push(Event::Signal(
-                        failure.core,
+                        core,
                         signal,
-                        detail("computation error"),
+                        format!("simulated computation error on core {core}"),
                     ));
                 }
                 progress(spec, &result, events);
                 Ok(result)
             }
-            Signal::CorrectedMce => {
-                let pending = self.mce(rng.random(), failure.core, true);
+            Effect::Corrected { mce, ran } => {
                 let boot = self.boot_id().clone();
-                if failure.replayed {
-                    result.ran = failure.at;
-                }
+                result.ran = ran;
                 self.set_clock(
                     start
-                        .checked_add(result.ran)
+                        .checked_add(ran)
                         .ok_or(ArithmeticError::ClockAdvance)?,
                 )?;
-                self.log_mce(&boot, pending, at)?;
+                self.log_mce(&boot, mce, at)?;
                 count(spec, &mut result);
                 progress(spec, &result, events);
                 Ok(result)
             }
-            Signal::Crash => {
-                if !failure.background {
-                    *stalled = Some(failure.core);
-                }
+            Effect::Crash {
+                reset,
+                stalled: stopped_core,
+                mce,
+                report,
+            } => {
+                *stalled = stopped_core;
                 self.set_clock(at)?;
-                if failure.replayed {
-                    self.set_next_reset(ResetKind::Watchdog);
-                    events.push(Event::Progress(
-                        "simulated replayed crash at recorded exposure".to_owned(),
-                    ));
-                } else if let Some(reset) = failure.reset {
-                    self.set_next_reset(reset);
-                } else if !self.next_reset_is_set() {
-                    let reset = self.draw_reset(rng.random());
+                if let Some(reset) = reset {
                     self.set_next_reset(reset);
                 }
                 result.ran = failure.at;
                 count(spec, &mut result);
-                progress(spec, &result, events);
-                if !failure.replayed {
-                    self.queue_crash_mce(&mut rng, failure.core, failure.evidence);
+                report.report(spec, &result, events);
+                if let Some(mce) = mce {
+                    self.queue_mce(mce);
                 }
                 self.crash();
-                Err(result)
-            }
-            Signal::UncorrectedMce => {
-                self.set_clock(at)?;
-                if failure.replayed {
-                    events.push(Event::Signal(
-                        failure.core,
-                        Signal::UncorrectedMce,
-                        "simulated replayed uncorrected machine check".to_owned(),
-                    ));
-                }
-                let pending = self.mce(rng.random(), failure.core, false);
-                self.queue_mce(pending);
-                self.set_next_reset(ResetKind::SyncFlood);
-                self.crash();
-                result.ran = failure.at;
-                count(spec, &mut result);
                 Err(result)
             }
         })
     }
 
-    fn queue_crash_mce(&mut self, rng: &mut StdRng, core: CoreId, evidence: Evidence) {
-        match evidence {
-            Evidence::Named(named) => self.queue_mce(PendingMce {
-                core: named,
-                bank: 0,
-                bank_type: togi_machine::BankType::LoadStore,
-                corrected: false,
-            }),
-            Evidence::Nothing => {}
-            Evidence::Core => {
-                if rng.random::<f64>() < self.model.params().crash_mce {
-                    let pending = self.mce(rng.random(), core, false);
-                    self.queue_mce(pending);
+    fn resolve_scripted(
+        &self,
+        spec: &TrialSpec,
+        outcome: TrialOutcome,
+    ) -> Result<Option<PlannedFailure>, Error> {
+        let (at, core, effect) = match outcome {
+            TrialOutcome::Pass => return Ok(None),
+            TrialOutcome::ComputationError { core, at } => (
+                at,
+                Some(core),
+                Effect::Backend {
+                    core,
+                    signal: Signal::ComputationError,
+                },
+            ),
+            TrialOutcome::Reset { stalled, kind, at } => (
+                at,
+                stalled,
+                Effect::Crash {
+                    reset: Some(kind),
+                    stalled,
+                    mce: None,
+                    report: CrashReport::Progress,
+                },
+            ),
+            TrialOutcome::UncorrectedMce { core, at } => (
+                at,
+                Some(core),
+                Effect::Crash {
+                    reset: Some(ResetKind::SyncFlood),
+                    stalled: None,
+                    mce: Some(load_store_mce(core)),
+                    report: CrashReport::Uncorrected(core, "scripted uncorrected machine check"),
+                },
+            ),
+        };
+        if let Some(core) = core {
+            self.existing_core(core)?;
+        }
+        if at > spec.duration {
+            return Err(other(format!(
+                "scripted outcome of trial {} falls after its end",
+                spec.id
+            )));
+        }
+        Ok(Some(PlannedFailure { at, effect }))
+    }
+
+    fn resolve_fitted(&self, model: &Model, spec: &TrialSpec, failure: &Failure) -> PlannedFailure {
+        let core = failure.core;
+        let at = failure.at;
+        let mut rng = stream(self.seed, Domain::Signal, self.key(spec, core).words());
+        let drawn = model.signal_mix(spec.regime).pick(rng.random());
+        let signal = failure.signal.unwrap_or(drawn);
+        if failure.then_crash {
+            return PlannedFailure {
+                at,
+                effect: Effect::Crash {
+                    reset: failure.reset,
+                    stalled: Some(core),
+                    mce: None,
+                    report: if signal == Signal::Crash {
+                        CrashReport::Progress
+                    } else {
+                        CrashReport::Signal(core, signal)
+                    },
+                },
+            };
+        }
+        let local = model.params().core_local_bank;
+        let effect = match signal {
+            Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
+                Effect::Backend { core, signal }
+            }
+            Signal::CorrectedMce => Effect::Corrected {
+                mce: Self::mce(local, rng.random(), core, true),
+                ran: if failure.replayed { at } else { spec.duration },
+            },
+            Signal::Crash => {
+                let reset = if failure.replayed {
+                    Some(ResetKind::Watchdog)
+                } else {
+                    failure.reset.or_else(|| {
+                        (!self.next_reset_is_set()).then(|| model.reset_mix().pick(rng.random()))
+                    })
+                };
+                let mce = if failure.replayed {
+                    None
+                } else {
+                    match failure.evidence {
+                        Evidence::Named(named) => Some(load_store_mce(named)),
+                        Evidence::Nothing => None,
+                        Evidence::Core => (rng.random::<f64>() < model.params().crash_mce)
+                            .then(|| Self::mce(local, rng.random(), core, false)),
+                    }
+                };
+                Effect::Crash {
+                    reset,
+                    stalled: (!failure.background).then_some(core),
+                    mce,
+                    report: if failure.replayed {
+                        CrashReport::RecordedProgress
+                    } else {
+                        CrashReport::Progress
+                    },
                 }
             }
-        }
+            Signal::UncorrectedMce => Effect::Crash {
+                reset: Some(ResetKind::SyncFlood),
+                stalled: None,
+                mce: Some(Self::mce(local, rng.random(), core, false)),
+                report: if failure.replayed {
+                    CrashReport::Uncorrected(core, "simulated replayed uncorrected machine check")
+                } else {
+                    CrashReport::Quiet
+                },
+            },
+        };
+        PlannedFailure { at, effect }
     }
 
     fn record_samples(
@@ -568,7 +696,12 @@ impl Runtime {
             threads: spec.workload.workload().threads,
             ran: self.clock().saturating_sub(start),
             stalled,
-            voltage: self.model.voltage_state(&self.regs, load).ok().flatten(),
+            voltage: match &self.source {
+                MachineSource::Fitted { model, .. } => {
+                    model.voltage_state(&self.regs, load).ok().flatten()
+                }
+                MachineSource::Scripted(_) => None,
+            },
         };
         if let Some(storage) = &self.sample_storage {
             self.samples = LastTrial::default();
@@ -585,13 +718,14 @@ impl Runtime {
 
     /// Answers a trial from a matching recorded fact, else its script, else the model's draws. `None`
     /// is a pass.
-    fn plan(
+    fn plan_fitted(
         &self,
+        model: &Model,
+        replay: Option<&Replay>,
         spec: &TrialSpec,
         load: &Load<'_>,
-        profile: &[TargetOffset],
     ) -> Result<Option<Failure>, crate::ShapeError> {
-        if let Some(replay) = &self.replay {
+        if let Some(replay) = replay {
             let mut rng = stream(
                 self.seed,
                 Domain::Replay,
@@ -602,7 +736,7 @@ impl Runtime {
                     text_part(spec.workload.as_str()),
                 ],
             );
-            if let Some(fact) = replay.answer(&self.bios, load, profile, &mut rng) {
+            if let Some(fact) = replay.answer(&self.bios, load, &self.regs, &mut rng) {
                 return Ok(match &fact.outcome {
                     ReplayOutcome::Pass => None,
                     ReplayOutcome::Failure { signal, exposure } => {
@@ -616,7 +750,11 @@ impl Runtime {
                 });
             }
         }
-        if let Some(script) = self.scripts.get(&spec.id) {
+        if let Some(script) = self
+            .scripts
+            .get(&spec.id)
+            .or_else(|| model.script(&spec.id))
+        {
             return Ok(script.signal.map(|signal| Failure {
                 signal: Some(signal),
                 reset: script.reset,
@@ -627,22 +765,22 @@ impl Runtime {
                 )
             }));
         }
-        self.drawn_failure(spec, load, profile)
+        self.drawn_failure(model, spec, load)
     }
 
     /// Draws every source of failure the trial is exposed to and keeps the earliest strictly before the
     /// intended end. Sources come in the fixed order of `visit_sources`, so a tie goes to the earlier one.
     fn drawn_failure(
         &self,
+        model: &Model,
         spec: &TrialSpec,
         load: &Load<'_>,
-        profile: &[TargetOffset],
     ) -> Result<Option<Failure>, crate::ShapeError> {
         let duration = spec.duration.as_secs_f64();
-        let onset = self.model.params().onset;
+        let onset = model.params().onset;
         let mut best: Option<(f64, Failure)> = None;
-        self.model.visit_sources(profile, load, |source| {
-            let (core, mut failure) = self.attribute(&source, spec, load);
+        model.visit_sources(&self.regs, load, |source| {
+            let (core, mut failure) = self.attribute(model, &source, spec, load);
             let mut rng = stream(self.seed, source.domain(), self.key(spec, core).words());
             let seconds = onset.failure_time(source.after_s, source.rate, exp1(&mut rng));
             if seconds < duration && best.as_ref().is_none_or(|(known, _)| seconds < *known) {
@@ -657,11 +795,12 @@ impl Runtime {
     /// does not depend on the draw, so only winning sources keep it.
     fn attribute(
         &self,
+        model: &Model,
         source: &HazardSource,
         spec: &TrialSpec,
         load: &Load<'_>,
     ) -> (CoreId, Failure) {
-        let unattributed = if self.model.has_regime_signals() {
+        let unattributed = if model.has_regime_signals() {
             None
         } else {
             Some(Signal::Crash)
@@ -681,7 +820,7 @@ impl Runtime {
             SourceKind::Voltage(core) => (
                 core,
                 Failure {
-                    signal: Some(self.voltage_signal(spec, core)),
+                    signal: Some(self.voltage_signal(model, spec, core)),
                     evidence: Evidence::Nothing,
                     ..failure(core)
                 },
@@ -690,7 +829,7 @@ impl Runtime {
                 let core = load
                     .cores
                     .iter()
-                    .find(|&core| self.model.ccd_of(core) == usize::from(ccd))
+                    .find(|&core| model.ccd_of(core) == usize::from(ccd))
                     .or_else(lowest)
                     .unwrap_or(CoreId::FIRST);
                 (
@@ -703,7 +842,7 @@ impl Runtime {
                 )
             }
             SourceKind::Joint(index) => {
-                let joint = &self.model.joints()[index];
+                let joint = &model.joints()[index];
                 let member = joint
                     .members
                     .iter()
@@ -742,16 +881,15 @@ impl Runtime {
 
     /// A rail failure is a computation error with the weight of that signal among the core's mix, else a
     /// crash: nothing else is attributed to a core by the rail.
-    fn voltage_signal(&self, spec: &TrialSpec, core: CoreId) -> Signal {
-        let mix = self
-            .model
+    fn voltage_signal(&self, model: &Model, spec: &TrialSpec, core: CoreId) -> Signal {
+        let mix = model
             .voltage()
             .and_then(|voltage| {
                 voltage.workload(spec.workload.as_str()).cores[core.index()]
                     .signals
                     .as_ref()
             })
-            .unwrap_or_else(|| self.model.signal_mix(spec.regime));
+            .unwrap_or_else(|| model.signal_mix(spec.regime));
         let mut rng = stream(
             self.seed,
             Domain::VoltageSignal,

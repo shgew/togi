@@ -11,8 +11,8 @@ use crate::adapters::{SimClock, SimHost, SimKernel, SimSmu};
 use crate::faults::SmuHook;
 use crate::model::{Model, Script, failure_signal};
 use crate::persisted::{Persisted, RestoreError};
-use crate::replay::Replay;
-use crate::runtime::{ArithmeticError, RunSettings, Runtime, Shared};
+use crate::runtime::{ArithmeticError, History, RunSettings, Runtime, Shared};
+use crate::source::{MachineSource, ScriptedMachine};
 use crate::trials::SimTrials;
 
 /// A script refused by [`Simulator::script_trial`].
@@ -28,6 +28,10 @@ pub enum ScriptError {
     At { trial: String, at_s: f64 },
     #[error("script trial {trial} signal {signal:?} is only supported by replay")]
     Signal { trial: String, signal: Signal },
+    #[error(
+        "trial overrides by ID belong to the fitted machine; use the scripted machine's outcome function"
+    )]
+    FittedOnly,
 }
 
 /// A deterministic virtual machine. Cloning the handle shares the machine. [`seams`](Self::seams) hands the session its adapters; every adapter and
@@ -44,8 +48,29 @@ impl Simulator {
     ///
     /// The next boot number or resumed timestamp cannot be represented.
     pub fn new(model: Model, settings: RunSettings) -> Result<Self, ArithmeticError> {
+        Self::start(
+            MachineSource::fitted(model, settings.replay),
+            settings.seed,
+            settings.history,
+        )
+    }
+
+    /// Starts the scripted machine one reboot after its recorded history.
+    ///
+    /// # Errors
+    ///
+    /// The next boot number or resumed timestamp cannot be represented.
+    pub fn scripted(
+        script: ScriptedMachine,
+        seed: u64,
+        history: History,
+    ) -> Result<Self, ArithmeticError> {
+        Self::start(MachineSource::Scripted(script), seed, history)
+    }
+
+    fn start(source: MachineSource, seed: u64, history: History) -> Result<Self, ArithmeticError> {
         Ok(Self {
-            shared: Rc::new(RefCell::new(Runtime::new(model, settings)?)),
+            shared: Rc::new(RefCell::new(Runtime::new(source, seed, history)?)),
         })
     }
 
@@ -60,8 +85,9 @@ impl Simulator {
         }
     }
 
-    pub fn model(&self) -> Model {
-        self.shared.borrow().model.clone()
+    /// The inputs to supply again when restoring this machine.
+    pub fn source(&self) -> MachineSource {
+        self.shared.borrow().source.clone()
     }
 
     /// The wall clock, which [`jump_wall`](Self::jump_wall) can move.
@@ -181,10 +207,13 @@ impl Simulator {
         self.shared.borrow_mut().bios = context;
     }
 
-    /// Pins the outcome of trial `trial`, replacing any script it had.
+    /// Pins the outcome of one trial of a fitted machine, replacing any file-defined script.
     pub fn script_trial(&self, trial: &str, script: Script) -> Result<(), ScriptError> {
         let mut runtime = self.shared.borrow_mut();
-        let cores = runtime.model.cores();
+        let MachineSource::Fitted { model, .. } = &runtime.source else {
+            return Err(ScriptError::FittedOnly);
+        };
+        let cores = model.cores();
         if let Some(signal) = script.signal
             && failure_signal(Some(signal)).is_err()
         {
@@ -245,18 +274,14 @@ impl Simulator {
         self.shared.borrow().persisted()
     }
 
-    /// The machine `persisted` describes, running `model` and answering from `replay`.
+    /// The machine `persisted` describes, with the original inputs supplied again.
     ///
     /// # Errors
     ///
     /// A persisted state for another number of cores, one without a boot, or an unrepresentable wall clock.
-    pub fn restore(
-        model: Model,
-        replay: Option<Replay>,
-        persisted: Persisted,
-    ) -> Result<Self, RestoreError> {
+    pub fn restore(source: MachineSource, persisted: Persisted) -> Result<Self, RestoreError> {
         Ok(Self {
-            shared: Rc::new(RefCell::new(Runtime::restore(model, replay, persisted)?)),
+            shared: Rc::new(RefCell::new(Runtime::restore(source, persisted)?)),
         })
     }
 }

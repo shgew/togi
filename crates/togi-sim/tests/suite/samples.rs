@@ -5,8 +5,8 @@ use std::time::Duration;
 use togi_machine::{
     CoreId, LEGACY_REGIMES, PerCore, Regime, Signal, TrialConditions, Workload, workloads,
 };
-use togi_sim::MachineDefinition;
 use togi_sim::definition::ScriptDef;
+use togi_sim::{MachineDefinition, MachineSource};
 
 use test_case::test_case;
 
@@ -325,7 +325,10 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
         } else {
             memory = samples.clone();
         }
-        let idle_v = rig.sim.model().voltage().expect("a rail").idle_v;
+        let MachineSource::Fitted { model, .. } = rig.sim.source() else {
+            panic!("the sample fixture uses a fitted model");
+        };
+        let idle_v = model.voltage().expect("a rail").idle_v;
         for sample in &samples {
             let Some(pm) = sample.pm_table else {
                 panic!("{storage}: a sample without lanes");

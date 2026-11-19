@@ -53,7 +53,7 @@ fn an_interrupted_failing_trial_is_committed_once(fate: Fate) {
         })
         .expect("the failing trial records its signal before its end")
         + 1;
-    let resumed = phase.before.bench(&scripted.sim.model());
+    let resumed = phase.before.bench(&scripted.sim.source());
     let (_, events) = play(&resumed, phase.phase, 0, Some((after, fate)));
     let events = drain_failure(&resumed, phase.phase, events);
     assert_eq!(
@@ -171,7 +171,7 @@ fn a_between_trial_power_cut_preserves_commitments_with_matched_downtime() {
         .find(matches_observation)
         .expect("the cut precedes the mapping trial's evidence commitment")
         .payload;
-    let events = resume(phase, &bench.sim.model(), after, Fate::PowerLoss);
+    let events = resume(phase, &bench.sim.source(), after, Fate::PowerLoss);
     let mut recovered = events[after..].iter().filter(matches_observation);
     assert_eq!(recovered.next().map(|event| &event.payload), Some(expected));
     assert!(
@@ -180,7 +180,7 @@ fn a_between_trial_power_cut_preserves_commitments_with_matched_downtime() {
     );
     assert_unchanged_decisions(
         phase,
-        &bench.sim.model(),
+        &bench.sim.source(),
         &events,
         after,
         &phase.events[after - 1].boot,
@@ -212,7 +212,7 @@ fn a_day_smu_power_cut_resumes_with_the_nonzero_applied_profile() {
         })
         .unwrap()
         + 1;
-    let events = resume_at_smu(phase, &bench.sim.model(), at);
+    let events = resume_at_smu(phase, &bench.sim.source(), at);
     let applied = folded(&events).project().applied.unwrap().to_ccd().unwrap();
     let cores = bench.sim.seams().host.topology().unwrap();
     assert!(
@@ -253,14 +253,14 @@ fn an_interrupted_no_nonzero_work_stop_is_recovered(fate: Fate, boundary: togi_j
         .expect("the stop records its cleanup boundary")
         + dead_end
         + 1;
-    let events = resume(phase, &bench.sim.model(), after, fate);
+    let events = resume(phase, &bench.sim.source(), after, fate);
     assert_eq!(&events[..after], &phase.events[..after]);
     if matches!(fate, Fate::Killed) {
         assert_eq!(projection(&events), projection(&phase.events));
     } else {
         assert_unchanged_decisions(
             phase,
-            &bench.sim.model(),
+            &bench.sim.source(),
             &events,
             after,
             &events[after - 1].boot,
@@ -270,7 +270,7 @@ fn an_interrupted_no_nonzero_work_stop_is_recovered(fate: Fate, boundary: togi_j
 }
 
 /// A short tuning history with a known reset reported only by a day boot, followed by a fresh tuning boot.
-fn tuning_after_observed_days() -> (Model, Played) {
+fn tuning_after_observed_days() -> (MachineSource, Played) {
     let bench = Bench::defined(&small_definition());
     let mut phases = Vec::new();
     step(&bench, &mut phases, Phase::Run { trials: 1 });
@@ -281,7 +281,7 @@ fn tuning_after_observed_days() -> (Model, Played) {
     step(&bench, &mut phases, Phase::Run { trials: 1 });
     let phase = phases.pop().unwrap();
     assert!(matches!(phase.own()[0].payload, Payload::ConfigLoaded(_)));
-    (bench.sim.model(), phase)
+    (bench.sim.source(), phase)
 }
 
 #[test]

@@ -7,7 +7,7 @@ use togi_machine::{
     Signal, TargetOffset, pick_workload,
 };
 use togi_sim::definition::{ModelDef, Weights};
-use togi_sim::{History, RunSettings, Simulator, WEIGHTED_SIGNALS};
+use togi_sim::{History, MachineSource, RunSettings, Simulator, WEIGHTED_SIGNALS};
 
 use test_case::test_case;
 
@@ -53,9 +53,12 @@ fn transcript(seed: u64) -> Vec<String> {
     let mut rig = Rig::new(&machine(4, vec![]), seed);
     let mut out = Vec::new();
     let boot = rig.boot();
-    out.push(format!("boot {boot} limits {:?}", rig.sim.model().limits()));
+    let MachineSource::Fitted { model, .. } = rig.sim.source() else {
+        panic!("the transcript uses a fitted model");
+    };
+    out.push(format!("boot {boot} limits {:?}", model.limits()));
     for index in 0..4 {
-        let limit = rig.sim.model().alone_limit(core(index));
+        let limit = model.alone_limit(core(index));
         for value in [limit - 2, limit, limit + 1] {
             for regime in [Regime::R1, Regime::R3, Regime::R4] {
                 let waited = rig.alone(index, TargetOffset::clamped(value).get(), regime, 0);
@@ -547,8 +550,7 @@ fn a_restored_machine_reports_what_the_crashed_one_left_for_its_next_boot() {
     assert!(crashed(&rig.alone(0, -12, Regime::R2, 0)));
     let text = serde_json::to_string(&rig.sim.persisted()).expect("an encoded machine");
     let restored = Simulator::restore(
-        model(&definition),
-        None,
+        rig.sim.source(),
         serde_json::from_str(&text).expect("a decoded machine"),
     )
     .expect("a restored machine");
@@ -582,9 +584,12 @@ fn a_restored_machine_reports_what_the_crashed_one_left_for_its_next_boot() {
 #[test]
 fn a_persisted_machine_for_other_cores_is_refused() {
     let rig = Rig::new(&two_cores(ModelDef::default()), 1);
-    let error = Simulator::restore(model(&machine(4, vec![])), None, rig.sim.persisted())
-        .err()
-        .expect("a refusal");
+    let error = Simulator::restore(
+        MachineSource::fitted(model(&machine(4, vec![])), None),
+        rig.sim.persisted(),
+    )
+    .err()
+    .expect("a refusal");
     assert!(matches!(
         error,
         togi_sim::RestoreError::Cores {
@@ -606,7 +611,7 @@ fn a_persisted_machine_without_boots_is_refused() {
     assert!(!boots.is_empty());
     boots.clear();
     let persisted = serde_json::from_value(value).expect("a decoded machine");
-    let error = Simulator::restore(model(&definition), None, persisted)
+    let error = Simulator::restore(rig.sim.source(), persisted)
         .err()
         .expect("a refusal");
     assert!(matches!(error, togi_sim::RestoreError::NoBoot));
@@ -722,7 +727,7 @@ fn restoring_an_unrepresentable_wall_time_is_refused(
     value["wall_offset"] = serde_json::to_value(offset).expect("an offset");
     let persisted = serde_json::from_value(value).expect("a decoded machine");
     assert!(
-        Simulator::restore(model(&definition), None, persisted).is_err(),
+        Simulator::restore(rig.sim.source(), persisted).is_err(),
         "an unrepresentable wall clock must not become the epoch"
     );
 }
@@ -846,8 +851,7 @@ fn wall_clock_jumps_refuse_timestamp_overflow(epoch: jiff::Timestamp, by: Signed
     let mut value = serde_json::to_value(rig.sim.persisted()).expect("a persisted machine");
     value["epoch"] = serde_json::to_value(epoch).expect("an epoch");
     let sim = Simulator::restore(
-        model(&definition),
-        None,
+        rig.sim.source(),
         serde_json::from_value(value).expect("a machine"),
     )
     .expect("a timestamp at the limit is valid");
