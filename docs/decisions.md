@@ -37,8 +37,8 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - The experimental banner stays until a complete search, soak, day application and back-off cycle is observed on the target desktop; software mechanics alone do not establish that result.
 - The simulator proves crash recovery, safety and agreement with the page, not tuning policy; each tuning-behavior change reaches hardware before the next is designed.
 - The owner runs togi on the target desktop and invokes retros optionally; an agent session there reads the journal read-only to keep execution under owner control.
-- Before 1.0 the target follows owner-chosen updates from main, with no releases, new fragments or breaking-change ceremony; model history records behavior changes.
-- Incompatible journal or decision changes still bump SCHEMA or RULESET and refuse old journals; abandoning release ceremony does not permit ambiguous replay.
+- Before 1.0 the target follows owner-chosen updates from `main`, with no releases, new changelog fragments or breaking-change titles or labels. Model history and pull requests record behavior changes.
+- Incompatible journal or decision changes still bump `SCHEMA` or `RULESET` and refuse old journals so replay is unambiguous.
 - Direct owner requests use the pull request or large-change tracking issue as their record; separate issues remember deferred work rather than gate every edit.
 - Safety review follows the rule or enforcement being changed, wherever its file lives; directory names do not establish risk.
 - Existing write, recovery, containment and durability safety assertions survive removals and ruleset changes; retiring policy does not retire safety invariants.

@@ -54,7 +54,7 @@ hardware *args:
 fuzz seconds="60": _dev-shell
     cd crates/togi-journal && mkdir -p fuzz/corpus/reader && cargo fuzz run -s none reader fuzz/corpus/reader tests/reader_fuzz/seeds -- -max_total_time="$1"
 
-# Print changed lines no test reached, adding named workspace packages to product tests (`just cover origin/main togi-tool-release`)
+# Print changed lines no test reached, adding named workspace packages to product tests (`just cover origin/main togi-tool-audit`)
 [group('test')]
 cover base *crates: _dev-shell
     #!/usr/bin/env bash
@@ -105,7 +105,7 @@ gate: _dev-shell
 _nextest-checks:
     @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest(-.*)?" name != null && (checks.${name}.tier or null) != "ci") (builtins.attrNames checks))'
 
-# Print every local-tier flake check; CI and release discover all checks independently
+# Print every local-tier flake check; CI discovers all checks independently
 _local-checks:
     @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: (checks.${name}.tier or null) != "ci") (builtins.attrNames checks))'
 
@@ -244,22 +244,7 @@ facts state_dir: _dev-shell
 copy-state src dst: _dev-shell
     [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/copy-state-target; cargo run --release --locked -p togi-tool-copy-state -- "$1" "$2"
 
-# Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
-[group('release')]
-release: _dev-shell
-    url=$(gh workflow run release.yml --ref main); echo "$url"; gh run watch "${url##*/}" --exit-status
-
-# Print the release the release workflow would make from origin/main
-[group('release')]
-release-preview: _dev-shell
-    cargo run --quiet --locked -p togi-tool-release
-
-# Check the changelog fragments in changes/ (also a member of the quality flake check)
-[group('release')]
-changes: _dev-shell
-    cargo run --quiet --locked -p togi-tool-release -- -check changes
-
-# Dispatch every flake check on main's head and follow it: the full run the release waits on
+# Dispatch every flake check on main's head and follow the run
 [group('github')]
 check-main: _dev-shell
     #!/usr/bin/env bash

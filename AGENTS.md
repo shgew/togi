@@ -42,7 +42,7 @@ Every change lands through a pull request against `main` on `github.com/shgew/to
 
 Update changed commands' `--help`, README, specs, comments and operator guides with the code; keep design and shipped behavior explicitly distinct.
 
-Before 1.0, the target desktop follows `main` and the owner chooses when to update: no releases, new changelog fragments, or breaking-change titles/labels. Change `SCHEMA` or `RULESET` when existing journals become unreadable or recorded decisions unrepeatable so old journals are refused, and say so in the pull request. The history of `docs/model.md` records behavior changes; [release tooling still present](docs/releasing.md) is temporary.
+Before 1.0, the target desktop follows `main` and the owner chooses when to update: no releases, no new changelog fragments, and no breaking-change titles or labels. Change `SCHEMA` or `RULESET` when existing journals become unreadable or recorded decisions unrepeatable so old journals are refused, and say so in the pull request. The history of [the model](docs/model.md) and the pull requests record behavior changes.
 
 ## Writing
 

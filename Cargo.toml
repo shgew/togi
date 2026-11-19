@@ -19,7 +19,6 @@ getrandom = { version = "0.4", features = ["std"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 nix = { version = "0.31", default-features = false, features = ["fs"] }
 proptest = "1"
-pulldown-cmark = { version = "0.13", default-features = false }
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
 ratatui = { version = "0.30", default-features = false, features = ["std"] }
 regex = "1"
@@ -62,7 +61,6 @@ togi-watch = { path = "crates/togi-watch" }
 togi-watchtest = { path = "crates/togi-watchtest" }
 togi-ycruncher = { path = "crates/togi-ycruncher" }
 tokio = { version = "1", default-features = false }
-toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 unicode-width = "0.2"
 
 [workspace.lints.rust]
