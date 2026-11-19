@@ -10,7 +10,7 @@ A session starts only from a verified all-zero baseline and returns every core t
 
 Every run requires an armed hardware watchdog before each nonzero profile application and each workload start. Manual startup checks once and refuses immediately; --tuning-boot waits up to 30 seconds. Loss detected at a later boundary stops the run and restores CO 0.
 
-Only one day observer, run or reset can own this machine, even with different state directories. Stop the day service before tuning. A busy /run/lock/togi.lock stops the command before any hardware access or event.
+Only one day observer, run or reset can own this machine, even with different state directories. Stop the day service before tuning. The NixOS module creates /run/lock/togi.lock at boot. If the lock cannot be taken, no hardware is accessed and no event is written.
 
 Prints one line per journal event and any final diagnostics to stderr, even on a terminal. Use `togi watch` in a separate terminal to see the dashboard.
 
