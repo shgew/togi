@@ -162,7 +162,7 @@ togi day answer <boot> frozen
 
 ### Recording a crash togi did not observe
 
-The day service records an unclean end automatically when it was observing the boot that ended: it had started in that boot and had not stopped cleanly. A crash in daily use while it was not observing is not recorded and is not tuning evidence; there is no manual entry to add it. Existing manual records remain readable and still count as [tuning evidence](spec/tuner.md#manual-crash-records).
+When the day service starts, it records an unclean end for each earlier boot in which it started and did not stop cleanly. A crash in daily use in a boot where the day service never started, or after it stopped cleanly, is not recorded and is not tuning evidence; there is no manual entry to add it. Existing manual records remain readable and still count as [tuning evidence](spec/tuner.md#manual-crash-records).
 
 ### Running the day service
 
@@ -344,7 +344,7 @@ Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmw
 
 1. Reboot and answer the question about the unclean end (`togi day answer`, [Answering what happened](#answering-what-happened)). A CPU-suspect event vetoes that whole profile and every later day profile at or deeper than it on every CCD. It schedules a step back at the next cold boot and one reproduction night; [daily-event escalation](spec/tuner.md#whole-profile-veto-and-escalation) determines which steps retreat. A clean reproduction does not clear the veto; only evidence that reclassifies the event does.
 2. Check the filesystem with the checks appropriate to that filesystem, using rescue media or an unmounted filesystem where required. Check the Nix package store's contents with `sudo nix-store --verify --check-contents`, and address any reported damage before returning to heavy or write-intensive work.
-3. If togi was not running when the machine froze, togi has no record of the crash and does not count it ([Recording a crash togi did not observe](#recording-a-crash-togi-did-not-observe)); include the offsets that were applied when you report it.
+3. If the day service never started in that boot, or had stopped cleanly before the machine froze, togi has no record of the crash and does not count it ([Recording a crash togi did not observe](#recording-a-crash-togi-did-not-observe)); include the offsets that were applied when you report it.
 4. [Report the crash](https://github.com/shgew/togi/issues) with what was running and when; keep the togi session and available system logs as evidence, and remove personal and machine-identifying details from anything you publish.
 
 ## 6. Dead ends
