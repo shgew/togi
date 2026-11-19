@@ -6,6 +6,7 @@
 //!
 //! The runtime: a [`Simulator`] owns the virtual clocks, boots, registers, kernel logs and armed
 //! [`faults`] of one machine, and hands out its seams as a [`togi_machine::Machine`].
+//! It can also answer from a [`ScriptedMachine`] for mechanics tests, without consulting the model.
 
 mod adapters;
 mod content;
@@ -23,6 +24,7 @@ pub mod replay;
 mod runtime;
 mod samples;
 mod simulator;
+mod source;
 mod trials;
 mod vocab;
 pub mod voltage;
@@ -36,6 +38,7 @@ pub use persisted::{Persisted, RestoreError};
 pub use runtime::{ArithmeticError, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
+pub use source::{MachineSource, ScriptedMachine, ScriptedTopology, TrialOutcome};
 pub use trials::CONTROLLER_PID;
 pub use vocab::{
     RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, limit_index, modeled_as, regime_index,

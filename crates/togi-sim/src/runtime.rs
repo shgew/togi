@@ -15,11 +15,12 @@ use togi_machine::{
 };
 
 use crate::faults::Faults;
-use crate::model::{Model, Script};
+use crate::model::Script;
 use crate::persisted::{Persisted, PersistedBoot, PersistedMce, RestoreError};
 use crate::random::{Domain, stream};
 use crate::replay::Replay;
 use crate::samples::LastTrial;
+use crate::source::MachineSource;
 
 pub(crate) type Shared = Rc<RefCell<Runtime>>;
 
@@ -99,9 +100,8 @@ object_only! {
 }
 
 pub(crate) struct Runtime {
-    pub model: Model,
+    pub source: MachineSource,
     pub seed: u64,
-    pub replay: Option<Replay>,
     epoch: Timestamp,
     /// Virtual time since the simulation began; only moves forward.
     clock: Duration,
@@ -127,25 +127,20 @@ pub(crate) struct Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn new(model: Model, settings: RunSettings) -> Result<Self, ArithmeticError> {
-        let RunSettings {
-            seed,
-            history,
-            replay,
-        } = settings;
+    pub(crate) fn new(
+        source: MachineSource,
+        seed: u64,
+        history: History,
+    ) -> Result<Self, ArithmeticError> {
         let epoch = match history.last_time {
             Some(last) => last
                 .checked_add(REBOOT_TIME)
                 .map_err(ArithmeticError::ResumeTime)?,
             None => EPOCH,
         };
-        let bios = match history.bios_context {
-            Some(recorded) if !model.bios_context_declared() => recorded,
-            _ => model.bios_context().clone(),
-        };
+        let bios = source.bios_context(history.bios_context);
         let mut runtime = Self {
             seed,
-            replay,
             epoch,
             clock: Duration::ZERO,
             boot_at: Duration::ZERO,
@@ -160,27 +155,26 @@ impl Runtime {
             reasons: HashMap::new(),
             next_reset: None,
             bios,
-            scripts: model.scripts().clone(),
+            scripts: BTreeMap::new(),
             violations: Vec::new(),
             faults: Faults::default(),
             samples: LastTrial::default(),
             samples_dir: None,
             sample_storage: None,
-            model,
+            source,
         };
         runtime.start_boot(Duration::ZERO)?;
         Ok(runtime)
     }
 
     pub(crate) fn restore(
-        model: Model,
-        replay: Option<Replay>,
+        source: MachineSource,
         persisted: Persisted,
     ) -> Result<Self, RestoreError> {
-        if persisted.regs.len() != model.bios().len() {
+        if persisted.regs.len() != source.cores() {
             return Err(RestoreError::Cores {
                 persisted: persisted.regs.len(),
-                model: model.bios().len(),
+                model: source.cores(),
             });
         }
         if persisted.boots.is_empty() {
@@ -198,7 +192,6 @@ impl Runtime {
         }
         let mut runtime = Self {
             seed: persisted.seed,
-            replay,
             epoch: persisted.epoch,
             clock: persisted.clock,
             boot_at: persisted.boot_at,
@@ -213,13 +206,13 @@ impl Runtime {
             reasons,
             next_reset: persisted.next_reset,
             bios: persisted.bios,
-            scripts: model.scripts().clone(),
+            scripts: BTreeMap::new(),
             violations: Vec::new(),
             faults: Faults::default(),
             samples: persisted.samples,
             samples_dir: None,
             sample_storage: None,
-            model,
+            source,
         };
         runtime.wall = runtime.wall_at(runtime.clock)?;
         Ok(runtime)
@@ -265,7 +258,7 @@ impl Runtime {
         self.boot_at = clock;
         let id = boot_id(self.seed, number);
         self.boots.push(id.clone());
-        self.regs = self.model.bios().to_vec();
+        self.source.reset_registers(&mut self.regs);
         self.crashed = false;
         self.faults.start_boot();
         for pending in std::mem::take(&mut self.queued) {
@@ -273,7 +266,7 @@ impl Runtime {
         }
         let kind = self.next_reset.take();
         self.reasons
-            .insert(id, reset_reason(kind, !self.model.old_kernel()));
+            .insert(id, reset_reason(kind, self.source.supports_reset_reasons()));
         Ok(())
     }
 
@@ -407,8 +400,7 @@ impl Runtime {
 
     /// The machine check a draw `x` in `[0, 1)` names on `core`: a core-local bank with the model's
     /// probability, else a shared one.
-    pub(crate) fn mce(&self, x: f64, core: CoreId, corrected: bool) -> PendingMce {
-        let local = self.model.params().core_local_bank;
+    pub(crate) fn mce(local: f64, x: f64, core: CoreId, corrected: bool) -> PendingMce {
         let (first, count, x) = if x < local {
             (0, CORE_LOCAL_BANKS, x / local)
         } else {
@@ -425,10 +417,6 @@ impl Runtime {
             bank_type: BANKS[usize::from(bank)],
             corrected,
         }
-    }
-
-    pub(crate) fn draw_reset(&self, x: f64) -> ResetKind {
-        self.model.reset_mix().pick(x)
     }
 }
 
