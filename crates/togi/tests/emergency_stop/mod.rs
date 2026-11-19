@@ -20,10 +20,10 @@ use togi_cli::Exit;
 use togi_machine::{
     BiosContext, BootId, CancellationToken, Check, CoreId, CoreInfo, CoreRank, Error,
     FrequencyJournal, Host as MachineHost, Machine, Partial, Running, SmuValidated, Stopped, Swept,
-    TrialConditions, TrialSpec, Trials,
+    TargetOffset, TrialConditions, TrialSpec, Trials,
 };
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
-use togi_sim::{Model, RunSettings, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 
 const CORES: u8 = 16;
 const BIOS: i64 = -10;
@@ -32,19 +32,12 @@ type Log = Rc<RefCell<Vec<String>>>;
 
 /// The machine `togi emergency-stop` finds after a crash: every core's offset at `BIOS`.
 fn simulator() -> Simulator {
-    let mut definition = serde_json::from_str::<togi_sim::MachineDefinition>(include_str!(
-        "../../../../tools/bench/machines/shared-voltage.json"
-    ))
-    .unwrap();
-    definition.bios = Some(vec![BIOS; usize::from(CORES)]);
-    Simulator::new(
-        Model::new(&definition, 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap()
+    let machine = ScriptedMachine::new(
+        ScriptedTopology::SixteenCores,
+        TargetOffset::new(BIOS).unwrap(),
+        |_, _| TrialOutcome::Pass,
+    );
+    Simulator::scripted(machine, 1, History::default()).unwrap()
 }
 
 fn core(number: u8) -> CoreId {
