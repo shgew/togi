@@ -4,13 +4,13 @@ For a Zen 5 (Granite Ridge) desktop running NixOS with GRUB. Every command below
 
 ## 1. Install the module
 
-Add togi to your flake's inputs, pinned to a release, and pass the inputs to the host's configuration:
+Add togi to your flake's inputs and pass the inputs to the host's configuration:
 
 ```nix
 # flake.nix
 {
   inputs.togi = {
-    url = "github:shgew/togi/v0.5.0";
+    url = "github:shgew/togi";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -23,7 +23,7 @@ Add togi to your flake's inputs, pinned to a release, and pass the inputs to the
 }
 ```
 
-Keep your existing `nixpkgs` input and host name. `v0.5.0` is an example; the [releases page](https://github.com/shgew/togi/releases) lists the current tags. `specialArgs` is what gives the host's configuration its `inputs` argument; a flake that already passes its inputs another way keeps doing that.
+Keep your existing `nixpkgs` input and host name. Before 1.0 there are no further releases: the input follows `main`, and `flake.lock` keeps the revision you installed until you update it. Existing tags are historical. `specialArgs` is what gives the host's configuration its `inputs` argument; a flake that already passes its inputs another way keeps doing that.
 
 Then import the module in the host's configuration:
 
@@ -51,7 +51,7 @@ When upgrading from TOML configuration, module users rebuild to generate the JSO
 
 The module also creates the unprivileged `togi-trial` system user and group and sets `"backend_user": "togi-trial"` in the configuration. Togi itself still runs as root; mprime and y-cruncher use that account, which can write only their own trial instance directory within togi's state ([Backends](spec/workloads.md#backends)). Rebuild after upgrading to this behavior so the account exists before the next run. A hand-written configuration must set `backend_user` to an existing unprivileged account; [Privileges](spec/runtime.md#privileges) and [Preflight](spec/runtime.md#preflight) say what is refused.
 
-To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. Ruleset 14 archives Ruleset 13 unchanged, starts from verified stock and reconstructs the durable campaign ([section 7](#7-after-a-breaking-update)).
+To update, run `nix flake update togi` and rebuild. Ruleset 14 archives Ruleset 13 unchanged, starts from verified stock and reconstructs the durable campaign ([section 7](#7-after-a-breaking-update)).
 
 The module installs `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.default`, the `togi` built with crane. Moving a host from the earlier Go build of togi takes the steps in [Go to Rust cutover](#go-to-rust-cutover). From a checkout, `nix build .#default` builds the package, `just togi ARGS` runs the binary from the tree and `just check-one package` checks its version and completion scripts.
 
