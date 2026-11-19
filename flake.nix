@@ -86,7 +86,6 @@
             "togi-tool-sim"
             "togi-tool-stats"
             "togi-tool-reviews"
-            "togi-tool-release"
             "togi-tool-cover"
           ];
           nextestConcerns = {
@@ -404,18 +403,6 @@
                   HOME=$TMPDIR treefmt --ci --walk filesystem
                   touch "$out"
                 '';
-            changes = craneLib.mkCargoDerivation (
-              cargoCheck
-                (cargoSources.source {
-                  code = cargoSources.closure [ "togi-tool-release" ];
-                  files = [ ./changes ];
-                })
-                {
-                  pnameSuffix = "-changes";
-                  buildPhaseCargoCommand = "cargoWithProfile run --locked -p togi-tool-release -- -check changes";
-                  installPhaseCommand = "touch $out";
-                }
-            );
             module = import ./nix/module-test.nix {
               pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
               hostPkgs = pkgs;

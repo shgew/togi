@@ -2,9 +2,8 @@
 # already holds its output, which the local gate publishes for what it built (docs/development.md#check-cache). A pull request
 # builds the cheap checks named in the eval step together in one light job and every other uncached check, such as
 # clippy, doc, nextest, nextest-tools, each nextest-recovery-N partition and the VM tests, in a job of its own so the VM tests
-# boot in parallel (docs/development.md#nextest-by-concern). The release dispatches and waits for a run on the exact main head before making its
-# release commit; a check that run finds cached counts as passed.
-# No job runs on macOS (docs/development.md#ci-and-release-gates): `just lint` and `just gate` clippy the Rust workspace for
+# boot in parallel (docs/development.md#nextest-by-concern). Dispatches also run every check, one job per uncached output.
+# No job runs on macOS (docs/development.md#ci-checks): `just lint` and `just gate` clippy the Rust workspace for
 # aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug.
 # eval skips outputs already in the public Cachix cache `togi`; build jobs substitute from it and push
 # their outputs when CACHIX_AUTH_TOKEN is available. The aggregate `check` accepts cached or successful
@@ -19,7 +18,7 @@ on:
 permissions:
   contents: read
 
-# Only pull request runs may cancel an earlier run; a release can be waiting on a dispatch.
+# Only pull request runs may cancel an earlier run.
 concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

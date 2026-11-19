@@ -15,10 +15,10 @@ Choose checks by the action:
 - For changes to `flake.nix` or `nix/`: also run `just check` before shipping; it builds every local-tier flake check supported by the host, including `package` and cargo-deny's advisory audit beyond the gate.
 - During review: `just push-fix` has the same refusals as `just ship` and requires an existing remote branch. It rebases onto the latest `origin/main` first; a conflict refuses and leaves the branch unchanged. It then formats, lints, builds `quality` and the local `nextest` check and publishes what it built, then pushes.
 - Before landing: `just land N` waits while only `check` remains and reports readiness by `just reviews status`; it stops at once on any other state, naming it. Neither it nor the push recipes merges.
-- For a full CI run on `main`: `just check-main` dispatches and follows it; a check whose published output is cached counts as passed. Releases are not part of pre-1.0 work.
+- For a full CI run on `main`: `just check-main` dispatches and follows it; a check whose published output is cached counts as passed.
 - For named hermetic checks: `just check-one <names>` builds exactly those flake checks for the host and streams their logs, including CI-tier checks when explicitly named.
 
-The local gate stops at the first failure. It builds `quality` (formatting, changelog fragments, documentation links, board, coverage-selection and SQL fixtures, and the NixOS module), runs `just lint` (Clippy through Cargo), then builds the local `nextest` check, followed by Cargo doctests, cargo-deny's bans, licenses and sources, and cargo-shear. It never builds CI-tier checks, even on Linux with writable KVM. `just push-fix` also builds `quality` and local nextest checks. `just check` remains because the gate does not build its full local inventory: notably the package and advisory audit.
+The local gate stops at the first failure. It builds `quality` (formatting, documentation links, board, coverage-selection and SQL fixtures, and the NixOS module), runs `just lint` (Clippy through Cargo), then builds the local `nextest` check, followed by Cargo doctests, cargo-deny's bans, licenses and sources, and cargo-shear. It never builds CI-tier checks, even on Linux with writable KVM. `just push-fix` also builds `quality` and local nextest checks. `just check` remains because the gate does not build its full local inventory: notably the package and advisory audit.
 
 The gate and review-fix path [publish built outputs](#check-cache): on x86_64 Linux they `cachix push togi` every flake check output of the tree already in the local store. Pull request CI selects **every** flake check, including the CI tier, and builds those absent from Cachix. The local skip does not remove a PR merge gate.
 
@@ -34,7 +34,7 @@ The VM tests are CI-tier checks: `vm-grub`, `vm-runtime`, `vm-day-apply-profile`
 
 The GRUB power-button scenario waits until logind watches the current boot's power input before sending one ACPI event; reaching `multi-user.target` alone does not establish that readiness. Each shutdown must finish within 120 seconds.
 
-The `quality` flake check groups seven private members: `fmt`, `changes`, `doc-links`, `board-test`, `cover-test`, `sql-test` and `module`. Its output links to each member's independently cached output; failures retain the member's derivation name and logs. Both the gate and review-fix path build the whole bundle, and Nix reruns only members whose inputs changed. `just board-test`, `just cover-test` and `just sql-test` remain focused fixture commands without GitHub access; `just changes` checks changelog fragments. The documentation-link member rejects relative Markdown links to missing files or headings.
+The `quality` flake check groups six private members: `fmt`, `doc-links`, `board-test`, `cover-test`, `sql-test` and `module`. Its output links to each member's independently cached output; failures retain the member's derivation name and logs. Both the gate and review-fix path build the whole bundle, and Nix reruns only members whose inputs changed. `just board-test`, `just cover-test` and `just sql-test` remain focused fixture commands without GitHub access. The documentation-link member rejects relative Markdown links to missing files or headings.
 
 The default recovery witnesses in `togi-session` cover interrupted failure attribution, between-trial downtime, interrupted no-nonzero-work stops and day-profile register settlement; the short-night integration checks independent `ReadState` replay. Interrupted stops cover the cleanup intent/write/restoration boundaries and a shutdown that was already durable before the cut. `togi-simrun` also keeps a two-boot warm/cold comparison of exact journal bytes and independently replayed state. These bounded checks pin selected recovery boundaries, not every position in a full recovery sweep.
 
@@ -44,9 +44,9 @@ The default recovery witnesses in `togi-session` cover interrupted failure attri
 
 Each check keeps its tested crates whole, their test dependency closure as code, nextest's configuration and only the external fixtures registered for those crates in `crateFixtures`. Narrowed sources retain stubs for omitted targets, including discovered ones, so workspace metadata and named-binary filters remain valid. Workspace manifests, `Cargo.lock`, the toolchain and nextest profiles invalidate both concerns. Product fixtures must not require the complete research corpus. No test or assertion is dropped by separating concerns; tool correctness remains an automatic PR gate.
 
-Rejected: dependency-layer checks and compatibility aliases retain overlapping closures and duplicate scheduling instead of matching product and tooling concerns. One check per crate repeatedly compiles shared closures and adds CI jobs; building once and partitioning only the test run leaves compilation on the critical path. A shared workspace-library artifact serializes checks behind another derivation and stores another target archive. Selecting crates or tests from a Git diff makes the result depend on a base commit rather than represent the complete hermetic concern. Deleting tool tests or deferring them to release leaves development tooling unchecked on a PR.
+Rejected: dependency-layer checks and compatibility aliases retain overlapping closures and duplicate scheduling instead of matching product and tooling concerns. One check per crate repeatedly compiles shared closures and adds CI jobs; building once and partitioning only the test run leaves compilation on the critical path. A shared workspace-library artifact serializes checks behind another derivation and stores another target archive. Selecting crates or tests from a Git diff makes the result depend on a base commit rather than represent the complete hermetic concern. Dropping tool tests from PR CI leaves development tooling unchecked before merge.
 
-`just cover BASE [CRATE ...]` adds explicitly named workspace packages to that product set, validates names against `cargo metadata` before coverage starts, and deduplicates selections. For example, `just cover origin/main togi-tool-release togi-facts` runs product tests plus those packages' own tests, not the whole tool concern. Cargo also compiles their dependencies; that does not select dependency or consumer test suites. The `cover-test` member of `quality` runs the argument-selection regressions against fixed metadata.
+`just cover BASE [CRATE ...]` adds explicitly named workspace packages to that product set, validates names against `cargo metadata` before coverage starts, and deduplicates selections. For example, `just cover origin/main togi-tool-audit togi-facts` runs product tests plus those packages' own tests, not the whole tool concern. Cargo also compiles their dependencies; that does not select dependency or consumer test suites. The `cover-test` member of `quality` runs the argument-selection regressions against fixed metadata.
 
 Review coverage names the packages owning included changed tool Rust files, including tool-only libraries, and any consumers whose tests exercise changed library behavior; see [the review procedure](../.omp/commands/review-pr.md). Explicit selection closes the tool changed-line evidence gap without an automatic affected-package policy or a default whole-workspace run. Tool-only reviews deliberately retain the product run. Keep stderr test diagnostics separate from the stdout report imported by `just reviews snapshot --cover`; record the named extras, remaining uncovered/not-built paths and the reading or other checks that establish their behavior. Unmeasured integration-test source and platform/feature-excluded code still require an honest reading judgment. Coverage has no percentage target or ratchet and does not replace behavior assertions or complete CI checks.
 
@@ -54,21 +54,21 @@ The two exhaustive session cut sweeps and the long runner warm/cold matrix are e
 
 The bench's orchestration and real-process tests use a simulated history through the first ended trial, with a command shutdown for successful fake commands and the same prefix without shutdown for censored runs. The cross-reader replay property generates bounded nights of fifteen to ninety minutes with varied seeds, core counts, stable/crashing machines and batch boundaries; the crash/reload case stops at the first detected crash, while boot-cap measurement tests retain the longer histories their assertions need. These fixtures still exercise journal parsing, replay, measurement and audit rather than replacing those stages.
 
-## CI and release gates
+## CI checks
 
 The flake's checks are the one inventory. `check.yml` runs on pull requests and `workflow_dispatch`, not pushes to `main`. Both modes select every `checks.x86_64-linux` attribute, regardless of tier, including all eight `nextest-recovery-*` partitions. Evaluation checks each output's `https://togi.cachix.org/<store-hash>.narinfo`; an HTTP success counts as a pass without starting a build. In PR mode, uncached `quality`, `deny`, `shear` and `package` share one `light` build with `--keep-going`; other uncached checks get separate jobs, so the recovery partitions run on independent runners rather than serially in one job. Dispatch mode gives every uncached check its own job. The aggregate `check` requires successful evaluation and every required build, even when all checks were cached. A newer PR push cancels the older run; dispatch runs are not cancelled by it.
 
-PR CI gates landing on `main`, which the target desktop follows when the owner chooses to update. The dormant release workflow still dispatches the full exact-head check before its version/changelog commit until R23 removes it; it is not a pre-1.0 delivery step ([Releasing](releasing.md)).
+PR CI gates landing on `main`, which the target desktop follows when the owner chooses to update.
 
 No CI job runs on macOS. The target platform is x86_64 Linux; macOS is a development platform. Native macOS compilation repeated minutes of work without gating PRs. Cross-target Clippy remains required for code, but proves type checking, not macOS linking, kernel behavior or test execution. A macOS failure can therefore merge; report platform evidence honestly and fix such failures like other bugs. Darwin flake outputs remain available locally, but CI builds and publishes none.
 
 Rejected:
 
-- VM checks only at release, or fast PR checks followed by slow checks on `main`: a regression can land before the real-boot evidence. Nightly runs are detached from the introducing change and do not prove the exact release head; pinned inputs do not change between pushes.
+- Fast PR checks followed by slow checks on `main`: a regression can land before the real-boot evidence. Nightly runs are detached from the introducing change; pinned inputs do not change between pushes.
 - A hand-kept PR inventory or changed-path selection: it duplicates the flake's exact input tracking and drifts.
 - One `nix flake check` CI job: independent checks share one runner's CPUs instead of building in parallel. Cheap-job packing keeps the overhead saving without serializing the expensive checks.
 - Larger paid runners: cost replaces duplicate work rather than removing it. Self-hosted runners: public PR code would run on private infrastructure and availability would depend on it.
-- Native macOS checks on every PR or only on `main`: the former repeats Linux evidence with a long compile, while the latter delays releases without gating landing. Linux arm64 runners reach neither Darwin code nor its kernel or stdenv and are not the product's target.
+- Native macOS checks on every PR or only on `main`: the former repeats Linux evidence with a long compile, while the latter runs after the change has landed. Linux arm64 runners reach neither Darwin code nor its kernel or stdenv and are not the product's target.
 
 ## Check cache
 
@@ -138,7 +138,7 @@ Rejected:
 
 ## Work that waits on the target machine
 
-Record target-desktop evidence still owed without declaring it verified. VM tests cannot exercise the real SMU mailbox, physical CPU, watchdog expiry or workload results. [Issues](issues.md#work-that-waits-on-the-target-machine) owns the evidence request and blockers; [hardware first](../AGENTS.md#testing) owns execution and the hardware checkpoint before the next tuning design. The owner's update from main need not wait for an empty old release queue.
+Record target-desktop evidence still owed without declaring it verified. VM tests cannot exercise the real SMU mailbox, physical CPU, watchdog expiry or workload results. [Issues](issues.md#work-that-waits-on-the-target-machine) owns the evidence request and blockers; [hardware first](../AGENTS.md#testing) owns execution and the hardware checkpoint before the next tuning design.
 
 Otherwise-green changes can merge before hardware evidence, so the owner can install the fix needed to obtain it. A VM backend cannot supply the missing physical observation; hosted runners do not establish the target desktop's tuning behavior.
 
@@ -148,9 +148,9 @@ The simulator proves mechanics: crash recovery, safety rules and code following 
 
 Use `same` or `smoke` for exact journal comparison on unchanged-decision mechanics when appropriate. Bench retains simulated session metrics, summaries, journal audits, baseline comparison and caching; simulator, replay, facts extraction and stats remain available. Fitting, fit-artifact generation, forward comparison and bench calibration/model-check output are retired, alongside campaign launching and day/night scoring. The long session suite remains on-demand research pending R24–R26, not a policy-design gate. [Simulating](simulating.md) and [Benchmarking](benchmarking.md) describe the remaining commands and historical-source access.
 
-## Releases and changelog
+## Build identity
 
-Before 1.0 follow [AGENTS.md](../AGENTS.md#keeping-docs-current), not a release cycle. [Releasing](releasing.md) records the tooling still present until R23. `version.txt` continues to identify builds.
+`version.txt` still identifies the build and stays unchanged until 1.0. [The runtime spec](spec/runtime.md#shared-flags) defines `togi --version`: local Cargo builds report revision `dev`, while `packages.default` stamps the flake revision when available. The target desktop installs that release-profile package from `main`, following [the pre-1.0 delivery rules](../AGENTS.md#keeping-docs-current).
 
 ## Temporary tooling obligations
 
@@ -162,10 +162,8 @@ The approved process is in [AGENTS.md](../AGENTS.md#workflow). Tool removal is s
 | Rust coverage in review records | Run `just cover BASE` on every Rust review/fix delta and import its report; render refuses without coverage and a judgment. Coverage becomes optional evidence when this validation changes. | R21 |
 | Remote snapshots, previous-record recovery and multipart records | Use the current [review command](../.omp/commands/review-pr.md) until local-only exact-commit tooling replaces it. | R21 |
 | `board`, `claim`, `ship` and separate `push-fix` | Board/claim remain optional for direct requests; push recipes still enforce their own rebase/clean-tree/check steps. Documents can use the quality-only path above. | R22 |
-| `quality`'s `changes` member | Existing fragment files must parse; the check only reads `changes/`, so no new fragment is needed for any pull request. | R23 |
-| Release workflow and its hardware/exact-head gates | Do not invoke it before 1.0; if invoked it still refuses `needs-hardware`, checks the exact head and assembles existing fragments. It does not gate owner-chosen main updates. | R23 |
 
-The PR check workflow has no breaking-title/label or missing-fragment gate. Dropping those steps therefore needs no tooling bypass. Safety routing follows the coordinator-declared `snapshot --class`, recorded in the manifest; omission defaults to safety, which always refuses the small path regardless of directory. Ordinary code selects one independent reader; documents retain the temporary R21 exception above.
+Safety routing follows the coordinator-declared `snapshot --class`, recorded in the manifest; omission defaults to safety, which always refuses the small path regardless of directory. Ordinary code selects one independent reader; documents retain the temporary R21 exception above.
 
 ## Safety-evidence ledger
 
@@ -192,7 +190,7 @@ Development and debugging programs live in `crates/togi-tool-*`, with `publish =
 
 A program with a parser, a versioned format or tests pinning refusals belongs in a Rust tool crate; Nushell orchestrates `gh`/`git` output into text, as `tools/board` does. `tools/` holds unshipped benchmark/research data, board orchestration and SQL views, not shipped runtime behavior. Rust tools share workspace types, errors, lints and in-memory unit tests; a pipeline needs no crate merely to reshape JSON. [The language decision](adr/0092-rust-native-implementation.md) records why Go was removed.
 
-Rejected: a build-gated `togi debug` command keeps harness code in the operator command and adds a second build to maintain. Simulation inside the release binary tells an operator nothing about their chip while complicating real commands with simulation flags and exclusions. Simulating therefore requires a source checkout; real-machine diagnostics such as `togi doctor` stay free of simulation. Nushell for every tool loses typed parsers and precise refusal tests; Rust for every orchestration pipeline adds a build and test harness without a corresponding boundary.
+Rejected: a build-gated `togi debug` command keeps harness code in the operator command and adds a second build to maintain. Simulation inside the installed binary tells an operator nothing about their chip while complicating real commands with simulation flags and exclusions. Simulating therefore requires a source checkout; real-machine diagnostics such as `togi doctor` stay free of simulation. Nushell for every tool loses typed parsers and precise refusal tests; Rust for every orchestration pipeline adds a build and test harness without a corresponding boundary.
 
 A new crate needs a `Cargo.toml` with `[lints] workspace = true`. The `productCrates` closure in `flake.nix` discovers dependencies of `togi`, `togi-simrun` and `togi-watchtest`; register an unshipped crate outside that closure in `toolCrates`. Evaluation rejects missing, repeated or unknown registrations. Register fixtures read outside `crates/` in `crateFixtures` there, for the crate whose tests read them. The exact toolchain in `rust-toolchain.toml` changes only in its own pull request.
 
@@ -200,13 +198,13 @@ A new crate needs a `Cargo.toml` with `[lints] workspace = true`. The `productCr
 
 The package and VM checks are built from production source only, so a test-only edit leaves their derivations alone. A module that compiles only under `cfg(test)` is test-only when its file is named `tests.rs` or `*_tests.rs`, or sits in a `tests` or `*_tests` directory under `src`; any other one is listed in `crates/test-only.txt`, which `nix/sources.nix` reads. Listing a production file there fails its build. The whole-tree documentation-link member of `quality` rejects listed paths that do not exist.
 
-`just lint` and the gate run Clippy with `--all-targets` for the host with default features, then all features (compiling, not running, hardware tests), and all features for the other supported target. The `clippy` flake check does the same. [CI](#ci-and-release-gates) selects every flake check and builds those missing from Cachix; inspect the flake for the current check inventory.
+`just lint` and the gate run Clippy with `--all-targets` for the host with default features, then all features (compiling, not running, hardware tests), and all features for the other supported target. The `clippy` flake check does the same. [CI](#ci-checks) selects every flake check and builds those missing from Cachix; inspect the flake for the current check inventory.
 
 The [Rust guidance](../AGENTS.md#rust) leaves complexity to reviewers. The old Go cognitive-complexity limit was not ported: Clippy's `cognitive_complexity` documentation says it does not measure understandability; its default threshold mostly flagged test assertion sequences ([#874](https://github.com/shgew/togi/issues/874)).
 
 ## Platform-gated code and cross-lint
 
-Development supports x86_64-linux and aarch64-darwin; hardware runs and NixOS VM tests require Linux. There is [no macOS CI](#ci-and-release-gates). `just lint` and the gate cross-lint with `cargo clippy --target aarch64-apple-darwin` on Linux and `--target x86_64-unknown-linux-gnu` on macOS. Keep this check. A pull request touching `cfg(target_os = ...)` or `cfg(target_vendor = ...)` says "not built on macOS" unless it was built there. File and fix macOS breakage like any other bug.
+Development supports x86_64-linux and aarch64-darwin; hardware runs and NixOS VM tests require Linux. There is [no macOS CI](#ci-checks). `just lint` and the gate cross-lint with `cargo clippy --target aarch64-apple-darwin` on Linux and `--target x86_64-unknown-linux-gnu` on macOS. Keep this check. A pull request touching `cfg(target_os = ...)` or `cfg(target_vendor = ...)` says "not built on macOS" unless it was built there. File and fix macOS breakage like any other bug.
 
 Cross-lint runs C build scripts (`alloca`, through Criterion) for the other target. The flake sets `CC_<target>` and `AR_<target>` to unwrapped Clang and `llvm-ar` in both the dev shell and the Clippy check. A C dependency needs no further setup only while it builds with these tools without SDK headers.
 

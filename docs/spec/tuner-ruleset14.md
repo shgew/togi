@@ -188,7 +188,7 @@ supervised-procedure activation gate, not the risk policy or transaction safegua
 Hardware acceptance is the on-machine check on the day of the **first live nonzero step**, recorded in
 that night's [run retrospective](https://github.com/shgew/togi/issues/260) against the exact
 revision/configuration, with BIOS CO 0 and no invented measured-time claims. It replaces the separately
-authorized supervised procedure and is not a prior release gate; it carries no `needs-hardware` label
+authorized supervised procedure and is not required before updating from `main`; it carries no `needs-hardware` label
 because it cannot run before a step is eligible. Record:
 
 - the applied profile's all-core readback;

@@ -3,11 +3,11 @@ use args.nu selection
 
 const product = [togi togi-tuner]
 const metadata = {
-    workspace_members: [product tuner release cover facts],
+    workspace_members: [product tuner audit cover facts],
     packages: [
         {id: product, name: togi}
         {id: tuner, name: togi-tuner}
-        {id: release, name: togi-tool-release}
+        {id: audit, name: togi-tool-audit}
         {id: cover, name: togi-tool-cover}
         {id: facts, name: togi-facts}
         {id: dependency, name: serde}
@@ -25,20 +25,19 @@ def test-product-only [] {
 }
 
 def test-tool-only-diff-retains-product [] {
-    assert equal (selection $product $metadata [togi-tool-release]) ($product_args | append [-p togi-tool-release])
+    assert equal (selection $product $metadata [togi-tool-audit]) ($product_args | append [-p togi-tool-audit])
 }
 
 def test-mixed-diff-deduplicates-product-and-tools [] {
-    assert equal (selection $product $metadata [togi-tuner togi-tool-release togi-tool-release]) ($product_args | append [-p togi-tool-release])
+    assert equal (selection $product $metadata [togi-tuner togi-tool-audit togi-tool-audit]) ($product_args | append [-p togi-tool-audit])
 }
 
 def test-multiple-tools-do-not-select-whole-concern [] {
-    assert equal (selection $product $metadata [togi-tool-release togi-tool-cover]) ($product_args | append [-p togi-tool-release -p togi-tool-cover])
+    assert equal (selection $product $metadata [togi-tool-audit togi-tool-cover]) ($product_args | append [-p togi-tool-audit -p togi-tool-cover])
 }
 
 def test-tool-only-library-selects-own-tests-not-consumers [] {
-    # Selecting facts runs its tests; compilation of its dependencies is not a
-    # selection of their tests, nor of release/cover's consumer tests.
+    # Selecting facts runs its own tests, not tests of dependencies or consumers.
     assert equal (selection $product $metadata [togi-facts]) ($product_args | append [-p togi-facts])
 }
 
@@ -52,9 +51,9 @@ def test-nonworkspace-dependency-fails [] { assert-rejected serde }
 def test-option-is-not-a-package [] { assert-rejected '--workspace' }
 
 def test-cli-preserves-package-spelling [] {
-    let result = (run-cli '-p togi -p togi-tuner' togi-tool-release togi-tool-release)
+    let result = (run-cli '-p togi -p togi-tuner' togi-tool-audit togi-tool-audit)
     assert equal $result.exit_code 0
-    assert equal ($result.stdout | str trim) '-p togi -p togi-tuner -p togi-tool-release'
+    assert equal ($result.stdout | str trim) '-p togi -p togi-tuner -p togi-tool-audit'
 }
 
 def test-cli-rejects-before-producing-arguments [] {
