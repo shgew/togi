@@ -109,8 +109,6 @@ pub enum SessionError {
     Log(#[source] io::Error),
     #[error("recover trial elapsed time")]
     RecoveredElapsed(#[source] jiff::Error),
-    #[error("convert recorded workload rotation")]
-    WorkloadRotation(#[source] std::num::TryFromIntError),
     /// The all-zero baseline a session starts from was not found: Ruleset 13 refuses a nonzero one, never clamps.
     #[error(
         "the baseline is not all zero on cores {}; reset the offsets to zero and start again",

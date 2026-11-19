@@ -132,7 +132,3 @@ togi-ycruncher = { opt-level = 0 }
 [profile.release]
 lto = "thin"
 panic = "unwind"
-
-[profile.profiling]
-inherits = "release"
-debug = "full"

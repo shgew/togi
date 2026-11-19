@@ -100,7 +100,6 @@ pub fn unknown_event_message(
         | ReadError::Utf8 { .. }
         | ReadError::Gap { .. }
         | ReadError::Foreign
-        | ReadError::FirstEvent { .. }
         | ReadError::Cause { .. } => return None,
     };
     Some(format!(

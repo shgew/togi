@@ -1050,54 +1050,6 @@ fn first_day_status_and_evidence_show_the_same_morning_report() {
     super::support::snapshot("status__evidence_morning", &evidence);
 }
 
-/// Explicit fixture publication only; ordinary tests stay on `MemFs`.
-#[test]
-#[ignore = "writes status fixtures to an explicitly supplied temporary directory"]
-fn real_fs_generate_status_snapshots() {
-    let directory = std::env::var_os("TOGI_STATUS_SNAPSHOTS").expect("set TOGI_STATUS_SNAPSHOTS");
-    let directory = std::path::Path::new(&directory);
-    assert!(
-        directory.starts_with(std::env::temp_dir()),
-        "use a temporary directory"
-    );
-    std::fs::create_dir_all(directory).unwrap();
-    let emit = |name: &str, body: &str| {
-        std::fs::write(
-            directory.join(format!("read__status__{name}.snap")),
-            format!("---\nsource: crates/togi/tests/read/status.rs\nexpression: text(&ran.stdout)\n---\n{body}"),
-        ).unwrap();
-    };
-    let help = togi(&Session::empty(), &["status", "--help"]);
-    emit("status_help", text(&help.stdout));
-    for scenario in Scenario::ALL {
-        let state = super::support::session(scenario);
-        let ran = togi(&state, &["status"]);
-        assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
-        emit(&format!("status_{}", scenario.name()), text(&ran.stdout));
-    }
-    for scenario in [Scenario::Nonzero, Scenario::Mapping, Scenario::DayStep] {
-        emit(
-            &format!("evidence_{}", scenario.name()),
-            &evidence_output(scenario, true),
-        );
-    }
-    let morning = morning_state();
-    emit("status_morning", text(&togi(&morning, &["status"]).stdout));
-    emit("evidence_morning", &evidence_in(&morning, true));
-    let paused = paused_ruleset14();
-    emit("paused_ruleset14", &status_of(&paused));
-    let watch = togi(&paused, &["watch", "--width", "240", "--height", "67"]);
-    assert_eq!(watch.status.code(), Some(0), "{}", text(&watch.stderr));
-    std::fs::write(
-        directory.join("read__watch__paused_ruleset14.snap"),
-        format!(
-            "---\nsource: crates/togi/tests/read/status.rs\nexpression: text(&ran.stdout)\n---\n{}",
-            text(&watch.stdout)
-        ),
-    )
-    .unwrap();
-}
-
 fn paused_ruleset14() -> Session {
     let saved = profile(-5, 0);
     let stock = profile(0, 0);
