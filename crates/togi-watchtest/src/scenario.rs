@@ -24,11 +24,11 @@ pub enum Scenario {
     Recovering,
     /// A promoted nonzero day profile has no real work due and its first filler trial has started.
     Filler,
-    /// A calendar night is qualifying the next exact day profile: its first qualification trial has started.
+    /// A night is qualifying the next exact day profile: its first qualification trial has started.
     Qualification,
     /// A cold boot proposes the first hold-earned exact-qualified `climb.decision` promotion.
     DayStep,
-    /// A calendar night reproduces the CPU-suspect daily event at the promoted profile: its first reproduction trial
+    /// A night reproduces the CPU-suspect daily event at the promoted profile: its first reproduction trial
     /// has started.
     Reproduction,
     /// Every isolated -5 probe failed, leaving no admissible nonzero work.
@@ -79,7 +79,7 @@ impl Scenario {
                 Base::Mapped
             }
             Self::Filler => Base::Filler,
-            Self::Qualification | Self::DayStep | Self::Reproduction => Base::Calendar,
+            Self::Qualification | Self::DayStep | Self::Reproduction => Base::StagedReproduction,
             Self::Deadend => Base::DeadEnd,
         }
     }
