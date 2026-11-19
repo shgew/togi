@@ -25,7 +25,7 @@ use togi_machine::{
 use togi_render::OutputFacts;
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
-use togi_tuningboot::night::{SETUP_PATH, Setup};
+use togi_tuningboot::night::SETUP_PATH;
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 use togi_watch::terminal;
 
@@ -507,13 +507,14 @@ impl System for Fake {
         self.sim.now()
     }
 
-    /// Like the real host's: the night setup file is read and decoded before a loader opens, so an unreadable or
-    /// malformed one fails here; any other selection is the in-memory GRUB environment.
-    fn bootloader(&self, selection: &Path) -> io::Result<Box<dyn Bootloader>> {
-        if selection == Path::new(SETUP_PATH) {
-            self.read_config(selection)?
-                .parse::<Setup>()
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    /// Like the real host's: the retired night setup path is refused without being opened; any other
+    /// path is the in-memory GRUB environment.
+    fn bootloader(&self, grubenv: &Path) -> io::Result<Box<dyn Bootloader>> {
+        if grubenv == Path::new(SETUP_PATH) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "systemd-boot is not supported; --tuning-boot requires a GRUB environment file",
+            ));
         }
         Ok(Box::new(self.grub.clone()))
     }

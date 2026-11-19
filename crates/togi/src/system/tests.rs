@@ -1,4 +1,6 @@
 use std::fs::File;
+use std::io::ErrorKind;
+use std::path::Path;
 use std::process::Command;
 
 use jiff::Timestamp;
@@ -8,6 +10,16 @@ use super::{Real, System, both_terminals};
 
 const HELPER: &str = "system::tests::real_process_zone_helper";
 const MARK: &str = "TOGI_ZONE_TEST_MARK";
+
+#[test]
+fn the_old_systemd_boot_service_argument_is_not_opened_as_grubenv() {
+    let result = Real.bootloader(Path::new(togi_tuningboot::night::SETUP_PATH));
+    let Err(error) = result else {
+        panic!("accepted the retired service argument as a GRUB environment");
+    };
+    assert_eq!(error.kind(), ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("requires a GRUB environment"));
+}
 
 #[test]
 fn real_fs_a_character_device_that_is_not_a_terminal_is_not_a_terminal() {

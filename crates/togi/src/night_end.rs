@@ -1,6 +1,6 @@
 //! `togi night-end`: leave the night for the day.
 
-use togi_tuningboot::night::{BootSelection, Selection as _};
+use togi_tuningboot::night::BootSelection;
 
 use std::sync::LazyLock;
 
@@ -35,7 +35,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(setup) => setup,
         Err(message) => return fail(ctx, COMMAND, message),
     };
-    let bootloader = match ctx.system.bootloader(setup.boot_path()) {
+    let bootloader = match ctx.system.bootloader(setup.grubenv()) {
         Ok(bootloader) => bootloader,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
@@ -79,7 +79,7 @@ pub fn leave(ctx: &mut Context<'_>) -> Exit {
             format!("stop the run: {}", togi_render::error_chain(&error)),
         );
     }
-    let bootloader = match ctx.system.bootloader(setup.boot_path()) {
+    let bootloader = match ctx.system.bootloader(setup.grubenv()) {
         Ok(bootloader) => bootloader,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };

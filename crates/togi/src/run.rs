@@ -78,8 +78,8 @@ pub struct Args {
     #[command(flatten)]
     pub config: ConfigArgs,
 
-    /// Run as the tuning boot service: persist a leave reason before restoring the day's boot
-    /// selection, using a GRUB environment or /etc/togi/night.json, and reboot after a boot loop
+    /// Run as the tuning boot service: use the GRUB environment to persist a leave reason before
+    /// restoring the day's boot selection, and reboot after a boot loop
     #[arg(long, value_name = "file", value_hint = ValueHint::FilePath)]
     pub tuning_boot: Option<PathBuf>,
 

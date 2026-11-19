@@ -598,6 +598,7 @@ let
       testScript = ''
         import json
         import re
+        from datetime import timedelta
 
         grubenv_list = "grub-editenv /boot/grub/grubenv list"
 
@@ -612,6 +613,17 @@ let
             machine.wait_for_console_text("reboot: Restarting system", timeout=120)
             machine.connected = False
             machine.wait_for_unit("multi-user.target")
+
+
+        def power_button_shutdown():
+            # multi-user.target can precede logind opening the hotplugged power input.
+            machine.wait_until_succeeds(
+                "journalctl -b -u systemd-logind --no-pager -o cat | "
+                "grep -F 'Watching system buttons' | grep -F '(Power Button)'",
+                timeout=timedelta(seconds=30),
+            )
+            machine.send_monitor_command("system_powerdown")
+            machine.wait_for_shutdown(timeout=timedelta(seconds=120))
 
 
         journal = "/var/lib/togi/events.jsonl"
@@ -683,8 +695,7 @@ let
         assert len(attested()[0]) == 1, "the crash reboot must keep the one attestation"
 
         # The power button ends a night through the leave hook and selects the day's entry again exactly.
-        machine.send_monitor_command("system_powerdown")
-        machine.wait_for_shutdown()
+        power_button_shutdown()
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
         assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
@@ -709,8 +720,7 @@ let
         assert "togi_night" not in env, env
         machine.wait_until_succeeds("systemctl is-active togi.service")
         # Ending it boots the boot loader's default.
-        machine.send_monitor_command("system_powerdown")
-        machine.wait_for_shutdown()
+        power_button_shutdown()
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
         assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
@@ -722,255 +732,6 @@ let
         assert env["saved_entry"] == day, env
         assert "togi_day_entry" not in env, env
         assert "togi_night" not in env, env
-      '';
-    };
-
-    # Real EFI firmware and systemd-boot: only the tuner sleeps and the firmware context is the test helper's
-    # simulated one (the VM has no SMU); night selection, persistence, attestation and restoration use the shipped
-    # CLI and backend. Both an explicit default and an absent override must survive a night exactly.
-    night-systemd-boot = {
-      name = "togi-night-systemd-boot";
-
-      nodes.machine =
-        { config, lib, ... }:
-        let
-          efivar = name: "/sys/firmware/efi/efivars/${name}-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f";
-        in
-        {
-          imports = [
-            module
-            rebootHandshake
-          ];
-          networking.useDHCP = false;
-          virtualisation.useBootLoader = true;
-          virtualisation.useEFIBoot = true;
-          boot.loader.grub.enable = false;
-          boot.loader.systemd-boot.enable = true;
-          boot.loader.efi.canTouchEfiVariables = true;
-          boot.loader.timeout = 1;
-          services.togi = {
-            enable = true;
-            tuning.enable = true;
-            package = pkgs.writeShellScriptBin "togi" ''
-              if [ "$1" = run ]; then
-                exec ${pkgs.coreutils}/bin/sleep infinity
-              fi
-              exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
-            '';
-          };
-          hardware.cpu.amd.ryzen-smu.enable = false;
-          environment.systemPackages = [ pkgs.e2fsprogs ];
-          # `togi night` requests `systemctl reboot` right after its Default write. Put first in PATH, this records both
-          # loader variables' attributes at that moment, on the root disk, before the reboot remounts efivarfs.
-          environment.etc."togi-reboot-probe/systemctl".source = pkgs.writeShellScript "systemctl" ''
-            ${pkgs.e2fsprogs}/bin/lsattr -d ${efivar "LoaderEntryDefault"} ${efivar "LoaderEntryLastBooted"} \
-              >/root/reboot-flags
-            ${pkgs.coreutils}/bin/sync /root/reboot-flags
-            exec ${config.systemd.package}/bin/systemctl "$@"
-          '';
-        };
-
-      testScript = ''
-        import base64
-        import json
-        import shlex
-        from datetime import timedelta
-
-        bootctl = "bootctl --esp-path=/boot"
-        guid = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
-
-
-        def variable(name):
-            return f"/sys/firmware/efi/efivars/{name}-{guid}"
-
-
-        def efi(name):
-            status, output = machine.execute(f"base64 -w0 {variable(name)} 2>/dev/null")
-            return None if status else base64.b64decode(output)
-
-
-        def value(name):
-            raw = efi(name)
-            return None if raw is None else raw[4:].decode("utf-16-le").rstrip("\0")
-
-
-        def immutable(listing):
-            # `lsattr -d` prints the attribute letters, then the path.
-            return {
-                path.removeprefix("/sys/firmware/efi/efivars/").removesuffix(f"-{guid}"): "i" in letters
-                for letters, path in (line.split() for line in listing.splitlines())
-            }
-
-
-        def flags(*names):
-            return immutable(machine.succeed("lsattr -d " + " ".join(variable(name) for name in names)))
-
-
-        def make_immutable(*names):
-            machine.succeed("chattr +i " + " ".join(variable(name) for name in names))
-            assert flags(*names) == dict.fromkeys(names, True), flags(*names)
-
-
-        def reaches_reboot():
-            machine.wait_for_console_text("reboot: Restarting system", timeout=120)
-            machine.connected = False
-            machine.wait_for_unit("multi-user.target")
-
-
-        def current_system():
-            return machine.succeed("readlink -f /run/current-system").strip()
-
-        def power_button_shutdown():
-            # multi-user.target can precede logind opening the hotplugged power
-            # input. A one-shot ACPI event sent before that point is lost.
-            machine.wait_until_succeeds(
-                "journalctl -b -u systemd-logind --no-pager -o cat | "
-                "grep -F 'Watching system buttons' | grep -F '(Power Button)'",
-                timeout=timedelta(seconds=30),
-            )
-            machine.send_monitor_command("system_powerdown")
-            machine.wait_for_shutdown(timeout=timedelta(seconds=120))
-
-
-        def enter_night(path=""):
-            # A preceding reboot's console line must not satisfy this reboot's wait.
-            machine.succeed("echo togi-night-confirm-ready > /dev/ttyS0")
-            machine.wait_for_console_text("togi-night-confirm-ready", timeout=10)
-            machine.succeed("touch /run/togi-test-night-output")
-            out = machine.succeed(f"echo y | {path}togi night")
-            assert "Good night." in out, out
-            machine.execute("rm /run/togi-test-night-output", check_output=False)
-            reaches_reboot()
-            assert current_system() == tuning_system
-            assert value("LoaderEntryDefault") == tuning_entry
-            machine.wait_until_succeeds("systemctl is-active togi.service")
-
-
-        journal = "/var/lib/togi/events.jsonl"
-
-
-        def attested():
-            status, raw = machine.execute(f"cat {journal}")
-            events = [json.loads(line) for line in raw.splitlines() if line.strip()] if status == 0 else []
-            return [e for e in events if e["kind"] == "stock.attested"]
-
-
-        machine.start(allow_reboot=True)
-        machine.wait_for_unit("multi-user.target")
-        machine.succeed("test -d /sys/firmware/efi/efivars")
-        machine.succeed(f"{bootctl} is-installed")
-        assert "systemd-boot" in machine.succeed(f"{bootctl} status")
-        normal_system = current_system()
-        tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
-        assert normal_system != tuning_system
-        setup = json.loads(machine.succeed("cat /etc/togi/night.json"))
-        assert setup == {
-            "loader": "systemd-boot", "esp": "/boot", "boot": "/boot",
-            "state": "/var/lib/togi-boot", "specialisation": "togi"
-        }, setup
-        entries = json.loads(machine.succeed(f"{bootctl} --json=short list"))
-        day = value("LoaderEntrySelected")
-        assert any(entry["id"] == day for entry in entries), (day, entries)
-        tuning_entries = [
-            entry["id"] for entry in entries
-            if f"init={tuning_system}/init" in entry.get("options", "").split()
-        ]
-        assert len(tuning_entries) == 1, (tuning_system, entries)
-        tuning_entry = tuning_entries[0]
-        assert tuning_entry != day
-        loader_conf = machine.succeed("cat /boot/loader/loader.conf")
-        machine.succeed(f"{bootctl} set-default {shlex.quote(day)}")
-        before = efi("LoaderEntryDefault")
-        assert value("LoaderEntryDefault") == day
-
-        with subtest("declining leaves the EFI selection untouched"):
-            machine.succeed("echo n | togi night")
-            machine.succeed("togi night </dev/null")
-            assert efi("LoaderEntryDefault") == before
-            assert efi("LoaderEntryOneShot") is None
-            assert attested() == [], "declining must record no attestation"
-
-        with subtest("a hard reset stays in the persistent tuning entry"):
-            enter_night()
-            machine.crash()
-            machine.start(allow_reboot=True)
-            machine.wait_for_unit("multi-user.target")
-            assert current_system() == tuning_system
-            assert value("LoaderEntryDefault") == tuning_entry
-            machine.wait_until_succeeds("systemctl is-active togi.service")
-            assert len(attested()) == 1, "the confirmed night attests once and the crash reboot keeps it"
-
-        with subtest("night-end restores the exact explicit default and is idempotent"):
-            machine.succeed("togi night-end")
-            assert efi("LoaderEntryDefault") == before
-            machine.succeed("togi night-end")
-            assert efi("LoaderEntryDefault") == before
-            assert machine.succeed("cat /boot/loader/loader.conf") == loader_conf
-            machine.reboot()
-            machine.wait_for_unit("multi-user.target")
-            assert current_system() == normal_system
-            assert efi("LoaderEntryDefault") == before
-
-        with subtest("the power button ends the night through the shipped leave hook"):
-            enter_night()
-            power_button_shutdown()
-            machine.start(allow_reboot=True)
-            machine.wait_for_unit("multi-user.target")
-            assert current_system() == normal_system
-            assert efi("LoaderEntryDefault") == before
-
-        with subtest("an absent override is restored without pinning a generation"):
-            machine.succeed(f'{bootctl} set-default ""')
-            assert efi("LoaderEntryDefault") is None
-            enter_night()
-            power_button_shutdown()
-            machine.start(allow_reboot=True)
-            machine.wait_for_unit("multi-user.target")
-            assert current_system() == normal_system
-            assert efi("LoaderEntryDefault") is None
-            assert efi("LoaderEntryOneShot") is None
-            assert machine.succeed("cat /boot/loader/loader.conf") == loader_conf
-
-        with subtest("saved mode restores the previous LastBooted selection exactly"):
-            machine.succeed(f"{bootctl} set-default @saved")
-            machine.reboot()
-            machine.wait_for_unit("multi-user.target")
-            assert current_system() == normal_system
-            saved_default = efi("LoaderEntryDefault")
-            saved_last = efi("LoaderEntryLastBooted")
-            assert value("LoaderEntryDefault") == "@saved"
-            assert value("LoaderEntryLastBooted") == day
-            loader_variables = ("LoaderEntryDefault", "LoaderEntryLastBooted")
-            # Each write clears the immutable flag only for its own write, then sets it again.
-            make_immutable(*loader_variables)
-            machine.succeed("rm -f /root/reboot-flags")
-            enter_night("PATH=/etc/togi-reboot-probe:$PATH ")
-            at_reboot = immutable(machine.succeed("cat /root/reboot-flags"))
-            assert at_reboot == dict.fromkeys(loader_variables, True), at_reboot
-            # The explicit tuning Default makes systemd-boot discard LastBooted. Install a changed real EFI fixture so
-            # night-end must rewrite both immutable variables rather than creating an absent LastBooted.
-            changed_last = saved_last[:4] + (tuning_entry + "\0").encode("utf-16-le")
-            last_path = variable("LoaderEntryLastBooted")
-            machine.succeed(
-                f"if [ -e {last_path} ]; then chattr -i {last_path}; fi && "
-                f"printf %s {base64.b64encode(changed_last).decode()} | base64 -d | "
-                f"dd of={last_path} bs=4096 iflag=fullblock conv=notrunc status=none"
-            )
-            assert value("LoaderEntryLastBooted") == tuning_entry
-            make_immutable(*loader_variables)
-            machine.succeed("togi night-end")
-            assert efi("LoaderEntryDefault") == saved_default
-            assert efi("LoaderEntryLastBooted") == saved_last
-            assert flags(*loader_variables) == dict.fromkeys(loader_variables, True), flags(*loader_variables)
-            machine.reboot()
-            machine.wait_for_unit("multi-user.target")
-            assert current_system() == normal_system
-            assert efi("LoaderEntryDefault") == saved_default
-            assert efi("LoaderEntryLastBooted") == saved_last
-
-        with subtest("later nights on the same firmware context attest nothing new"):
-            events = attested()
-            assert len(events) == 1 and events[0]["data"]["firmware"]["bios_version"] == "vm", events
       '';
     };
 
@@ -1375,7 +1136,7 @@ let
               for unit in units:
                   machine.succeed(f"systemctl stop {unit.split()[0]}")
               machine.succeed(
-                  "rm -rf /var/lib/togi /var/lib/togi-vm /var/lib/togi-boot /run/togi "
+                  "rm -rf /var/lib/togi /var/lib/togi-vm /run/togi "
                   "/run/togi-test-held /run/togi-retry-tuning-boot /run/systemd/system/togi* "
                   "/tmp/scope-tests.log /tmp/fake-notify /tmp/*-lock-state /tmp/host-lock-state-*; "
                   "systemctl daemon-reload; systemctl reset-failed; "
@@ -1491,5 +1252,4 @@ in
   ];
   day-apply-profile = import ./day-apply-profile.nix { inherit pkgs package vmRecovery; };
   display = oneScenario "display" "console-display";
-  efi = oneScenario "efi" "night-systemd-boot";
 }

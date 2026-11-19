@@ -7,7 +7,7 @@ use test_case::test_case;
 
 use super::{
     BootSelection, DAY_ENTRY_VARIABLE, Entry, NIGHT_BEGUN, NIGHT_VARIABLE, NightError,
-    SAVED_ENTRY_VARIABLE, Selection, Setup,
+    SAVED_ENTRY_VARIABLE, Setup, SetupError,
 };
 use crate::{Bootloader, Environment, SavedEntry};
 
@@ -266,19 +266,20 @@ fn the_setup_names_the_environment_and_the_entry() {
     let setup: Setup = r#"{"loader":"grub","grubenv":"/boot/grub/grubenv","entry":"NixOS - togi"}"#
         .parse()
         .unwrap();
-    assert_eq!(setup.boot_path().to_str(), Some("/boot/grub/grubenv"));
+    assert_eq!(setup.grubenv().to_str(), Some("/boot/grub/grubenv"));
     assert_eq!(setup.entry().as_str(), TUNING);
 }
 
 #[test]
-fn the_systemd_setup_names_the_esp_state_and_specialisation() {
-    let setup: Setup = r#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi-boot","specialisation":"togi"}"#
-        .parse()
-        .unwrap();
-    assert_eq!(setup.boot_path(), std::path::Path::new(super::SETUP_PATH));
-    assert_eq!(setup.entry().as_str(), "togi");
-    assert!(matches!(setup, Setup::SystemdBoot { esp, state, .. }
-        if esp == std::path::Path::new("/boot") && state == std::path::Path::new("/var/lib/togi-boot")));
+fn the_former_systemd_boot_setup_is_refused_as_an_unsupported_loader() {
+    let error = r#"{"loader":"systemd-boot","esp":"/boot","boot":"/boot","state":"/var/lib/togi-boot","specialisation":"togi"}"#
+        .parse::<Setup>()
+        .unwrap_err();
+    let SetupError::Syntax(error) = error else {
+        panic!("expected an invalid loader: {error}");
+    };
+    assert!(error.to_string().contains("systemd-boot"), "{error}");
+    assert!(error.to_string().contains("grub"), "{error}");
 }
 
 #[test_case(r#"{"loader":"grub","grubenv":"/g","entry":""}"#; "empty entry")]

@@ -45,13 +45,13 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Linux it reports that hardware runs need Linux and exits 1 before reading anything.
 ///
 /// With --day, check CPU and `ryzen_smu` identity, current offset readback, PID 1's armed hardware
-/// watchdog, this boot's entries in the persistent system journal, and the installed GRUB or
-/// systemd-boot setup. Counting must be observed: a missing, unreadable or static counter fails;
-/// a PID 1 refresh needs a later decrease. This does not test physical expiry. Also require a
-/// recorded, current all-core CO-0 baseline verified in this boot by the day service's start, a
-/// cited baseline/restoration readback chain, or a complete verified zero-write transaction.
-/// Missing, failed, partial or superseded readback refuses. Applied D or an old receipt alone is
-/// not proof. These read-only diagnostics neither apply a profile nor give a stability verdict.
+/// watchdog, this boot's entries in the persistent system journal, and the installed GRUB setup.
+/// Counting must be observed: a missing, unreadable or static counter fails; a PID 1 refresh needs
+/// a later decrease. This does not test physical expiry. Also require a recorded, current all-core
+/// CO-0 baseline verified in this boot by the day service's start, a cited baseline/restoration
+/// readback chain, or a complete verified zero-write transaction. Missing, failed, partial or
+/// superseded readback refuses. Applied D or an old receipt alone is not proof. These read-only
+/// diagnostics neither apply a profile nor give a stability verdict.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -221,13 +221,13 @@ fn bootloader_check(system: &dyn crate::system::System) -> Check {
     let setup = system.read_config(std::path::Path::new(SETUP_PATH));
     let (ok, detail) = match setup {
         Ok(text) => match text.parse::<Setup>() {
-            Ok(Setup::Grub { .. }) => (true, "installed setup selects GRUB".to_owned()),
-            Ok(Setup::SystemdBoot { .. }) => {
-                (true, "installed setup selects systemd-boot".to_owned())
-            }
+            Ok(_) => (true, "installed setup selects GRUB".to_owned()),
             Err(error) => (
                 false,
-                format!("decode installed boot-loader setup: {error}"),
+                format!(
+                    "decode installed boot-loader setup: {}",
+                    togi_render::error_chain(&error)
+                ),
             ),
         },
         Err(error) => (

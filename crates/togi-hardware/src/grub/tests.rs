@@ -12,10 +12,12 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 use test_case::test_case;
-use togi_tuningboot::night::{DAY_ENTRY_VARIABLE, NIGHT_BEGUN, NIGHT_VARIABLE};
+use togi_tuningboot::night::{
+    BootSelection, DAY_ENTRY_VARIABLE, Entry, NIGHT_BEGUN, NIGHT_VARIABLE,
+};
 use togi_tuningboot::{
-    COUNT_VARIABLE, Environment as _, LeaveReason, REASON_VARIABLE, RestartCount, clear_reason,
-    read_reason, reset_count, restart_limit, write_reason,
+    COUNT_VARIABLE, Environment as _, LeaveReason, REASON_VARIABLE, RestartCount, RestartLimit,
+    clear_reason, read_reason, reset_count, restart_limit, write_reason,
 };
 
 use super::{
@@ -258,6 +260,39 @@ fn night(saved: &str) -> Fake {
         .value(DAY_ENTRY_VARIABLE, DAY)
 }
 
+#[test_case(&Fake::with(DAY).sticky(), true; "ignored selection write")]
+#[test_case(&Fake::with(DAY).failing(2, false), false; "selection write failed before effect")]
+#[test_case(&Fake::with(DAY).failing(2, true), true; "selection write failed after effect")]
+#[test_case(&Fake::with(DAY).failing(3, false), true; "selection readback failed")]
+fn a_failed_begin_leaves_the_day_selected_or_recoverable(fake: &Fake, needs_restore: bool) {
+    let tuning = Entry::try_from("NixOS - togi".to_owned()).unwrap();
+    let mut selection = BootSelection::new(Box::new(fake.grub()));
+    assert!(selection.begin(&tuning).is_err());
+    if needs_restore {
+        assert_eq!(fake.value_of(DAY_ENTRY_VARIABLE).as_deref(), Some(DAY));
+        assert_eq!(fake.grub().clear_saved().unwrap().after, DAY);
+    }
+    assert_eq!(fake.saved(), DAY);
+    assert_eq!(fake.value_of(NIGHT_VARIABLE), None);
+}
+
+#[test]
+fn exhaustion_restores_the_exact_day_without_consuming_the_pending_reason() {
+    let fake = night("NixOS - togi").value(COUNT_VARIABLE, "2");
+    assert_eq!(
+        restart_limit(&mut fake.grub()).unwrap(),
+        RestartLimit::Exhausted
+    );
+    assert_eq!(fake.saved(), DAY);
+    assert_eq!(fake.value_of(NIGHT_VARIABLE), None);
+    let mut reopened = fake.grub();
+    let reason = read_reason(&mut reopened).unwrap().unwrap();
+    assert_eq!(reason.count, RestartCount::try_from(3).unwrap());
+    clear_reason(&mut reopened).unwrap();
+    assert_eq!(read_reason(&mut reopened).unwrap(), None);
+    assert_eq!(reopened.get(COUNT_VARIABLE).unwrap().as_deref(), Some("3"));
+}
+
 #[test]
 fn clearing_restores_the_days_entry_exactly_and_ends_the_night() {
     let fake = night("NixOS - togi");
@@ -335,6 +370,9 @@ fn a_restore_fails_in_each_of_its_commands_with_what_was_known() {
                 ),
                 "{case}: {error:?}"
             );
+            assert_eq!(fake.grub().clear_saved().unwrap().after, DAY, "{case}");
+            assert_eq!(fake.saved(), DAY, "{case}");
+            assert_eq!(fake.value_of(NIGHT_VARIABLE), None, "{case}");
         }
     }
 }
@@ -353,6 +391,8 @@ fn a_day_entry_that_does_not_read_back_is_rejected_with_all_three_observations()
     );
     assert_eq!(error.after(), Some("NixOS - togi"));
     assert!(fake.value_of(NIGHT_VARIABLE).is_some());
+    fake.0.borrow_mut().sticky = false;
+    assert_eq!(fake.grub().clear_saved().unwrap().after, DAY);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # How to tune a machine with togi
 
-For a Zen 5 (Granite Ridge) desktop running NixOS with GRUB or systemd-boot. Every command below runs on that machine.
+For a Zen 5 (Granite Ridge) desktop running NixOS with GRUB. Every command below runs on that machine.
 
 ## 1. Install the module
 
@@ -274,9 +274,13 @@ This is a **destructive reset test**, not a routine health check or a stability 
 
 ## 4. Overnight: the tuning boot
 
-Enable `services.togi.tuning.enable = true;` with exactly one supported boot
-loader, GRUB or systemd-boot, and rebuild. Switch from the day with
-`sudo togi night`. It shows the plan, then its existing reboot confirmation
+Enable `services.togi.tuning.enable = true;` with GRUB and rebuild. If you
+are switching from systemd-boot, first boot the normal system and restore
+the previous boot selection with `sudo togi night-end` using the version
+that started the night. The GRUB-only version does not change old EFI
+selections or read their saved state.
+
+Switch from the day with `sudo togi night`. It shows the plan, then its existing reboot confirmation
 also asks you to confirm that the machine is stable at CO 0 with BIOS at
 stock. Only `y` or `yes` goes on: togi journals that attestation once per
 firmware context, selects the current generation's tuning entry, remembers
@@ -285,13 +289,13 @@ requires a new current-context attestation. Any other answer changes nothing.
 In a normal boot, `sudo togi watch` offers the same switch on `n`, with the
 same stock-stability confirmation and no second prompt.
 
-The tuning entry boots to a console with no desktop. tty1 shows `togi watch --tuning-boot`, a dashboard that ignores `q`, `Q`, Ctrl-C and Ctrl-D; `systemctl stop togi-watch.service` still ends it. Its log and the kernel's messages are on tty3 (Alt+F3); tty2 has a login prompt. `togi.service` tunes unattended. A night begun with `togi night` has no time limit, and crash reboots stay in tuning with either loader.
+The tuning entry boots to a console with no desktop. tty1 shows `togi watch --tuning-boot`, a dashboard that ignores `q`, `Q`, Ctrl-C and Ctrl-D; `systemctl stop togi-watch.service` still ends it. Its log and the kernel's messages are on tty3 (Alt+F3); tty2 has a login prompt. `togi.service` tunes unattended. A night begun with `togi night` has no time limit, and crash reboots stay in tuning.
 
 End the night with `F10` on the tuning dashboard and answer `y` to `Reboot into the day cycle?`, which stops the run cleanly first, or use the power button, `poweroff` or `reboot`. The tuner also ends it at a dead end or its restart limit. To keep tuning across your own reboots instead, set `services.togi.tuning.leaveOnShutdown = false;`. Automatic restart-limit retry reboots keep the tuning entry even with the option on ([retry policy](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 
-Ending restores the previous boot policy, not a normal generation chosen by togi. On systemd-boot that includes an absent EFI default, an explicit entry, a glob or `@saved`, together with its last-booted state. A newer default you select during the night wins over the remembered one. Stale saved IDs are restored verbatim and systemd-boot applies its normal fallback.
+Ending restores the previous GRUB selection exactly. If the day had no saved entry, GRUB uses its default; togi never chooses a normal generation. If `togi restart-limit` or the shutdown hook's `togi night-end` itself fails, the module's fallback only unsets `saved_entry`, so the next boot is GRUB's default rather than an earlier saved day entry ([retry policy](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 
-You can also pick the tuning specialisation in the boot menu. GRUB remembers that choice automatically. systemd-boot remembers it only with effective `@saved`; with an explicit default or pattern, crash reboots follow that policy instead. Prefer `togi night` for unattended crash recovery with any policy. A menu-picked tuning boot runs no stock confirmation of its own: without a current attestation from an earlier `togi night` in a normal boot, it ends before any trial with `stock_unattested` (exit 12); a reset, a ruleset transition or a firmware change needs a new answer first ([Night and day](spec/runtime.md#night-and-day)). The module installs the loader tools and writes `/etc/togi/night.json`; see [Night and day](spec/runtime.md#night-and-day) for the exact restoration rules.
+You can also pick the tuning specialisation in the GRUB menu, which remembers that choice automatically. A menu-picked tuning boot runs no stock confirmation of its own: without a current attestation from an earlier `togi night` in a normal boot, it ends before any trial with `stock_unattested` (exit 12); a reset, a ruleset transition or a firmware change needs a new answer first ([Night and day](spec/runtime.md#night-and-day)). The module installs the GRUB tools and writes `/etc/togi/night.json`.
 
 The tuning display uses the Linux console's 16-colour profile and built-in font, which covers the dashboard's block and box glyphs even when the normal system uses another font. It needs no GPU terminal, font setup or display option. Alt+F2 opens the login prompt, Alt+F3 shows logs, and Alt+F1 returns to the dashboard. Restarting the watcher does not restart tuning.
 
@@ -396,7 +400,7 @@ new-context attestation rather than seeding a new session.
 [runtime.md](spec/runtime.md#dead-end-actions) and
 [tuner.md](spec/tuner.md#dead-ends) describe the stop conditions.
 
-Leave reasons survive outside the tuning journal as one pending `togi_leave_reason` record: GRUB's environment block or systemd-boot's persistent `/var/lib/togi-boot/backend.json`. With GRUB, inspect it from the normal system with `sudo grub-editenv <grubenv> list` (`<grubenv>` is described in [section 8](#8-when-the-tuning-boot-does-not-reach-togi)); with systemd-boot, inspect that JSON file. Normal in-session runs and `status`/`events` do not import it. View it after the next tuning-boot run with `togi events --kind boot.leave_reason` ([retry state](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
+Leave reasons survive outside the tuning journal as one pending `togi_leave_reason` record in GRUB's environment block. Inspect it from the normal system with `sudo grub-editenv <grubenv> list` ([find the environment file](#8-when-the-tuning-boot-does-not-reach-togi)). Normal in-session runs and `status`/`events` do not import it. View it after the next tuning-boot run with `togi events --kind boot.leave_reason` ([retry state](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 
 ## 7. After a breaking update
 
@@ -441,11 +445,7 @@ A crash while the very first journal line was being written can leave `events.js
 
 The recovery in [section 6](#6-dead-ends) runs in `togi.service` and `togi-restart-limit.service`, so it cannot help when the tuning boot fails before userspace: the persistent boot default still selects tuning. When the tuning boot does reach a console, tty1 shows `togi watch` and tty3 togi's log.
 
-With systemd-boot, pick a normal generation in its menu, then run `sudo togi night-end` to restore the remembered selection. If that fails, use `sudo bootctl set-default ""` to remove the persistent EFI override; if `loader.conf` uses `@saved`, also choose the normal entry with the menu's default-selection key so its saved choice no longer points to tuning. Inspect `bootctl status` before rebooting. Rescue media booted in EFI mode can change these same firmware variables; do not replace the default with a fixed generation as routine recovery.
-
-With GRUB:
-
-togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` entry and the module refuses more than one mirror: `<grubenv>` below stands for `<path>/grub/grubenv`, where `<path>` is that entry's `path`. On an ordinary install it is `/boot/grub/grubenv`.
+The module requires exactly one `boot.loader.grub.mirroredBoots` entry. `<grubenv>` below stands for `<path>/grub/grubenv`, where `<path>` is that entry's `path`. On an ordinary install it is `/boot/grub/grubenv`.
 
 1. At the GRUB menu, pick one of your normal generations. Once it is up, run `sudo grub-editenv <grubenv> list`; if `saved_entry` still names the tuning entry, run `sudo grub-editenv <grubenv> unset saved_entry`.
 2. If that does not get you a working system, boot rescue media that has `grub-editenv` (on a NixOS installer, `nix-shell -p grub2`) and mount the partition holding `<path>`. With `<boot>` standing for the installed system's `<path>` under the mount point (the mount point itself when `<path>` is its own partition, `<mount point><path>` when it is part of the root file system), run:
@@ -462,7 +462,7 @@ togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` ent
 
 Do this from the normal system:
 
-1. Run `sudo togi night-end` before disabling the module to give up the tuning selection. With GRUB, verify `sudo grub-editenv <grubenv> list` no longer names tuning in `saved_entry`; otherwise unset it. With systemd-boot, inspect `bootctl status` and remove an unwanted override with `sudo bootctl set-default ""`.
+1. Run `sudo togi night-end` before disabling the module to give up the tuning selection. Verify `sudo grub-editenv <grubenv> list` no longer names tuning in `saved_entry`; otherwise unset it.
 2. Set `services.togi.tuning.enable = false`, or remove the module and the `togi` input, and rebuild.
 3. If you entered togi's offsets in BIOS and want them gone, set Curve Optimizer back to 0.
 

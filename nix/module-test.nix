@@ -1,4 +1,4 @@
-# Evaluates the x86_64-linux NixOS configuration on every host, VM-free: loader selection and mount
+# Evaluates the x86_64-linux NixOS configuration on every host, VM-free: GRUB and its mount
 # dependencies, GRUB mirror constraints, package overrides, the tuning boot's 30s watchdog and day sleep hooks.
 {
   pkgs,
@@ -50,7 +50,7 @@ let
             };
             "/boot" = {
               device = "/dev/vda2";
-              fsType = if loader.systemd-boot.enable or false then "vfat" else "ext4";
+              fsType = "ext4";
               options = [ "noauto" ];
             };
           };
@@ -97,27 +97,12 @@ let
     systemd-boot.enable = true;
   };
   systemd = evaluateLoader [ ] null null { } systemdLoader;
-  systemdTuning = systemd.specialisation.togi.configuration;
-  systemdMirrors = evaluateLoader [
-    (mirror "/boot")
-    (mirror "/boot2")
-  ] null null { } systemdLoader;
   bothLoaders = evaluateLoader [ (mirror "/boot") ] null null { } {
     systemd-boot.enable = true;
   };
   neitherLoader = evaluateLoader [ ] null null { } {
     grub.enable = false;
   };
-  xbootldr = evaluateLoader [ ] null null { } (
-    systemdLoader
-    // {
-      efi.efiSysMountPoint = "/efi";
-      systemd-boot = {
-        enable = true;
-        xbootldrMountPoint = "/boot";
-      };
-    }
-  );
   overridden = evaluate [ (mirror "/boot") ] pkgs.hello null;
   delegated = evaluate [ (mirror "/boot") ] null "togi-hardware";
   overriddenTuning = overridden.specialisation.togi.configuration;
@@ -145,7 +130,7 @@ let
     ++ lib.filter (k: lib.hasInfix "lockup" k || lib.hasInfix "nmi_watchdog" k) (
       builtins.attrNames config.boot.kernel.sysctl
     );
-  rejectsMirrors =
+  rejectsTuning =
     config:
     lib.any (
       a: !a.assertion && lib.hasPrefix "services.togi.tuning.enable" a.message
@@ -168,76 +153,16 @@ let
       entry = "NixOS - togi";
     }
   );
-  expectedSystemdNight = hostPkgs.writeText "togi-module-systemd-night.json" (
-    builtins.toJSON {
-      loader = "systemd-boot";
-      esp = "/boot";
-      boot = "/boot";
-      state = "/var/lib/togi-boot";
-      specialisation = "togi";
-    }
-  );
-  expectedXbootldrNight = hostPkgs.writeText "togi-module-xbootldr-night.json" (
-    builtins.toJSON {
-      loader = "systemd-boot";
-      esp = "/efi";
-      boot = "/boot";
-      state = "/var/lib/togi-boot";
-      specialisation = "togi";
-    }
-  );
   expectedSettings = hostPkgs.writeText "togi-module-settings.json" (
     builtins.toJSON one.services.togi.settings
   );
 in
-assert rejectsMirrors zero;
+assert rejectsTuning zero;
 assert lib.all (a: a.assertion) one.assertions;
-assert !rejectsMirrors one;
-assert rejectsMirrors two;
-assert rejectsMirrors bothLoaders;
-assert rejectsMirrors neitherLoader;
-assert lib.all (a: a.assertion) systemd.assertions;
-assert !rejectsMirrors systemdMirrors;
-assert
-  systemdTuning.systemd.services.togi.serviceConfig.ExecStart
-  == "${lib.getExe package} run --tuning-boot /etc/togi/night.json";
-assert lib.hasInfix "--tuning-boot /etc/togi/night.json"
-  systemdTuning.systemd.services.togi-restart-limit.script;
-assert lib.all
-  (
-    name:
-    systemdTuning.systemd.services.${name}.unitConfig.RequiresMountsFor == "/boot /var/lib/togi-boot"
-  )
-  [
-    "togi"
-    "togi-restart-limit"
-    "togi-leave-tuning-boot"
-  ];
-assert
-  xbootldr.specialisation.togi.configuration.systemd.services.togi.unitConfig.RequiresMountsFor
-  == "/efi /var/lib/togi-boot /boot";
-assert builtins.elem "d /var/lib/togi-boot 0700 root root -" systemd.systemd.tmpfiles.rules;
-assert builtins.elem systemd.systemd.package systemd.environment.systemPackages;
-assert !(builtins.elem pkgs.grub2 systemd.environment.systemPackages);
-assert lib.all
-  (name: builtins.elem systemdTuning.systemd.package systemdTuning.systemd.services.${name}.path)
-  [
-    "togi"
-    "togi-watch"
-    "togi-restart-limit"
-    "togi-leave-tuning-boot"
-  ];
-assert lib.hasInfix "night-end || {" systemdTuning.systemd.services.togi-leave-tuning-boot.preStop;
-assert lib.hasInfix ''set-default ""''
-  systemdTuning.systemd.services.togi-leave-tuning-boot.preStop;
-assert lib.hasInfix ''set-oneshot ""''
-  systemdTuning.systemd.services.togi-leave-tuning-boot.preStop;
-assert lib.hasInfix "LoaderEntryLastBooted-4a67b082"
-  systemdTuning.systemd.services.togi-leave-tuning-boot.preStop;
-assert lib.hasInfix "--esp-path=/efi"
-  xbootldr.specialisation.togi.configuration.systemd.services.togi-leave-tuning-boot.preStop;
-assert !lib.hasInfix "grub-editenv" systemdTuning.systemd.services.togi-restart-limit.script;
-assert !lib.hasInfix "@current" systemdTuning.systemd.services.togi-restart-limit.script;
+assert rejectsTuning two;
+assert rejectsTuning bothLoaders;
+assert rejectsTuning neitherLoader;
+assert rejectsTuning systemd;
 assert generatedConfig.target == "togi/config.json";
 assert one.services.togi.settings.backend_user == "togi-trial";
 assert builtins.elem "noauto" tuning.fileSystems."/boot".options;
@@ -448,9 +373,5 @@ hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; }
     '. == $expected[0]' ${generatedConfig.source}
   jq --exit-status --slurpfile expected ${expectedNight} \
     '. == $expected[0]' ${nightSetup.source}
-  jq --exit-status --slurpfile expected ${expectedSystemdNight} \
-    '. == $expected[0]' ${systemd.environment.etc."togi/night.json".source}
-  jq --exit-status --slurpfile expected ${expectedXbootldrNight} \
-    '. == $expected[0]' ${xbootldr.environment.etc."togi/night.json".source}
   touch "$out"
 ''
