@@ -63,7 +63,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Loss detected at a later boundary stops the run and restores CO 0.
 ///
 /// Only one day observer, run or reset can own this machine, even with different state directories.
-/// Stop the day service before tuning. The NixOS module creates /run/lock/togi.lock at boot.
+/// Stop the day service before tuning. The NixOS module creates /run/lock/togi.lock at boot;
+/// run can create it if it is missing.
 /// If the lock cannot be taken, no hardware is accessed and no event is written.
 ///
 /// When stdin and stderr are terminals, run shows the session as the watch dashboard instead of one line per

@@ -339,12 +339,23 @@ fn real_fs_unopenable_lock_is_refused_untouched() {
 }
 
 #[test]
-fn real_fs_host_policy_never_creates_the_lock() {
+fn real_fs_host_policy_creates_only_as_root() {
     let dir = private_dir();
     let path = lock_in(&dir);
-    let refused = HostLock::acquire(&path, Policy::Host).unwrap_err();
-    assert!(matches!(refused, Error::NotProvisioned { .. }), "{refused}");
-    assert!(!path.exists());
+    let outcome = HostLock::acquire(&path, Policy::Host);
+    if geteuid().is_root() {
+        let lock = outcome.unwrap();
+        assert_eq!(lock.path(), path);
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        assert!(metadata.is_file());
+        assert_eq!(metadata.nlink(), 1);
+        assert_eq!(metadata.uid(), 0);
+        assert_eq!(mode_of(&path), 0o600);
+    } else {
+        let refused = outcome.unwrap_err();
+        assert!(matches!(refused, Error::NotProvisioned { .. }), "{refused}");
+        assert!(!path.exists());
+    }
 }
 
 #[test]
