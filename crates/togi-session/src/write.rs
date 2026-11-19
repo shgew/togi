@@ -101,7 +101,7 @@ use crate::error::{AppendFailure, JournalFailure};
 /// ```compile_fail,E0451
 /// mod authority { include!("write/authority.rs"); }
 /// fn forge() -> authority::Verified {
-///     authority::Verified { readbacks: Vec::new(), targets: Vec::new(), profile: None }
+///     authority::Verified { readbacks: Vec::new() }
 /// }
 /// ```
 pub(crate) mod authority;
@@ -365,11 +365,7 @@ pub(crate) fn apply(
         hardware.slots.set(core, Slot::Known(target));
         readbacks.push(seq);
     }
-    Ok(Verified::new(
-        readbacks,
-        touched.into_iter().map(|core| (core, target)).collect(),
-        None,
-    ))
+    Ok(Verified::new(readbacks))
 }
 
 fn failed(
@@ -541,12 +537,8 @@ pub(crate) fn apply_profile(
         }),
         ProfileRecord::Restored => Payload::ProfileRestored(ProfileRestored { offsets: *target }),
     };
-    let profile = appender.append(payload, &readbacks)?;
-    Ok(Verified::new(
-        readbacks,
-        target.iter().collect(),
-        Some(profile),
-    ))
+    appender.append(payload, &readbacks)?;
+    Ok(Verified::new(readbacks))
 }
 
 #[cfg(test)]
