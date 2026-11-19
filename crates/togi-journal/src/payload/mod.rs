@@ -438,10 +438,10 @@ pub struct UnknownKind(pub String);
 pub enum Writer {
     /// Only a tuning run appends it, including its startup before `config.loaded`.
     Run,
-    /// Only the `togi day` observer or the day policy appends it.
+    /// Day observation and day policy records, including imports of day evidence.
     Day,
-    /// A tuning run and non-run writers append it: night commitments, the day observer's SMU chain,
-    /// and the session envelope a confirmed night command can create before tuning starts.
+    /// A tuning run and non-run writers append it, including night commitments, campaign enrollment,
+    /// the day observer's SMU chain and the session envelope a confirmed night command can create.
     Shared,
     /// Neither: the journal's own torn-tail marker and the reset and archive commands, which close a session
     /// without being a boot's tuning activity.
@@ -468,6 +468,7 @@ impl EventKind {
             | Self::DayFreeze
             | Self::DayInterval
             | Self::DayImported
+            | Self::UnitMapping
             | Self::ClimbDecision
             | Self::UnitStop
             | Self::CampaignCharge
@@ -478,6 +479,7 @@ impl EventKind {
             | Self::NightPlan
             | Self::NightQualification
             | Self::NightReproduction
+            | Self::CampaignStart
             | Self::SmuIntent
             | Self::SmuWrite
             | Self::SmuReadback
@@ -535,9 +537,7 @@ impl EventKind {
             | Self::ExposureObserved
             | Self::CcdEdge
             | Self::CcdCap
-            | Self::UnitMapping
             | Self::UnitEdge
-            | Self::CampaignStart
             | Self::SuccessorImported
             | Self::TaskStart => Writer::Run,
         }

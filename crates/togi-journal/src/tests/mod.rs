@@ -2,7 +2,7 @@ mod build;
 mod config_snapshot;
 mod day;
 mod filter;
-mod fixtures;
+pub(crate) mod fixtures;
 mod lenient;
 mod message;
 mod object_only;

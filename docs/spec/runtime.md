@@ -87,9 +87,9 @@ The service checkpoints at control boundaries. The raw pause fold excludes pause
 `togi day` requires Linux, root, an all-core verified CO-0 baseline and PID 1's armed, counting hardware watchdog. Its profile-writing capability borrows the host lock and never starts a workload. At each invocation it records `day.boot_start` with the envelope's boot ID, current BIOS context, build, every online core's SMU readback and the watchdog check ([Day watchdog](#day-watchdog)), then follows the [day decision](#ruleset-13-policy-boundary). A restart in the same boot reopens observation without inventing an unclean boot; cumulative time resumes at the last durable checkpoint and excludes unobserved downtime.
 
 The start record cites open SMU intents from its own boot through the journal's recording helper.
-Another boot's intents are cited only when that boot awaits no crash attribution: it has no
-tuning-run event other than notes, or its last such event is `shutdown`. A crashed tuning boot's
-intents stay open until `crash.detected` records the interrupted action. A complete start readback
+Another boot's intents are cited only when that boot awaits no crash attribution under the
+[journal's tuning-run rule](journal.md#rules). A crashed tuning run's intents stay open until
+`crash.detected` records the interrupted action. A complete start readback
 retires the cited obligations in the journal fold; it does not attest that their intended writes completed.
 After a reboot it is this boot's observed offsets, not an assumed firmware reset, that supply the
 evidence. An incomplete observation cannot retire an intent, and a failed start readback leaves the
@@ -106,7 +106,7 @@ SIGTERM, SIGINT and SIGHUP wake the wait, zero every core through the durable tr
 
 If closing the day journal fails and its emergency zero also fails, stderr retains the journal-close failure and its causes first, followed by the emergency-zero failure and its causes. This remains exit 1, without further journal events, a new clean marker or a claim of verified stock; journal close, emergency cleanup and hardware/host-lock release keep their existing order.
 
-The next invocation records each previously observed other boot with no final clean-stop marker once as `day.unclean_end`, naming its boot ID, last checkpoint (or absence), last read-back offsets, reset reason and the evidence below. An unclean end is an observation, never a tuning crash. [Ruleset 13's policy boundary](#ruleset-13-policy-boundary) consumes it as daily evidence; session recovery still admits only tuning activity as a tuning boot. The observation path itself starts no workload.
+The next invocation records each previously observed other boot with no final clean-stop marker once as `day.unclean_end`, naming its boot ID, last checkpoint (or absence), last read-back offsets, reset reason and the evidence below. An unclean end is an observation, never a tuning crash. [Ruleset 13's policy boundary](#ruleset-13-policy-boundary) consumes it as daily evidence. Session recovery uses the same [journal rule](journal.md#rules) to tell whether `togi run` began in a boot; day policy records alone are not evidence of a run. The observation path itself starts no workload.
 
 ### Live faults
 
