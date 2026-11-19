@@ -3,9 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use togi_journal::{AppendError, CloseError, DirError, InvalidSessionId, LockError, OpenError};
-use togi_machine::{InvalidCcd, InvalidCore, InvalidTarget};
+use togi_machine::{CoreId, InvalidCcd, InvalidCore, InvalidTarget, ObservedOffset};
 use togi_session::SessionError;
-use togi_sim::{InvalidMachine, ScriptError};
 use togi_simrun::{HistoryError, SimError};
 use togi_tuner::policy::FoldError;
 
@@ -15,24 +14,47 @@ use crate::Scenario;
 pub enum Error {
     #[error("simulate")]
     Simulate(#[from] SimError),
-    #[error("run the calendar simulation")]
-    Calendar(#[from] togi_simrun::day_night::RunError),
     #[error("the simulated run ended with errors: {}", listed(.0))]
     Session(Vec<SessionError>),
     #[error("read the simulated journal")]
     History(#[from] HistoryError),
     #[error("the simulation did not stop within {0} boots")]
     Capped(NonZeroU32),
-    #[error("build the simulated machine")]
-    Machine(#[from] InvalidMachine),
+    #[error("the simulation did not stop within {0} observed events")]
+    EventCap(usize),
+    #[error("read core {core} after shutdown")]
+    StockRead {
+        core: CoreId,
+        #[source]
+        source: togi_machine::Error,
+    },
+    #[error("core {core} remained at CO {} after shutdown", offset.0)]
+    NotStock {
+        core: CoreId,
+        offset: ObservedOffset,
+    },
     #[error("construct the simulated machine")]
     Construct(#[from] togi_sim::ArithmeticError),
-    #[error("script a trial")]
-    Script(#[from] ScriptError),
     #[error("configuration")]
     Config(#[from] togi_config::ConfigError),
     #[error("fold the simulated journal")]
     Fold(#[from] FoldError),
+    #[error("lock the staged day journal")]
+    DayLock(#[from] LockError),
+    #[error("open the staged day journal")]
+    DayOpen(#[from] OpenError),
+    #[error("append to the staged day journal")]
+    DayAppend(#[from] AppendError),
+    #[error("close the staged day journal")]
+    DayClose(#[from] CloseError),
+    #[error("access the staged day machine")]
+    DayMachine(#[from] togi_machine::Error),
+    #[error("query the staged day policy")]
+    DayPolicy(#[from] togi_tuner::policy::NotReady),
+    #[error("build the staged CCD profile")]
+    DayProfile(#[from] togi_machine::CcdProfileError),
+    #[error("apply the staged day profile")]
+    DayWrite(#[from] togi_session::DayWriteError),
     #[error("no cut point in the simulated journal: {0}")]
     NoCut(&'static str),
     #[error("scenario {scenario}")]

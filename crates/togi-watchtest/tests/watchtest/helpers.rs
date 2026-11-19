@@ -1,10 +1,7 @@
 use togi_journal::EventKind;
 use togi_journal::{Activity, Outcome, Payload};
-use togi_machine::CoreId;
-use togi_sim::MachineDefinition;
 use togi_watchtest::{
-    Error, Scenario, before_crash_detected, crash_trial, cut_at, cut_passed_trial, cut_trial,
-    cut_when,
+    Error, Scenario, before_crash_detected, cut_at, cut_passed_trial, cut_trial, cut_when,
 };
 
 use crate::support::intent_of;
@@ -112,18 +109,4 @@ fn a_scenario_that_cannot_be_cut_names_itself_in_the_error() {
         togi_machine::error_chain(&error),
         "scenario nonzero: no cut point in the simulated journal: no event the cut accepts"
     );
-}
-
-#[test]
-fn a_crash_scripted_on_a_core_the_machine_lacks_is_an_error() {
-    let two = MachineDefinition {
-        cores: 2,
-        ..MachineDefinition::default()
-    };
-    let machine = togi_watchtest::machine(&two, 1).expect("the machine builds");
-    let three = CoreId::new(3).expect("core 03 exists");
-    assert!(matches!(
-        crash_trial(&machine, "0001", 7.0, three),
-        Err(Error::Script(_))
-    ));
 }

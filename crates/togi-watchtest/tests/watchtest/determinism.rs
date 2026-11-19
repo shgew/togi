@@ -34,6 +34,7 @@ macro_rules! determinism {
 determinism! {
     night_and_its_scenarios_build_byte_identical_journals_twice: Night,
     mapped_and_its_scenarios_build_byte_identical_journals_twice: Mapped,
+    staged_reproduction_and_its_scenarios_build_byte_identical_journals_twice: StagedReproduction,
     filler_and_its_scenarios_build_byte_identical_journals_twice: Filler,
     dead_end_and_its_scenarios_build_byte_identical_journals_twice: DeadEnd,
 }
@@ -41,6 +42,7 @@ determinism! {
 #[test_case::test_case(Scenario::Nonzero; "nonzero")]
 #[test_case::test_case(Scenario::Recovering; "recovering")]
 #[test_case::test_case(Scenario::Stopped; "stopped")]
+#[test_case::test_case(Scenario::DayStep; "day step")]
 fn every_scenario_names_the_fixed_build(scenario: Scenario) {
     let want = togi_watchtest::build();
     assert_eq!(want.version, "0.0.0");
@@ -49,6 +51,7 @@ fn every_scenario_names_the_fixed_build(scenario: Scenario) {
     let mut builds = events.iter().filter_map(|event| match &event.payload {
         Payload::SessionStart(start) => Some(&start.build),
         Payload::ConfigLoaded(loaded) => Some(&loaded.build),
+        Payload::DayBootStart(boot) => Some(&boot.build),
         Payload::SessionContext(_)
         | Payload::SessionBaseline(_)
         | Payload::SessionNotice(_)
@@ -100,7 +103,6 @@ fn every_scenario_names_the_fixed_build(scenario: Scenario) {
         | Payload::BootLeaveReason(_)
         | Payload::Shutdown(_)
         | Payload::JournalTorn(_)
-        | Payload::DayBootStart(_)
         | Payload::DayCheckpoint(_)
         | Payload::DayOffsetsChanged(_)
         | Payload::DayCleanStop(_)

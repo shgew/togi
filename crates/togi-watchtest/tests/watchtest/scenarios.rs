@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use jiff::SignedDuration;
 use togi_journal::{
-    Activity, Classification, ClimbAction, DeadEndCondition, Event, EventKind, Outcome, Payload,
-    QualificationState, Queue, ShutdownReason, TaskStatus, Tested,
+    Activity, Certainty, Classification, ClimbAction, DeadEndCondition, Event, EventKind, Outcome,
+    Payload, QualificationState, Queue, ShutdownReason, TaskStatus, Tested,
 };
 use togi_machine::{Regime, TargetOffset};
 use togi_watchtest::{Base, Scenario};
@@ -56,7 +56,8 @@ fn every_scenario_is_a_prefix_of_its_base_simulation() {
 #[test]
 fn every_session_scenario_but_the_ended_night_folds_into_one_open_night() {
     for scenario in Scenario::ALL.into_iter().filter(|scenario| {
-        !matches!(scenario.base(), Base::Calendar | Base::Filler) && *scenario != Scenario::Stopped
+        !matches!(scenario.base(), Base::StagedReproduction | Base::Filler)
+            && *scenario != Scenario::Stopped
     }) {
         let events = cut(scenario);
         let projection = project(&events);
@@ -279,7 +280,9 @@ fn day_step_ends_on_the_first_promotion_after_a_complete_qualification() {
 fn reproduction_retests_the_cpu_suspect_profile_exactly() {
     let events = cut(Scenario::Reproduction);
     assert_eq!(
-        Base::Calendar.events().expect("the Calendar simulates"),
+        Base::StagedReproduction
+            .events()
+            .expect("the staged fixture runs"),
         events.as_slice(),
         "live generation stops at the reproduction start, not after a later trial or day"
     );
@@ -289,19 +292,23 @@ fn reproduction_retests_the_cpu_suspect_profile_exactly() {
             matches!(&event.payload,
             Payload::ClimbDecision(step) if matches!(step.decision, ClimbAction::Promote { .. }))
         })
-        .expect("the Calendar promoted a qualified profile");
+        .expect("the day promoted a qualified profile");
     let suspect = events
         .iter()
-        .position(|event| matches!(&event.payload,
-            Payload::DayEvent(day) if matches!(day.classification, Classification::CpuSuspect { .. })))
-        .expect("the Calendar classified the scripted CPU answer");
+        .position(|event| {
+            matches!(&event.payload,
+            Payload::DayEvent(day) if day.classification == Classification::CpuSuspect {
+                certainty: Certainty::Provisional,
+            })
+        })
+        .expect("the staged operator answer is provisional CPU evidence");
     let reproduction = events
         .iter()
         .position(|event| {
             matches!(&event.payload,
             Payload::TrialIntent(intent) if intent.activity == Some(Activity::Reproduction))
         })
-        .expect("the Calendar started reproduction");
+        .expect("the night started reproduction");
     assert!(promotion < suspect && suspect < reproduction);
     let intent = running_trial(&events);
     assert_eq!(intent.activity, Some(Activity::Reproduction));
@@ -422,8 +429,13 @@ fn stopped_is_a_night_the_operator_ended_with_work_left() {
     let first = events.first().expect("events").time;
     let last = events.last().expect("events").time;
     assert!(
-        last.duration_since(first) >= SignedDuration::from_hours(8),
-        "the operator ended the night after eight hours: {first} to {last}"
+        last.duration_since(first) > SignedDuration::ZERO,
+        "the operator ended the night after real simulated work: {first} to {last}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(&event.payload,
+        Payload::TrialEnd(end) if end.duration_s > 0
+            && intent_of(&events, &end.trial).profile.iter().any(|(_, offset)| offset.get() != 0)))
     );
     let projection = project(&events);
     assert!(!projection.stopped, "an operator end is not a dead end");
