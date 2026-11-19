@@ -105,15 +105,15 @@ impl Manifest {
     /// The `session.imported` that commits the import once its `day.imported` events are durable.
     pub fn commitment(&self) -> SessionImported {
         let selected: Vec<Provenance> = self.selected().collect();
-        let count = |len: usize| u64::try_from(len).unwrap_or(u64::MAX);
+        let count = ImportCounts::saturating_record_count(selected.len() as u128);
         SessionImported {
             sources: self.sources.clone(),
             counts: ImportCounts {
-                selected: count(selected.len()),
-                imported: count(self.records.len()),
+                selected: count,
+                imported: count,
                 duplicates: self.duplicates,
-                unknown: count(self.unknown.len()),
-                excluded: count(self.excluded.len()),
+                unknown: ImportCounts::saturating_record_count(self.unknown.len() as u128),
+                excluded: ImportCounts::saturating_record_count(self.excluded.len() as u128),
             },
             selected,
             unknown: self.unknown.clone(),

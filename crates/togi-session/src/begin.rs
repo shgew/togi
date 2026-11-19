@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 
 use togi_journal::{
-    CampaignHistory, CampaignId, CampaignOrigin, CampaignStart, EventKind, ExposureOrigin, Payload,
-    Provenance, Seq, SessionBaseline, SessionContext, SuccessorImported,
+    CampaignHistory, CampaignId, CampaignOrigin, CampaignStart, EventKind, ExposureOrigin,
+    ImportCounts, Payload, Provenance, Seq, SessionBaseline, SessionContext, SuccessorImported,
 };
 use togi_machine::CoreSet;
 use togi_tuner::policy::successor::{self, Reconstruction};
@@ -254,10 +254,10 @@ impl Session<'_> {
             commitment.selected = selected;
             commitment.excluded.extend(excluded);
             commitment.counts.selected =
-                u64::try_from(commitment.selected.len()).unwrap_or(u64::MAX);
+                ImportCounts::saturating_record_count(commitment.selected.len() as u128);
             commitment.counts.imported = commitment.counts.selected;
             commitment.counts.excluded =
-                u64::try_from(commitment.excluded.len()).unwrap_or(u64::MAX);
+                ImportCounts::saturating_record_count(commitment.excluded.len() as u128);
             self.appender
                 .append(Payload::SessionImported(commitment), &causes)?;
         }
