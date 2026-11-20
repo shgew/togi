@@ -297,8 +297,6 @@ pub enum Error {
     PolicyQuery(#[from] togi_tuner::policy::NotReady),
     #[error("apply the permitted day profile")]
     Apply(#[from] togi_session::DayWriteError),
-    #[error("this observation has no applying capability")]
-    NotApplying,
     #[error("a pause needs an unexpired deadline or the next cold boot")]
     PauseDeadline,
     #[error("the pause changed before the extension reached the service")]
@@ -329,20 +327,6 @@ fn append(
     Ok(())
 }
 
-/// Observes through injected read-only hardware and active-time clock seams.
-///
-/// # Errors
-/// Returns the first read, clock or durable append failure; no clean marker follows it.
-pub fn observe(
-    journal: &mut Journal,
-    observer: &mut dyn Observer,
-    clock: &mut dyn Clock,
-    cancel: &CancellationToken,
-    build: &Build,
-) -> Result<(), Error> {
-    observe_with_socket(journal, observer, clock, cancel, build, None, None)
-}
-
 /// Applies the committed permitted profile and observes through the running service's seams.
 ///
 /// # Errors
@@ -370,18 +354,11 @@ pub fn serve_with_controls(
     build: &Build,
     socket: Option<&dyn socket::ControlSource>,
 ) -> Result<(), Error> {
-    let mut live = apply::Live::preflight(journal, observer)?;
-    let result = observe_with_socket(
-        journal,
-        observer,
-        clock,
-        cancel,
-        build,
-        socket,
-        Some(&mut live),
-    );
+    let live = apply::Live::preflight(journal, observer)?;
+    let mut hardware = LiveHardware { observer, live };
+    let result = run_live(journal, clock, cancel, build, socket, &mut hardware);
     if let Err(original) = result {
-        if let Err(cleanup) = apply::emergency(observer) {
+        if let Err(cleanup) = apply::emergency(hardware.observer) {
             return Err(Error::Emergency {
                 original: Box::new(original),
                 cleanup,
@@ -392,15 +369,22 @@ pub fn serve_with_controls(
     Ok(())
 }
 
-fn observe_with_socket(
+/// Keeps the preflight proofs paired with the hardware they authorize.
+struct LiveHardware<'a> {
+    observer: &'a mut dyn Observer,
+    live: apply::Live,
+}
+
+fn run_live(
     journal: &mut Journal,
-    observer: &mut dyn Observer,
     clock: &mut dyn Clock,
     cancel: &CancellationToken,
     build: &Build,
     socket: Option<&dyn socket::ControlSource>,
-    mut live: Option<&mut apply::Live>,
+    hardware: &mut LiveHardware<'_>,
 ) -> Result<(), Error> {
+    let LiveHardware { observer, live } = hardware;
+    let observer = &mut **observer;
     let ledger = Ledger::of(journal.events());
     for (boot, previous) in &ledger.boots {
         if boot != journal.boot() && !previous.clean && !previous.unclean {
@@ -464,49 +448,45 @@ fn observe_with_socket(
         offsets,
         watchdog,
     };
-    if let Some(live) = live.as_deref_mut() {
-        // Preflight verified stock, so a boot-start read that differs is drift like any later read:
-        // `day.boot_start` already holds it durably, and nothing is applied over it. Drift decides before
-        // the watchdog because the hardware is no longer at the verified stock either refusal assumes.
-        if offsets != live.applied() {
-            progress.restore_stock(journal, observer, clock, live)?;
-            return Err(Error::OffsetDrift);
-        }
-        // Preflight's armed read may no longer hold: the read journaled above decides, by the rule
-        // every later read follows.
-        if matches!(progress.watchdog, WatchdogState::Unarmed { .. }) {
-            return Err(Error::Watchdog);
-        }
-        if current_baseline(
-            journal.events(),
-            journal.boot(),
-            session_cores(journal.events())?,
-        )
-        .is_none()
-        {
-            return Err(Error::Baseline);
-        }
-        live.start(
-            journal,
-            observer,
-            clock,
-            ledger.boots.contains_key(journal.boot()),
-            if starts_paused {
-                togi_tuner::day::Pause::Paused
-            } else {
-                togi_tuner::day::Pause::Running
-            },
-        )?;
-        if let Some(source) = expired_at_start {
-            pause.ended(journal, clock, source)?;
-        }
+    // Preflight verified stock, so a boot-start read that differs is drift like any later read:
+    // `day.boot_start` already holds it durably, and nothing is applied over it. Drift decides before
+    // the watchdog because the hardware is no longer at the verified stock either refusal assumes.
+    if offsets != live.applied() {
+        progress.restore_stock(journal, observer, clock, live)?;
+        return Err(Error::OffsetDrift);
     }
-    let applied_offsets = live.as_deref().map_or(offsets, apply::Live::applied);
+    // Preflight's armed read may no longer hold: the read journaled above decides, by the rule
+    // every later read follows.
+    if matches!(progress.watchdog, WatchdogState::Unarmed { .. }) {
+        return Err(Error::Watchdog);
+    }
+    if current_baseline(
+        journal.events(),
+        journal.boot(),
+        session_cores(journal.events())?,
+    )
+    .is_none()
+    {
+        return Err(Error::Baseline);
+    }
+    live.start(
+        journal,
+        observer,
+        clock,
+        ledger.boots.contains_key(journal.boot()),
+        if starts_paused {
+            togi_tuner::day::Pause::Paused
+        } else {
+            togi_tuner::day::Pause::Running
+        },
+    )?;
+    if let Some(source) = expired_at_start {
+        pause.ended(journal, clock, source)?;
+    }
+    let applied_offsets = live.applied();
     let mut watchdog_polled = clock.monotonic()?;
-    if live.is_some() {
-        progress.checkpoint(journal, clock, applied_offsets)?;
-        progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
-    }
+    progress.checkpoint(journal, clock, applied_offsets)?;
+    progress.read_offsets(journal, observer, clock, live)?;
     let mut polled = started;
     loop {
         if let Some(socket) = socket {
@@ -514,20 +494,18 @@ fn observe_with_socket(
                 progress: &mut progress,
                 observer: &mut *observer,
                 pause: &mut pause,
-                live: live.as_deref_mut(),
+                live,
             };
             socket.poll(journal, clock, &mut |journal, clock, control| {
                 controls.apply(journal, clock, control)
             })?;
         }
         if let Some(source) = pause.expired(journal.boot(), clock) {
-            let observed = progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
+            let observed = progress.read_offsets(journal, observer, clock, live)?;
             progress.checkpoint(journal, clock, observed)?;
-            live.as_deref_mut()
-                .ok_or(Error::NotApplying)?
-                .reapply(journal, observer, clock)?;
+            live.reapply(journal, observer, clock)?;
             pause.ended(journal, clock, source)?;
-            let observed = progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
+            let observed = progress.read_offsets(journal, observer, clock, live)?;
             progress.checkpoint(journal, clock, observed)?;
         }
         let wait = if socket.is_some() {
@@ -575,7 +553,6 @@ fn observe_with_socket(
                 .offsets
                 .iter()
                 .any(|(_, offset)| offset != ObservedOffset(0))
-            && let Some(live) = live.as_deref_mut()
         {
             // The loss is journaled before the fallible restore so a failed cleanup keeps its cause.
             let applied = progress.offsets;
@@ -593,8 +570,8 @@ fn observe_with_socket(
         if !stopping && !due && !watchdog_changed {
             continue;
         }
-        let observed = progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
-        let readback = if stopping && let Some(live) = live.as_deref_mut() {
+        let observed = progress.read_offsets(journal, observer, clock, live)?;
+        let readback = if stopping {
             progress.checkpoint(journal, clock, observed)?;
             live.zero(journal, observer, clock)?
         } else {
@@ -614,7 +591,7 @@ struct Controls<'a> {
     progress: &'a mut Progress,
     observer: &'a mut dyn Observer,
     pause: &'a mut pause::Pause,
-    live: Option<&'a mut apply::Live>,
+    live: &'a mut apply::Live,
 }
 
 impl Controls<'_> {
@@ -632,28 +609,18 @@ impl Controls<'_> {
                 | socket::Control::Reapply
         );
         if !matches!(control, socket::Control::Status) {
-            let observed = self.progress.read_offsets(
-                journal,
-                self.observer,
-                clock,
-                self.live.as_deref_mut(),
-            )?;
+            let observed = self
+                .progress
+                .read_offsets(journal, self.observer, clock, self.live)?;
             self.progress.checkpoint(journal, clock, observed)?;
         }
-        let status = self.pause.control(
-            journal,
-            self.observer,
-            clock,
-            self.live.as_deref_mut().ok_or(Error::NotApplying)?,
-            control,
-        )?;
+        let status = self
+            .pause
+            .control(journal, self.observer, clock, self.live, control)?;
         if changes_profile {
-            let observed = self.progress.read_offsets(
-                journal,
-                self.observer,
-                clock,
-                self.live.as_deref_mut(),
-            )?;
+            let observed = self
+                .progress
+                .read_offsets(journal, self.observer, clock, self.live)?;
             self.progress.checkpoint(journal, clock, observed)?;
         }
         Ok(status)
@@ -675,21 +642,19 @@ impl Progress {
         journal: &mut Journal,
         observer: &mut dyn Observer,
         clock: &dyn Clock,
-        live: Option<&mut apply::Live>,
+        live: &mut apply::Live,
     ) -> Result<PerCore<ObservedOffset>, Error> {
         let observed = observer.offsets()?;
         // Every fresh read decides, including a stop read: drift is never an accepted profile.
-        if let Some(live) = live {
-            let applied = live.applied();
-            if applied != self.offsets {
-                self.checkpoint(journal, clock, applied)?;
-            }
-            if observed != applied {
-                // The preceding profile and this read remain durable if restoring stock fails.
-                self.checkpoint(journal, clock, observed)?;
-                self.restore_stock(journal, observer, clock, live)?;
-                return Err(Error::OffsetDrift);
-            }
+        let applied = live.applied();
+        if applied != self.offsets {
+            self.checkpoint(journal, clock, applied)?;
+        }
+        if observed != applied {
+            // The preceding profile and this read remain durable if restoring stock fails.
+            self.checkpoint(journal, clock, observed)?;
+            self.restore_stock(journal, observer, clock, live)?;
+            return Err(Error::OffsetDrift);
         }
         Ok(observed)
     }

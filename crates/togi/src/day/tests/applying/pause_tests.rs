@@ -844,7 +844,7 @@ fn the_live_control_seam_brackets_a_pause_with_checkpoints_and_acknowledges_afte
             progress: &mut progress,
             observer: hardware,
             pause: &mut state,
-            live: Some(&mut live),
+            live: &mut live,
         };
         let before = journal.events().len();
         let reply = socket::respond(
