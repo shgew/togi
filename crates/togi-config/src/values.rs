@@ -47,7 +47,9 @@ macro_rules! bounded {
 
 bounded!(
     /// How many consecutive occurrences of a dead-end signal end the session.
-    DeadEndThreshold, 1, 100
+    DeadEndThreshold,
+    1,
+    100
 );
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
