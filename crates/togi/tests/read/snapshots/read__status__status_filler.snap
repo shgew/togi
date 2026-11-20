@@ -2,110 +2,94 @@
 source: crates/togi/tests/read/status.rs
 expression: text(&ran.stdout)
 ---
-night since 08:00, 6h54m elapsed: qualification (task filler #7)
+night since 06:37, 6h46m elapsed: qualification (task filler #2)
 session 20260101T000000Z started 2026-01-01T00:00:00Z
-BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
+BIOS SIM.1 on togi simulator, Simulated Zen 5 4-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#9272] trial night-trial-2222 core 00 offset -5 R1 mprime SSE 4K-21K
-  90 s together qualification task filler #7 night #8248
+in flight: [#2357] trial 0315 core 00 offset -3 R1 mprime SSE 4K-21K 90 s
+  together qualification task filler #2 night #724
 
-UNIT   CORES                  D   C    D-C  HOLD h  STATE
-CCD 0  0,1,2,3,4,5,6,7        -5  -45  40   32/50   held
-CCD 1  8,9,10,11,12,13,14,15  0   -45  45   32/50   held
+UNIT   CORES  D   C   D-C  HOLD h  STATE
+CCD 0  0,1    -3  -5  2    0/50    held
+CCD 1  2,3    0   -5  5    0/50    held
 
 Day policy
 permission: experimental hold + exact night qualification
 finishing is not a safety certificate
-applied profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
-  -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
-  core 13 0, core 14 0, core 15 0
-read-back profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
-  -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
-  core 13 0, core 14 0, core 15 0
-proposed profile: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
-  -5, core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
-  core 13 0, core 14 0, core 15 0
+applied profile: core 0 -3, core 1 -3, core 2 0, core 3 0
+read-back profile: core 0 -3, core 1 -3, core 2 0, core 3 0
+proposed profile: core 0 -3, core 1 -3, core 2 0, core 3 0
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: censored -50 [#4766 #4770 #4774 #4778 #4782 #4786 #4790 #4794 #4798 #4802
-  #4806 #4810 #4814 #4818 #4822 #4826 #4830 #4834 #4838 #4842 #4846 #4850 #4854
-  #4858 #4862 #4866 #4870 #4874 #4878 #4882 #4921 #4925 #4929 #4933 #4937 #4941
-  #4945 #4949 #4953 #4957 #4961 #4965 #4969 #4973 #4977 #4981 #4985 #4989 #4993
-  #4997 #5001 #5005 #5009 #5013 #5017 #5021 #5025 #5029 #5033 #5037 #5041 #5045
-  #5049 #5053]
-  state: held: hold 32/50 h
-  latest applied step: promotion of CCD 0 from 0 to -5 (5 counts) at 00:00; core
-  0 0, core 1 0, core 2 0, core 3 0, core 4 0, core 5 0, core 6 0, core 7 0,
-  core 8 0, core 9 0, core 10 0, core 11 0, core 12 0, core 13 0, core 14 0,
-  core 15 0 -> core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5 -5,
-  core 6 -5, core 7 -5, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
-  core 13 0, core 14 0, core 15 0 [#7128 #7129]
+  U: observed -10 [#279]
+  state: held: hold 0/50 h
+  latest applied step: promotion of CCD 0 from 0 to -3 (3 counts) at 05:35; core
+  0 0, core 1 0, core 2 0, core 3 0 -> core 0 -3, core 1 -3, core 2 0, core 3 0
+  [#690 #707]
 unit: CCD 1, phase coarse, parent none, inherited start 0
-  U: censored -50 [#5998 #6013 #6048 #6083 #6102 #6133 #6168 #6183 #6187 #6191
-  #6195 #6199 #6203 #6207 #6211 #6215 #6219 #6223 #6227 #6231 #6235 #6239 #6243
-  #6247 #6251 #6255 #6259 #6263 #6267 #6271 #6275 #6279 #6283 #6287 #6291 #6295
-  #6299 #6303 #6307 #6311 #6315 #6319 #6323 #6327 #6331 #6335 #6339 #6343 #6347
-  #6351 #6355 #6359 #6363 #6367 #6371 #6375 #6379 #6383 #6387 #6391 #6395 #6399
-  #6403 #6407]
-  state: held: hold 32/50 h
-  next proposal: core 0 -5, core 1 -5, core 2 -5, core 3 -5, core 4 -5, core 5
-  -5, core 6 -5, core 7 -5, core 8 -5, core 9 -5, core 10 -5, core 11 -5, core
-  12 -5, core 13 -5, core 14 -5, core 15 -5
-  qualification: complete [#7960]; 0 outstanding [#5061 #5065 #5069 #5073 #5077
-  #5081 #5085 #5089 #7171 #7182 #7186 #7190 #7194 #7198 #7202 #7206 #5125 #5129
-  #5133 #5137 #5141 #5145 #5149 #5153 #7210 #7214 #7218 #7222 #7226 #7237 #7241
-  #7245 #5189 #5193 #5197 #5201 #5205 #5209 #5213 #5217 #7249 #7253 #7257 #7261
-  #7265 #7269 #7273 #7277 #5253 #5257 #5261 #5265 #5269 #5273 #5277 #5281 #7281
-  #7292 #7296 #7300 #7304 #7308 #7312 #7316 #5317 #5321 #5325 #5329 #5333 #5337
-  #5341 #5345 #7320 #7324 #7328 #7332 #7336 #7347 #7351 #7355 #5381 #5385 #5389
-  #5393 #5397 #5401 #5405 #5409 #7359 #7363 #7367 #7371 #7375 #7379 #7383 #7387
-  #5445 #5449 #5453 #5457 #5461 #5465 #5469 #5473 #7391 #7402 #7406 #7410 #7414
-  #7418 #7422 #7426 #5509 #5513 #5517 #5521 #5525 #5529 #5533 #5537 #7430 #7434
-  #7445 #7449 #7453 #7457 #7461 #7465 #5573 #5577 #5581 #5585 #5589 #5593 #5597
-  #5601 #7469 #7473 #7477 #7488 #7492 #7496 #7500 #7504 #5637 #5641 #5645 #5649
-  #5653 #5657 #5661 #5665 #7508 #7512 #7516 #7520 #7531 #7535 #7539 #7543 #5701
-  #5705 #5709 #5713 #5717 #5721 #5725 #5729 #7547 #7551 #7555 #7559 #7563 #7574
-  #7578 #7582 #5765 #5769 #5773 #5777 #5781 #5785 #5789 #5793 #7586 #7590 #7594
-  #7598 #7602 #7606 #7617 #7621 #7625 #7629 #7633 #7637 #7641 #7645 #7649 #7660
-  #7664 #7668 #7672 #7676 #7680 #7684 #7688 #7692 #7703 #7707 #7718 #7722 #7726
-  #7730 #7734 #7738 #7742 #7746 #7750 #7761 #7765 #7769 #7773 #7777 #7781 #7792
-  #7796 #7800 #7804 #7808 #7812 #7816 #7820 #7831 #7835 #7839 #7843 #7847 #7851
-  #7855 #7866 #7870 #7874 #7885 #7889 #7893 #7897 #7901 #7905 #7916 #7920 #7924
-  #7928 #7932 #7936 #7940 #7951 #7955 #7959]
-current exact profile daily evidence: 32 h; 0 crashes [#7137 #7138 #7139 #7140
-  #7151 #7152 #7153 #7154 #8221 #8222 #8223 #8224 #8234 #8235 #8236 #8237]
-experimental: 32 clean hours; at most 1 crash per 10.7 h (95%, fixed-rate model)
+  U: observed -10 [#764]
+  state: held: hold 0/50 h
+  next proposal: core 0 -3, core 1 -3, core 2 -3, core 3 -3
+  qualification: complete [#1281]; 0 outstanding [#296 #301 #806 #811 #316 #321
+  #816 #821 #336 #341 #826 #831 #356 #361 #836 #841 #376 #381 #846 #885 #396
+  #401 #890 #895 #418 #425 #902 #909 #446 #453 #916 #923 #474 #481 #930 #971
+  #502 #509 #978 #985 #530 #537 #992 #999 #558 #565 #1006 #1013 #1052 #1057
+  #1062 #1067 #1074 #1113 #1118 #1157 #1162 #1201 #1206 #1211 #1216 #1221 #1260
+  #1265 #1270 #1275 #1280]
+current exact profile daily evidence: 0 h; 0 crashes []
+experimental: rate bound unavailable (95%, fixed-rate model)
 firmware restoration: none
 
 Daily safety
 freeze: off
 firmware: valid
 
-Night since 08:00
-elapsed: 6h54m
+Night since 06:37
+elapsed: 6h46m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
-qualification    75%    0%    0s
-mapping          10%    100%  6h54m
+qualification    75%    29%   1h58m
+mapping          10%    70%   4h48m
 requalification  10%    0%    0s
-current task: qualification (task filler #7)
-mapping CCD 0: next offset -44
-mapping CCD 1: next offset -44
-qualification: CCD 0 -5, CCD 1 0 (next step) complete, 7.8 h eligible witnessed
+current task: qualification (task filler #2)
+mapping CCD 0: next offset -4
+mapping CCD 1: next offset -4
+qualification: CCD 0 -3, CCD 1 0 (next step) complete, 2.4 h eligible witnessed
   exposure
-qualification: CCD 0 -5, CCD 1 -5 (next step) complete, 7.8 h eligible witnessed
+qualification: CCD 0 -4, CCD 1 0 (next step) in progress, 0.6 h eligible
+  witnessed exposure
+qualification: CCD 0 -3, CCD 1 -3 (next step) complete, 2.4 h eligible witnessed
   exposure
+qualifying CCD 0 -4, CCD 1 0: 0.6 h eligible witnessed exposure, 42 outstanding
+  outstanding R1 mprime-sse-4k-21k 90s exact; R1 ycruncher-bkt-sftv4 90s exact
+    x2; R1 ycruncher-snt-svt 90s exact x2; R2 mprime-avx2-36k-248k 90s exact x2;
+    R2 mprime-avx512-36k-248k 90s exact x2; R2 ycruncher-fftv4-n63-vt3 90s exact
+    x2; R3 mprime-sse-4k-21k-steps 120s exact x2; R3 ycruncher-bkt-sftv4-steps
+    120s exact x2; R3 ycruncher-snt-svt-steps 120s exact x2; R4
+    mprime-sse-4k-21k-duty25 120s exact x2; R4 ycruncher-bkt-sftv4-duty50 120s
+    exact x2; R4 ycruncher-snt-svt-duty75 120s exact x2; R5
+    ycruncher-bkt-sftv4-smt 120s exact x4; R6 ycruncher-bkt-sftv4-idle 900s
+    exact; R7 mprime-avx512-36k-248k-allcore 120s exact x3; R7
+    mprime-avx512-36k-248k-allcore 600s exact; R8
+    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 0 120s
+    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
+    1 120s exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k
+    light core 2 120s exact; R8
+    mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core 3 120s
+    exact; R8 mprime-sse-4k-21k-steps-neighbours+mprime-avx2-36k-248k light core
+    1 600s exact; R9 ycruncher-bkt-sftv4-all-threads serial cpu 4 120s exact; R9
+    ycruncher-bkt-sftv4-all-threads serial cpu 5 120s exact; R9
+    ycruncher-bkt-sftv4-all-threads serial cpu 6 120s exact; R9
+    ycruncher-bkt-sftv4-all-threads serial cpu 7 120s exact; R9
+    ycruncher-bkt-sftv4-all-threads serial cpu 5 600s exact
 
 Day
-boots observed: 17; clean ends: 17; unclean ends: 0
+boots observed: 2; clean ends: 2; unclean ends: 0
 hardware watchdog at the last observer check: not recorded
 Applied hours per read-back profile (changed intervals excluded):
-  00:-5 01:-5 02:-5 03:-5 04:-5 05:-5 06:-5 07:-5 08:0 09:0 10:0 11:0 12:0 13:0
-    14:0 15:0: 38.000 h
-  00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0
-    15:0: 96.000 h
-all profiles: 134.0h observed, 0 crashes (9 unknown intervals)
-stock (CO 0): 96.0h observed, 0 crashes
+  00:0 01:0 02:0 03:0: 50.000 h
+all profiles: 50.0h observed, 0 crashes (0 unknown intervals)
+stock (CO 0): 50.0h observed, 0 crashes
 totals are observations, not a bound
 last unclean end: none

@@ -32,7 +32,7 @@ const _: () = assert!(Base::ALL.len() == 5, "every base needs a status sweep cas
 #[test_case::test_case(Base::Night; "night")]
 #[test_case::test_case(Base::Mapped; "mapped")]
 #[test_case::test_case(Base::Filler; "filler")]
-#[test_case::test_case(Base::Calendar; "calendar")]
+#[test_case::test_case(Base::StagedReproduction; "staged reproduction")]
 #[test_case::test_case(Base::DeadEnd; "dead end")]
 fn status_replays_the_journal_without_reading_or_writing_legacy_state(base: Base) {
     for scenario in Scenario::ALL

@@ -2,7 +2,7 @@
 //! kernel logs and the reset it is about to report.
 
 use jiff::{SignedDuration, Timestamp};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use togi_machine::{
     BankType, BiosContext, BootId, CoreId, CpuId, Mce, ResetKind, ResetReason, TargetOffset,
@@ -12,16 +12,33 @@ use togi_machine::{
 use crate::runtime::PendingMce;
 use crate::samples::LastTrial;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PersistedSource {
+    Fitted,
+    Scripted,
+}
+
+impl PersistedSource {
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Fitted => "fitted",
+            Self::Scripted => "scripted",
+        }
+    }
+}
+
 object_only! {
     /// The state of a [`Simulator`](crate::Simulator) that a later process continues from with
-    /// [`Simulator::restore`](crate::Simulator::restore): its seed, clocks, boots with their reset reasons and
-    /// kernel logs, the machine checks and reset waiting for the next boot, its registers, BIOS context and the
-    /// last trial's samples. Draws are keyed by seed and typed parts, so no generator state is kept. Armed
-    /// faults, scripts added with [`Simulator::script_trial`](crate::Simulator::script_trial), recorded
-    /// violations and the samples directory are not kept.
+    /// [`Simulator::restore`](crate::Simulator::restore): its source kind, seed, clocks, boots with their
+    /// reset reasons and kernel logs, the machine checks and reset waiting for the next boot, its registers,
+    /// BIOS context and the last trial's samples. Draws are keyed by seed and typed parts, so no generator
+    /// state is kept. Armed faults, scripts added with [`Simulator::script_trial`](crate::Simulator::script_trial),
+    /// recorded violations and the samples directory are not kept.
     #[derive(Clone, Debug, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Persisted {
+        pub(crate) source: PersistedSource,
         pub(crate) seed: u64,
         pub(crate) epoch: Timestamp,
         pub(crate) clock: Duration,
@@ -43,6 +60,11 @@ object_only! {
 pub enum RestoreError {
     #[error("the persisted machine has {persisted} cores, the machine file {model}")]
     Cores { persisted: usize, model: usize },
+    #[error("the persisted machine ran a {persisted} source, the restoring machine is {given}")]
+    SourceMismatch {
+        persisted: &'static str,
+        given: &'static str,
+    },
     #[error("the persisted machine has no boot")]
     NoBoot,
     #[error("restore the simulated clock")]

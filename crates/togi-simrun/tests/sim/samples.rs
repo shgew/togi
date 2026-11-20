@@ -64,12 +64,8 @@ fn a_new_session_after_an_earlier_one(
     );
     if restore {
         let saved = serde_json::to_vec(&sim.persisted()).unwrap();
-        sim = togi_sim::Simulator::restore(
-            togi_sim::Model::new(&hunt_machine(4), 1).unwrap(),
-            None,
-            serde_json::from_slice(&saved).unwrap(),
-        )
-        .unwrap();
+        sim = togi_sim::Simulator::restore(sim.source(), serde_json::from_slice(&saved).unwrap())
+            .unwrap();
         assert!(sim.seams().trials.samples("0001").next().is_some());
     }
 

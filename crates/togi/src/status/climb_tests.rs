@@ -2,10 +2,12 @@ use jiff::tz::TimeZone;
 use test_case::test_case;
 use togi_journal::{
     CampaignEventPhase, CampaignHistory, CampaignId, Certainty, Classification, ClimbBlocker,
-    DayEventId, Edge, Provenance, Seq, UnitMapping, UnitMembership, UnitPhase, UnitStopReason,
-    UnitVector,
+    DayEventId, Edge, ExposureClass, Placement, Provenance, Seq, UnitMapping, UnitMembership,
+    UnitPhase, UnitStopReason, UnitVector, WorkloadContent,
 };
-use togi_machine::{BiosContext, CcdId, CoreId, ObservedOffset, TargetOffset};
+use togi_machine::{
+    Backend, BiosContext, CcdId, ContentId, CoreId, Digest, ObservedOffset, Regime, TargetOffset,
+};
 use togi_render::{OutputFacts, Renderer, Style};
 use togi_tuner::{
     ClimbCampaignProjection, ClimbDailyEvidence, ClimbEventProjection, ClimbGoalSupport,
@@ -125,6 +127,7 @@ enum Case {
     Exhausted,
     QualifiedProposal,
     Blocked,
+    HeldByUnresolvedEvent,
     Censored,
     Finished,
 }
@@ -238,6 +241,53 @@ fn case_fixture(case: Case) -> ClimbProjection {
                 },
             });
         }
+        Case::HeldByUnresolvedEvent => {
+            policy.profiles.proposed = Some(vector(&[-10]));
+            let unit = &mut policy.units[0];
+            unit.hold.credited_s = 14 * 3_600;
+            unit.state = ClimbUnitState::Held {
+                reason: vec![
+                    ClimbBlocker::Hold {
+                        credited_s: unit.hold.credited_s,
+                        required_s: unit.hold.required_s,
+                    },
+                    ClimbBlocker::Certificate {},
+                    ClimbBlocker::EventUnresolved {
+                        event: DayEventId::Boot {
+                            boot: "day-a".to_owned().into(),
+                        },
+                    },
+                ],
+            };
+            unit.next = Some(ClimbProposalProjection {
+                profile: vector(&[-10]),
+                qualification: ClimbQualificationProjection {
+                    state: ClimbQualificationState::InProgress,
+                    outstanding: [
+                        ("mprime-sse-4k-21k", Backend::Mprime),
+                        ("ycruncher-bkt-sftv4", Backend::Ycruncher),
+                    ]
+                    .into_iter()
+                    .map(|(workload, backend)| ExposureClass {
+                        regime: Regime::R1,
+                        workloads: vec![WorkloadContent {
+                            workload: workload.parse().unwrap(),
+                            content: ContentId {
+                                backend,
+                                executable: Digest::from_bytes([1; 32]),
+                                configuration: Digest::from_bytes([2; 32]),
+                            },
+                        }],
+                        cores: [core(0)].into_iter().collect(),
+                        position: None,
+                        duration_s: 90,
+                        placement: Placement::Exact,
+                    })
+                    .collect(),
+                    witnesses: vec![],
+                },
+            });
+        }
         Case::Censored => {
             policy.units[0].edge = Edge::Censored {
                 limit: offset(-50),
@@ -273,6 +323,8 @@ fn case_fixture(case: Case) -> ClimbProjection {
 #[test_case(Case::QualifiedProposal, include_str!("climb-qualified-proposal.txt"), true; "qualified_proposal_color")]
 #[test_case(Case::Blocked, include_str!("climb-blocked.txt"), false; "blocked_qualification_plain")]
 #[test_case(Case::Blocked, include_str!("climb-blocked.txt"), true; "blocked_qualification_color")]
+#[test_case(Case::HeldByUnresolvedEvent, include_str!("climb-unresolved.txt"), false; "held_by_unresolved_event_plain")]
+#[test_case(Case::HeldByUnresolvedEvent, include_str!("climb-unresolved.txt"), true; "held_by_unresolved_event_color")]
 #[test_case(Case::Censored, include_str!("climb-censored.txt"), false; "censored_plain")]
 #[test_case(Case::Censored, include_str!("climb-censored.txt"), true; "censored_color")]
 #[test_case(Case::Finished, include_str!("climb-finished.txt"), false; "finished_experimental_plain")]

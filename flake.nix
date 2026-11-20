@@ -49,7 +49,6 @@
               bench = ./tools/bench;
             in
             {
-              togi = [ (bench + "/machines") ];
               togi-sim = [ (bench + "/machines") ];
               togi-simrun = [ (bench + "/machines") ];
               togi-tool-bench = [

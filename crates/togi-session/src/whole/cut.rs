@@ -46,7 +46,7 @@ use togi_machine::{
 };
 use togi_sim::definition::CoreDef;
 use togi_sim::faults::SmuOperation;
-use togi_sim::{MachineDefinition, Model, Persisted, Simulator};
+use togi_sim::{MachineDefinition, MachineSource, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, Projection, State};
 
@@ -837,8 +837,8 @@ impl Snapshot {
         }
     }
 
-    /// A bench of `model` in this state, sharing nothing with the one it was taken of.
-    fn bench(&self, model: &Model) -> Bench {
+    /// A bench from `source` in this state, sharing nothing with the one it was taken of.
+    fn bench(&self, source: &MachineSource) -> Bench {
         let mem = MemFs::new();
         for (path, bytes) in &self.files {
             match bytes {
@@ -851,7 +851,7 @@ impl Snapshot {
             }
         }
         Bench {
-            sim: Simulator::restore(model.clone(), None, self.machine.clone()).unwrap(),
+            sim: Simulator::restore(source.clone(), self.machine.clone()).unwrap(),
             mem,
             config: Config::default(),
             defects: togi_defect::KNOWN_DEFECTS,
@@ -943,7 +943,7 @@ fn reference(bench: &Bench, steps: &[Step]) -> Vec<Played> {
 }
 
 /// The uninterrupted scenario and the first phase that commits a mapped unit edge.
-fn scenario() -> (Model, Vec<Played>, usize) {
+fn scenario() -> (MachineSource, Vec<Played>, usize) {
     let bench = bench();
     let played = reference(&bench, SCENARIO);
     assert!(
@@ -987,7 +987,7 @@ fn scenario() -> (Model, Vec<Played>, usize) {
         }),
         "the charged daily event must stop the unit at its first backstep"
     );
-    (bench.sim.model(), played, from)
+    (bench.sim.source(), played, from)
 }
 
 /// Every cut of the swept phases: the phase and the durable events the cut leaves.
@@ -1229,7 +1229,7 @@ fn assert_crash_accounted(events: &[Event], after: usize, boot: &BootId) {
 
 /// Plays `played`'s phase from its start with the journal cut after its `after`th event and `fate` befalling the
 /// machine there, and checks that the journal left is resumable. Returns the journal at the phase's end.
-fn resume(played: &Played, model: &Model, after: usize, fate: Fate) -> Vec<Event> {
+fn resume(played: &Played, model: &MachineSource, after: usize, fate: Fate) -> Vec<Event> {
     let bench = played.before.bench(model);
     let (_, mut events) = play(&bench, played.phase, played.start, Some((after, fate)));
     if !matches!(fate, Fate::Killed) {
@@ -1245,7 +1245,7 @@ fn resume(played: &Played, model: &Model, after: usize, fate: Fate) -> Vec<Event
 }
 
 /// The same phase runner, losing power before or after the selected actual SMU access.
-fn resume_at_smu(played: &Played, model: &Model, at: usize) -> Vec<Event> {
+fn resume_at_smu(played: &Played, model: &MachineSource, at: usize) -> Vec<Event> {
     let bench = played.before.bench(model);
     let boot = bench.sim.seams().host.boot_id().unwrap();
     let sim = bench.sim.clone();
@@ -1290,7 +1290,7 @@ fn resume_at_smu(played: &Played, model: &Model, at: usize) -> Vec<Event> {
 /// be compared to a run without that evidence. Between night trials, however, all policy decisions must agree.
 fn assert_unchanged_decisions(
     played: &Played,
-    model: &Model,
+    model: &MachineSource,
     events: &[Event],
     after: usize,
     boot: &BootId,
@@ -1390,7 +1390,7 @@ fn projection(events: &[Event]) -> Vec<String> {
 /// can change coverage diagnostics or a queue's next cell. No policy commitment is copied into the control.
 fn charged_kill_control(
     played: &Played,
-    model: &Model,
+    model: &MachineSource,
     after: usize,
     resumed: &[Event],
 ) -> Option<Vec<Event>> {
