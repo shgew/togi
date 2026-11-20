@@ -98,10 +98,11 @@ impl Host {
         let args = std::iter::once(OsString::from("togi-tool-sim"))
             .chain(args.into_iter().map(|arg| arg.as_ref().to_owned()));
         let source = Texts(self.files.clone());
+        let read_machine = |path: &Path| {
+            togi_sim::file::load_from(path, &source).map(|(definition, _)| definition)
+        };
         let load = |path: Option<&Path>, seed, replay, extracts: &mut Extracts| {
-            machine::load_with(path, seed, replay, extracts, |path| {
-                togi_sim::file::load_from(path, &source).map(|(definition, _)| definition)
-            })
+            machine::load_with(path, seed, replay, extracts, read_machine)
         };
         let load_suite = |path: &Path| {
             let text = source
@@ -118,14 +119,7 @@ impl Host {
                 None => session::run_with(
                     cli.session,
                     &mut log,
-                    |args| {
-                        load(
-                            args.machine.as_deref(),
-                            args.seed,
-                            args.replay_facts,
-                            &mut Extracts::new(),
-                        )
-                    },
+                    read_machine,
                     |args: SessionArgs, log| {
                         let path = args
                             .state_dir
@@ -200,6 +194,9 @@ impl Host {
                             1
                         }
                     }
+                }
+                Some(Command::ScriptedContract | Command::Scripted(_)) => {
+                    panic!("the named scripts' CLI protocol is exercised by the process tests")
                 }
             },
         };

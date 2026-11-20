@@ -6,6 +6,8 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use togi_tool_sim::scripted::{CONTRACT_PATH, CONTRACT_VERSION};
+
 use crate::session;
 
 struct Trees {
@@ -32,13 +34,12 @@ fn stamped_by_another_build(journal: &str) -> String {
 }
 
 impl Trees {
-    fn new(base_suite: &str, head_suite: &str) -> Self {
+    fn new() -> Self {
         let trees = Self {
             dir: tempfile::tempdir().unwrap(),
         };
-        for (tree, suite) in [("base", base_suite), ("head", head_suite)] {
-            fs::create_dir_all(trees.path(tree)).unwrap();
-            fs::write(trees.path(tree).join("suite.json"), suite).unwrap();
+        for tree in ["base", "head"] {
+            trees.marker(tree, &format!(" {CONTRACT_VERSION}\n"));
         }
         trees
     }
@@ -47,37 +48,64 @@ impl Trees {
         self.dir.path().join(name)
     }
 
+    fn marker(&self, tree: &str, version: &str) {
+        let path = self.path(tree).join(CONTRACT_PATH);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, version).unwrap();
+    }
+
+    fn script(&self, name: &str, source: &str) -> PathBuf {
+        let path = self.path(name);
+        fs::write(&path, source).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn cases(&self, name: &str) -> Vec<String> {
+        let mut cases: Vec<_> = fs::read_to_string(self.path(&format!("{name}.cases")))
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        cases.sort_unstable();
+        cases
+    }
+
     /// A simulator that leaves `journal` in its state directory and exits with `exit`.
     fn simulator(&self, name: &str, journal: &str, exit: i32) -> PathBuf {
         let journal_path = self.path(&format!("{name}.jsonl"));
         fs::write(&journal_path, journal).unwrap();
-        let path = self.path(name);
-        let script = format!(
-            r#"#!/bin/sh
-dir=
-while [ $# -gt 0 ]; do
-  if [ "$1" = --state-dir ]; then dir="$2"; fi
-  shift
-done
-cp '{journal}' "$dir/events.jsonl"
+        self.script(
+            name,
+            &format!(
+                r#"#!/bin/sh
+if [ "$1" = scripted-contract ]; then
+  [ "$#" = 1 ] || exit 8
+  printf '%s\n' '{CONTRACT_VERSION}'
+  exit 0
+fi
+[ "$#" = 9 ] && [ "$1" = scripted ] && [ "$2" = --case ] &&
+  [ "$4" = --contract ] && [ "$5" = '{CONTRACT_VERSION}' ] &&
+  [ "$6" = --state-dir ] && [ "$8" = --max-boots ] || exit 8
+case "$3:$9" in
+  mapping-stop:1|mce-resume:2|power-button-reset:2|profile-placement:3|no-nonzero-work:3) ;;
+  *) exit 8 ;;
+esac
+printf '%s\n' "$3" >> '{cases}'
+cp '{journal}' "$7/events.jsonl" || exit 8
 exit {exit}
 "#,
-            journal = journal_path.display(),
-        );
-        fs::write(&path, script).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-        path
+                journal = journal_path.display(),
+                cases = self.path(&format!("{name}.cases")).display(),
+            ),
+        )
     }
 }
 
-const SUITE: &str = r#"{"scenarios":[{"name":"default","dev":[1,2],"holdout":[101],"smoke":[2]},{"name":"late","dev":[1],"smoke":[1]}]}"#;
-
 #[test]
 fn real_process_each_tree_is_built_and_its_own_simulator_run() {
-    let suite = r#"{"scenarios":[{"name":"s","dev":[1,2]}]}"#;
-    let trees = Trees::new(suite, suite);
-    fs::create_dir_all(trees.path("same")).unwrap();
-    fs::write(trees.path("same/suite.json"), suite).unwrap();
+    let trees = Trees::new();
+    trees.marker("same", CONTRACT_VERSION);
     for (name, decision) in [("base", 0), ("same", 0), ("head", 1)] {
         trees.simulator(
             &format!("{name}/simulator"),
@@ -98,7 +126,7 @@ fn real_process_each_tree_is_built_and_its_own_simulator_run() {
             .arg(trees.path("base"))
             .arg("--head")
             .arg(trees.path(head))
-            .args(["--suite", "suite.json", "--keep-going"])
+            .arg("--keep-going")
             .arg("--cache")
             .arg(trees.path("cache"))
             .env("CARGO", &cargo)
@@ -110,14 +138,14 @@ fn real_process_each_tree_is_built_and_its_own_simulator_run() {
     assert_eq!(status.code(), Some(1), "{stderr}");
     assert!(
         text.contains(
-            "same: s/dev-1\n  events.jsonl:1\n  base: {\"decision\":0}\n  head: {\"decision\":1}\n"
+            "same: mapping-stop\n  events.jsonl:1\n  base: {\"decision\":0}\n  head: {\"decision\":1}\n"
         ),
         "{text}"
     );
-    assert!(text.ends_with("same: 2 of 2 sessions differ\n"), "{text}");
+    assert!(text.ends_with("same: 5 of 5 sessions differ\n"), "{text}");
     let (status, text, stderr) = run("same");
     assert!(status.success(), "{stderr}");
-    assert!(text.ends_with("same: 0 of 2 sessions differ\n"), "{text}");
+    assert!(text.ends_with("same: 0 of 5 sessions differ\n"), "{text}");
     assert_eq!(
         cargo_runs(&trees).len(),
         4,
@@ -136,8 +164,6 @@ fn command_with_cache(trees: &Trees, cache: &Path) -> Command {
         .arg(trees.path("base"))
         .arg("--head")
         .arg(trees.path("head"))
-        .arg("--suite")
-        .arg("suite.json")
         .arg("--cache")
         .arg(cache);
     command
@@ -170,7 +196,7 @@ fn text(bytes: &[u8]) -> String {
 
 #[test]
 fn real_process_the_command_exits_zero_for_equal_trees_and_one_for_a_difference() {
-    let trees = Trees::new(SUITE, SUITE);
+    let trees = Trees::new();
     let journal = recorded(None);
     let base = trees.simulator("base-sim", &journal, 0);
     let head = trees.simulator("head-sim", &stamped_by_another_build(&journal), 0);
@@ -182,7 +208,7 @@ fn real_process_the_command_exits_zero_for_equal_trees_and_one_for_a_difference(
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", text(&output.stderr));
-    assert!(text(&output.stdout).ends_with("same: 0 of 4 sessions differ\n"));
+    assert!(text(&output.stdout).ends_with("same: 0 of 5 sessions differ\n"));
 
     let changed = trees.simulator(
         "changed-sim",
@@ -206,6 +232,8 @@ fn real_process_the_command_exits_zero_for_equal_trees_and_one_for_a_difference(
     assert!(text(&output.stderr).contains("kept the runs in"));
 }
 
+#[test_case::test_case("--suite=suite.json"; "comparison suite was removed")]
+#[test_case::test_case("--max-boots=10"; "scripted boot bounds are fixed")]
 #[test_case::test_case("--split=dev"; "split dev")]
 #[test_case::test_case("--baseline=b.jsonl"; "baseline b jsonl")]
 #[test_case::test_case("--out=o.jsonl"; "out o jsonl")]
@@ -233,7 +261,7 @@ fn real_process_a_missing_base_argument_is_a_usage_error() {
 #[test_case::test_case(true; "true")]
 fn real_process_a_full_run_leaves_no_run_directory_and_no_copy_of_a_simulator_behind(case: bool) {
     let smoke = case;
-    let trees = Trees::new(SUITE, SUITE);
+    let trees = Trees::new();
     let journal = recorded(None);
     let base = trees.simulator("base-sim", &journal, 0);
     let head = trees.simulator("head-sim", &stamped_by_another_build(&journal), 0);
@@ -262,7 +290,7 @@ fn real_process_a_full_run_leaves_no_run_directory_and_no_copy_of_a_simulator_be
 
 #[test]
 fn real_process_a_termination_during_the_build_fails_the_command_instead_of_reporting_equality() {
-    let trees = Trees::new(SUITE, SUITE);
+    let trees = Trees::new();
     let sim = trees.simulator("sim", &recorded(None), 0);
     let cargo = fake_cargo(&trees, &sim, "kill -TERM $PPID\nsleep 60");
     let temporary = trees.path("tmp");
@@ -288,7 +316,7 @@ fn real_process_a_termination_during_the_build_fails_the_command_instead_of_repo
 #[test]
 fn real_process_a_relative_cache_directory_holds_the_base_target_directory_of_the_bench_not_of_the_tree()
  {
-    let trees = Trees::new(SUITE, SUITE);
+    let trees = Trees::new();
     let sim = trees.simulator("sim", &recorded(None), 0);
     let cargo = fake_cargo(&trees, &sim, "");
     let output = command_with_cache(&trees, Path::new("relative-cache"))
@@ -311,16 +339,23 @@ fn real_process_a_relative_cache_directory_holds_the_base_target_directory_of_th
     );
 }
 
-#[test]
-fn real_process_a_failed_session_exits_one_and_names_the_only_directory_it_left_in_the_temporary_directory()
- {
-    let trees = Trees::new(SUITE, SUITE);
-    let base = trees.simulator("base-sim", &recorded(None), 0);
-    let head = trees.simulator("head-sim", "", 1);
+#[test_case::test_case(false; "one failed child")]
+#[test_case::test_case(true; "identical failed children")]
+fn real_process_a_failed_session_exits_one_and_names_the_only_directory_it_left_in_the_temporary_directory(
+    same_binary: bool,
+) {
+    let trees = Trees::new();
+    let head = trees.simulator("head-sim", &recorded(None), 7);
+    let base = if same_binary {
+        head.clone()
+    } else {
+        trees.simulator("base-sim", &recorded(None), 0)
+    };
     let temporary = trees.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
     let output = command(&trees)
         .env("TMPDIR", &temporary)
+        .args(["--no-cache", "--jobs", "1"])
         .arg("--base-sim")
         .arg(&base)
         .arg("--head-sim")
@@ -329,16 +364,128 @@ fn real_process_a_failed_session_exits_one_and_names_the_only_directory_it_left_
         .unwrap();
     let stderr = text(&output.stderr);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("scripted simulator exited with status 7"),
+        "{stderr}"
+    );
     assert!(output.stdout.is_empty(), "{}", text(&output.stdout));
     let kept = stderr
         .lines()
         .find_map(|line| line.strip_prefix("togi-tool-bench: kept the runs in "))
         .unwrap_or_else(|| panic!("no kept-runs line: {stderr}"));
     let kept = PathBuf::from(kept);
-    assert!(kept.is_dir(), "{kept:?}");
+    assert!(kept.is_dir(), "{}", kept.display());
     let left: Vec<_> = fs::read_dir(&temporary)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .collect();
     assert_eq!(left, [kept]);
+}
+
+#[test_case::test_case("base", None, "base simulator cannot run the scripted comparison set (requires scripted input contract v1)"; "old base")]
+#[test_case::test_case("base", Some("9"), "base simulator declares scripted input contract \"9\"; expected v1"; "wrong base")]
+#[test_case::test_case("head", Some("9"), "head simulator declares scripted input contract \"9\"; expected v1"; "wrong head")]
+fn real_process_an_incompatible_tree_is_refused_before_build_cache_or_equality(
+    side: &str,
+    version: Option<&str>,
+    reason: &str,
+) {
+    let trees = Trees::new();
+    if let Some(version) = version {
+        trees.marker(side, version);
+    } else {
+        fs::remove_file(trees.path(side).join(CONTRACT_PATH)).unwrap();
+    }
+    let sim = trees.simulator("sim", "{}\n", 0);
+    let cargo = fake_cargo(&trees, &sim, "");
+    let no_build = command(&trees).env("CARGO", &cargo).output().unwrap();
+    assert!(!no_build.status.success());
+    assert!(no_build.stdout.is_empty());
+    assert_eq!(
+        text(&no_build.stderr).trim_end(),
+        format!("togi-tool-bench: {reason}")
+    );
+    assert!(cargo_runs(&trees).is_empty());
+    assert!(!trees.path("cache").exists());
+
+    let no_equality = command(&trees)
+        .arg("--base-sim")
+        .arg(&sim)
+        .arg("--head-sim")
+        .arg(&sim)
+        .output()
+        .unwrap();
+    assert!(!no_equality.status.success());
+    assert!(no_equality.stdout.is_empty());
+    assert!(text(&no_equality.stderr).contains(reason));
+    assert!(!trees.path("cache").exists());
+}
+
+#[test_case::test_case("printf '9\n'", "printed"; "wrong version")]
+#[test_case::test_case("printf '1\nextra\n'", "printed"; "extra stdout")]
+#[test_case::test_case("exit 7", "exited with status 7"; "handshake failed")]
+fn real_process_a_bad_head_override_is_refused_before_building_the_base(reply: &str, reason: &str) {
+    let trees = Trees::new();
+    let bad = trees.script("bad", &format!("#!/bin/sh\n{reply}\n"));
+    let cargo = fake_cargo(&trees, &bad, "");
+    let output = command(&trees)
+        .env("CARGO", &cargo)
+        .arg("--head-sim")
+        .arg(&bad)
+        .output()
+        .unwrap();
+    let stderr = text(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("check scripted-contract for the head simulator"),
+        "{stderr}"
+    );
+    assert!(stderr.contains(reason), "{stderr}");
+    assert!(output.stdout.is_empty());
+    assert!(cargo_runs(&trees).is_empty());
+    assert!(!trees.path("cache").exists());
+}
+
+#[test]
+fn real_process_a_built_binary_must_also_pass_the_handshake() {
+    let trees = Trees::new();
+    let bad = trees.script("bad", "#!/bin/sh\nexit 6\n");
+    let cargo = fake_cargo(&trees, &bad, "");
+    let output = command(&trees).env("CARGO", &cargo).output().unwrap();
+    let stderr = text(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("check scripted-contract for the base simulator"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("exited with status 6"), "{stderr}");
+    assert!(output.stdout.is_empty());
+    assert!(!trees.path("cache/same").exists());
+}
+
+#[test_case::test_case(&[], &["mapping-stop", "mce-resume", "no-nonzero-work", "power-button-reset", "profile-placement"]; "same")]
+#[test_case::test_case(&["--smoke"], &["mapping-stop", "mce-resume"]; "smoke")]
+#[test_case::test_case(&["--semantic"], &["mapping-stop", "mce-resume", "no-nonzero-work", "power-button-reset", "profile-placement"]; "semantic")]
+fn real_process_supplied_binaries_run_exactly_the_selected_cases_without_cargo(
+    flags: &[&str],
+    cases: &[&str],
+) {
+    let trees = Trees::new();
+    let journal = recorded(None);
+    let base = trees.simulator("base-sim", &journal, 0);
+    let head = trees.simulator("head-sim", &stamped_by_another_build(&journal), 0);
+    let cargo = fake_cargo(&trees, &base, "exit 7");
+    let output = command(&trees)
+        .env("CARGO", &cargo)
+        .args(flags)
+        .arg("--base-sim")
+        .arg(&base)
+        .arg("--head-sim")
+        .arg(&head)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert!(cargo_runs(&trees).is_empty());
+    assert_eq!(trees.cases("base-sim"), cases);
+    assert_eq!(trees.cases("head-sim"), cases);
 }

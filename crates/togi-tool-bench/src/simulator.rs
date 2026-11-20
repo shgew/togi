@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 use togi_journal::{FileError, Payload, ReadError, Recording, ShutdownReason};
+use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase};
 
-use crate::error::{BuildFailure, Error, RunError, Unrunnable};
+use crate::error::{BuildFailure, Error, RunError, ScriptedError, Unrunnable};
 use crate::process::{self, Fleet};
 use crate::suite::RunSpec;
 
@@ -156,19 +157,6 @@ impl Simulator {
         let dir = root
             .join(&spec.scenario)
             .join(format!("{}-{}", spec.split, spec.seed));
-        fs::create_dir_all(&dir).map_err(|source| RunError::Directory {
-            path: dir.clone(),
-            source,
-        })?;
-        let log_path = dir.join(LOG);
-        let log = File::create(&log_path).map_err(|source| RunError::Directory {
-            path: log_path.clone(),
-            source,
-        })?;
-        let again = log.try_clone().map_err(|source| RunError::Directory {
-            path: log_path.clone(),
-            source,
-        })?;
         let mut command = Command::new(&self.binary);
         command
             .arg("--seed")
@@ -183,8 +171,8 @@ impl Simulator {
         if spec.replay.is_some() {
             command.arg("--replay-facts");
         }
-        command.stdin(Stdio::null()).stdout(log).stderr(again);
-        let finished = process::run(fleet, &mut command, limit)?;
+        let finished = launch_logged(fleet, &mut command, &dir, limit)?;
+        let log_path = dir.join(LOG);
         let log_dead_end = File::open(&log_path)
             .and_then(holds_dead_end)
             .map_err(|source| RunError::Read {
@@ -198,6 +186,92 @@ impl Simulator {
             log_dead_end,
         })
     }
+
+    /// Probes the private copy, so subsequent cases and the handshake use the same bytes.
+    pub(crate) fn check_scripted_contract(
+        &self,
+        fleet: &Fleet,
+        limit: Duration,
+    ) -> Result<(), ScriptedError> {
+        let read = |source| RunError::Read {
+            what: "scripted-contract output",
+            source,
+        };
+        let mut stdout = tempfile::tempfile().map_err(read)?;
+        let mut command = Command::new(&self.binary);
+        command
+            .arg("scripted-contract")
+            .stdin(Stdio::null())
+            .stdout(stdout.try_clone().map_err(read)?)
+            .stderr(Stdio::null());
+        let finished = process::run(fleet, &mut command, limit)?;
+        if finished.exit != 0 {
+            return Err(ScriptedError::Exit {
+                exit: finished.exit,
+            });
+        }
+        stdout.rewind().map_err(read)?;
+        let mut answer = Vec::new();
+        stdout.take(128).read_to_end(&mut answer).map_err(read)?;
+        if answer.strip_suffix(b"\n") != Some(CONTRACT_VERSION.as_bytes()) {
+            return Err(ScriptedError::Version {
+                answer: String::from_utf8_lossy(&answer).into_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn launch_scripted(
+        &self,
+        fleet: &Fleet,
+        dir: &Path,
+        case: ScriptedCase,
+        limit: Duration,
+    ) -> Result<process::Finished, ScriptedError> {
+        let mut command = Command::new(&self.binary);
+        command
+            .args([
+                "scripted",
+                "--case",
+                case.name(),
+                "--contract",
+                CONTRACT_VERSION,
+            ])
+            .arg("--state-dir")
+            .arg(dir)
+            .arg("--max-boots")
+            .arg(case.max_boots().to_string());
+        let finished = launch_logged(fleet, &mut command, dir, limit)?;
+        if finished.exit != 0 {
+            return Err(ScriptedError::Exit {
+                exit: finished.exit,
+            });
+        }
+        Ok(finished)
+    }
+}
+
+fn launch_logged(
+    fleet: &Fleet,
+    command: &mut Command,
+    dir: &Path,
+    limit: Duration,
+) -> Result<process::Finished, RunError> {
+    fs::create_dir_all(dir).map_err(|source| RunError::Directory {
+        path: dir.to_path_buf(),
+        source,
+    })?;
+    let log_path = dir.join(LOG);
+    let log = File::create(&log_path).map_err(|source| RunError::Directory {
+        path: log_path.clone(),
+        source,
+    })?;
+    let again = log.try_clone().map_err(|source| RunError::Directory {
+        path: log_path,
+        source,
+    })?;
+    command.stdin(Stdio::null()).stdout(log).stderr(again);
+    process::run(fleet, command, limit)
 }
 
 /// What a simulator process left besides its journal.

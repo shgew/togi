@@ -42,8 +42,8 @@ impl Base {
         match self {
             Self::Night => night(),
             Self::Mapped => mapped(),
-            Self::Filler => staged_day::build(staged_day::Goal::Filler),
-            Self::StagedReproduction => staged_day::build(staged_day::Goal::Reproduction),
+            Self::Filler => staged_day::build_journal(staged_day::Goal::Filler),
+            Self::StagedReproduction => staged_day::build_journal(staged_day::Goal::Reproduction),
             Self::DeadEnd => dead_end(),
         }
     }

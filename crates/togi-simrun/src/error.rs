@@ -84,7 +84,7 @@ pub enum HistoryError {
     BootCount(#[source] std::num::TryFromIntError),
 }
 
-fn listed(errors: &[SessionError]) -> String {
+pub(crate) fn listed(errors: &[SessionError]) -> String {
     errors
         .iter()
         .map(|error| togi_machine::error_chain(error))

@@ -9,8 +9,9 @@ use togi_journal::{DeadEndCondition, MemFs, Payload, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::ConfigSource;
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{History, Simulator};
 use togi_simrun::{Persistence, Replay, SimInput, simulate};
+use togi_tool_sim::scripted::developer_machine;
 
 use super::common::Host;
 
@@ -185,14 +186,7 @@ fn a_restart_after_a_decided_stop_starts_a_fresh_night() {
 }
 
 fn record(fs: MemFs, config: Config) {
-    let simulator = Simulator::new(
-        Model::new(&MachineDefinition::default(), 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap();
+    let simulator = Simulator::scripted(developer_machine(), 1, History::default()).unwrap();
     simulate(SimInput {
         config,
         source: ConfigSource::default(),
@@ -227,7 +221,14 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     let fs = MemFs::new();
     record(fs.clone(), recorded.clone());
     host.states.insert("/state".into(), fs);
-    let ran = host.run(["--state-dir", "/state", "--max-boots", "1"]);
+    let ran = host.run([
+        "--state-dir",
+        "/state",
+        "--max-boots",
+        "1",
+        "--night-hours",
+        "1",
+    ]);
     assert!(matches!(ran.code, Some(0 | 3)), "{}", ran.stderr);
     let loaded: Vec<Config> = host
         .events("/state")

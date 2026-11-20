@@ -1,27 +1,17 @@
-use std::num::{NonZeroU32, TryFromIntError};
+use std::num::TryFromIntError;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use togi_journal::{AppendError, CloseError, DirError, InvalidSessionId, LockError, OpenError};
 use togi_machine::{CoreId, InvalidCcd, InvalidCore, InvalidTarget, ObservedOffset};
-use togi_session::SessionError;
-use togi_simrun::{HistoryError, SimError};
 use togi_tuner::policy::FoldError;
 
 use crate::Scenario;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("simulate")]
-    Simulate(#[from] SimError),
-    #[error("the simulated run ended with errors: {}", listed(.0))]
-    Session(Vec<SessionError>),
-    #[error("read the simulated journal")]
-    History(#[from] HistoryError),
-    #[error("the simulation did not stop within {0} boots")]
-    Capped(NonZeroU32),
-    #[error("the simulation did not stop within {0} observed events")]
-    EventCap(usize),
+    #[error(transparent)]
+    Simulate(#[from] togi_simrun::scripted::Error),
     #[error("read core {core} after shutdown")]
     StockRead {
         core: CoreId,
@@ -35,26 +25,8 @@ pub enum Error {
     },
     #[error("construct the simulated machine")]
     Construct(#[from] togi_sim::ArithmeticError),
-    #[error("configuration")]
-    Config(#[from] togi_config::ConfigError),
     #[error("fold the simulated journal")]
     Fold(#[from] FoldError),
-    #[error("lock the staged day journal")]
-    DayLock(#[from] LockError),
-    #[error("open the staged day journal")]
-    DayOpen(#[from] OpenError),
-    #[error("append to the staged day journal")]
-    DayAppend(#[from] AppendError),
-    #[error("close the staged day journal")]
-    DayClose(#[from] CloseError),
-    #[error("access the staged day machine")]
-    DayMachine(#[from] togi_machine::Error),
-    #[error("query the staged day policy")]
-    DayPolicy(#[from] togi_tuner::policy::NotReady),
-    #[error("build the staged CCD profile")]
-    DayProfile(#[from] togi_machine::CcdProfileError),
-    #[error("apply the staged day profile")]
-    DayWrite(#[from] togi_session::DayWriteError),
     #[error("no cut point in the simulated journal: {0}")]
     NoCut(&'static str),
     #[error("scenario {scenario}")]
@@ -117,12 +89,4 @@ pub enum InstallError {
     NotEmpty,
     #[error("the journal does not open with session.start")]
     NoSession,
-}
-
-fn listed(errors: &[SessionError]) -> String {
-    errors
-        .iter()
-        .map(|error| togi_machine::error_chain(error))
-        .collect::<Vec<_>>()
-        .join("; ")
 }

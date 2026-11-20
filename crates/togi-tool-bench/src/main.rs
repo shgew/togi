@@ -34,7 +34,7 @@ struct Cli {
 enum Command {
     /// Compare a run's records with the scores of a recorded baseline, metric by metric.
     Sanity(SanityArgs),
-    /// Prove two trees decide the same on every simulated session, or only the suite's smoke sessions.
+    /// Compare exact journals for the fixed scripted mechanics set, or its smoke subset.
     Same(same_cli::SameArgs),
 }
 

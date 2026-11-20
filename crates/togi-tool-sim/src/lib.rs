@@ -1,8 +1,9 @@
-//! The simulator suite check: `tools/bench/suite.json` expanded into runs, the runs partitioned into shards, and the
-//! aggregate that proves every run of the suite was executed once and ended clean.
+//! Versioned scripted sessions for exact mechanics comparisons and the fitted research suite's
+//! manifest and shard accounting.
 
 mod coverage;
 mod run;
+pub mod scripted;
 mod shard;
 mod split;
 mod suite;

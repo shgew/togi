@@ -1,0 +1,13 @@
+---
+source: crates/togi-tool-bench/src/same/tests.rs
+expression: text
+---
+same: mapping-stop
+  events.jsonl:2
+  base: {"decision":0}
+  head: {"decision":1}
+same: mce-resume
+  events.jsonl:1
+  base: {}
+  head: {"changed":true}
+same: 2 of 2 sessions differ

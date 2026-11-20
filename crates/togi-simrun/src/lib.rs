@@ -7,7 +7,9 @@ mod history;
 mod input;
 mod machine;
 mod observe;
+pub mod scripted;
 mod simulate;
+mod staged_day;
 
 pub use error::{HistoryError, SimError};
 pub use history::{history, history_in, recorded_config, recorded_config_in};
