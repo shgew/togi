@@ -20,34 +20,10 @@ use super::Exit;
 #[test_case(Exit::ThermalTrip, 18 ; "thermal trip")]
 fn every_status_has_the_code_the_spec_lists(exit: Exit, code: u8) {
     assert_eq!(exit.code(), code);
-}
-
-#[test]
-fn all_lists_every_status_in_the_spec_order() {
     assert_eq!(
-        Exit::ALL,
-        [
-            Exit::Ok,
-            Exit::Error,
-            Exit::Usage,
-            Exit::Locked,
-            Exit::FailureAtZero,
-            Exit::Smu,
-            Exit::NoEvidence,
-            Exit::BootLoop,
-            Exit::Containment,
-            Exit::Preflight,
-            Exit::Incompatible,
-            Exit::Defect,
-            Exit::ThermalTrip,
-        ]
+        format!("{:?}", std::process::ExitCode::from(exit)),
+        format!("{:?}", std::process::ExitCode::from(code)),
     );
-}
-
-#[test]
-fn codes_are_distinct() {
-    let codes: HashSet<u8> = Exit::ALL.iter().map(|exit| exit.code()).collect();
-    assert_eq!(codes.len(), Exit::ALL.len());
 }
 
 #[test]
@@ -75,15 +51,4 @@ fn each_dead_end_has_its_own_code_between_10_and_18() {
 #[test_case(DeadEndCondition::ThermalTrip, 18 ; "thermal trip")]
 fn dead_ends_map_by_name(condition: DeadEndCondition, want: u8) {
     assert_eq!(Exit::dead_end(condition).code(), want);
-}
-
-#[test]
-fn a_status_becomes_the_process_exit_code() {
-    for exit in Exit::ALL {
-        assert_eq!(
-            format!("{:?}", std::process::ExitCode::from(exit)),
-            format!("{:?}", std::process::ExitCode::from(exit.code())),
-            "{exit:?}",
-        );
-    }
 }
