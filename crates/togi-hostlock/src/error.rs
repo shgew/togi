@@ -8,10 +8,7 @@ use rustix::fs::Mode;
 pub enum Error {
     #[error("another togi process holds the host lock {}", path.display())]
     Busy { path: PathBuf },
-    #[error(
-        "host lock {} does not exist and only root may create it: root must provision it",
-        path.display()
-    )]
+    #[error("host lock {} does not exist and only root may create it", path.display())]
     NotProvisioned { path: PathBuf },
     #[error(
         "host lock {}: directory {} (uid {uid}, mode {mode:o}) {problem}",
@@ -51,9 +48,9 @@ pub enum LockProblem {
     MultipleLinks,
     #[error("is owned by another user")]
     ForeignOwner,
-    #[error("has permissions other than 0600 or 0660 and only its owner may restrict them")]
+    #[error("has an unsupported mode and only its owner may restrict it")]
     LegacyModeNotOwner,
-    #[error("is opened read-only, which is not delegated access")]
+    #[error("is opened read-only; read-write access is required")]
     ReadOnly,
 }
 

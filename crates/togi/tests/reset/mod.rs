@@ -115,9 +115,12 @@ fn a_malformed_first_line_is_refused_as_ambiguous_without_changing_state(args: &
     );
 }
 
-#[test]
-fn reset_all_archives_the_session_and_marks_the_boundary() {
-    let host = Host::new();
+#[test_case(true, true; "root on Linux")]
+#[test_case(false, false; "unprivileged on Darwin")]
+fn reset_all_archives_the_session_and_marks_the_boundary(linux: bool, root: bool) {
+    let mut host = Host::new();
+    host.linux = linux;
+    host.root = root;
     let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
     let original = session.text();
     let ran = reset(&host, session.path(), &["--all"]);
@@ -205,6 +208,25 @@ fn an_unreadable_journal_exits_1(args: &[&str]) {
     let ran = reset(&host, state.path(), args);
     assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
     assert_eq!(ran.out, "");
+}
+
+#[test]
+fn a_nonroot_linux_caller_is_refused_without_taking_the_lock_or_changing_state() {
+    let mut host = Host::new();
+    host.root = false;
+    let session = Session::with_fs(host.fs.clone(), Scenario::Nonzero);
+    let before = files(&host.fs, session.path());
+    let text = session.text();
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        "togi reset: needs root to take the host lock; session unchanged\n"
+    );
+    assert_eq!(host.lock_acquisitions.get(), 0);
+    assert_eq!(files(&host.fs, session.path()), before);
+    assert_eq!(session.text(), text);
 }
 
 #[test_case(&["--all"]; "all")]

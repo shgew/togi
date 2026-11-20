@@ -106,6 +106,7 @@ pub struct Host {
     pub lock_error: RefCell<Option<LockError>>,
     pub real_fs: bool,
     pub lock: PathBuf,
+    pub lock_policy: Policy,
     pub config: PathBuf,
     pub boot: String,
     pub steps: Steps,
@@ -164,6 +165,7 @@ impl Host {
             lock_error: RefCell::new(None),
             real_fs: false,
             lock: PathBuf::from("/host/togi.lock"),
+            lock_policy: Policy::Private,
             config: PathBuf::from("/host/config.json"),
             boot: "0123456789abcdef0123456789abcdef".into(),
             steps: Steps::default(),
@@ -418,7 +420,7 @@ impl System for Host {
     }
 
     fn host_lock(&self) -> (&Path, Policy) {
-        (&self.lock, Policy::Private)
+        (&self.lock, self.lock_policy)
     }
 
     fn acquire_host_lock(&self) -> Result<HostLock, LockError> {
@@ -427,7 +429,8 @@ impl System for Host {
             return Err(error);
         }
         if self.real_fs {
-            HostLock::acquire(&self.lock, Policy::Private)
+            let (path, policy) = self.host_lock();
+            HostLock::acquire(path, policy)
         } else {
             self.locks.acquire(&self.lock)
         }

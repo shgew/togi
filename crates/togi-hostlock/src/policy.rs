@@ -62,11 +62,20 @@ pub(crate) fn lock_verdict(
         return Err(LockProblem::ForeignOwner);
     }
     let private = Mode::RUSR | Mode::WUSR;
-    if facts.mode != private && facts.mode != private | Mode::RGRP | Mode::WGRP {
+    let group_shared = private | Mode::RGRP | Mode::WGRP;
+    let mode_allowed = match policy {
+        Policy::Host => facts.mode == private,
+        Policy::Private => facts.mode == private || facts.mode == group_shared,
+    };
+    if !mode_allowed {
         if facts.owner != caller {
             return Err(LockProblem::LegacyModeNotOwner);
         }
-        return Ok(Mend::Restrict);
+        return match (policy, access) {
+            (Policy::Private, Access::ReadWrite | Access::ReadOnly)
+            | (Policy::Host, Access::ReadWrite) => Ok(Mend::Restrict),
+            (Policy::Host, Access::ReadOnly) => Err(LockProblem::ReadOnly),
+        };
     }
     match access {
         Access::ReadWrite => Ok(Mend::Keep),
@@ -225,6 +234,38 @@ mod tests {
         assert_eq!(
             verdict(Policy::Private, FOREIGN),
             Err(LockProblem::ForeignOwner)
+        );
+    }
+
+    #[test_case(0o600, Ok(Mend::Keep); "owner read write")]
+    #[test_case(0o660, Ok(Mend::Restrict); "old group delegated lock")]
+    #[test_case(0o640, Ok(Mend::Restrict); "group readable")]
+    #[test_case(0o644, Ok(Mend::Restrict); "public readable")]
+    #[test_case(0o4600, Ok(Mend::Restrict); "setuid")]
+    #[test_case(0o2600, Ok(Mend::Restrict); "setgid")]
+    #[test_case(0o1600, Ok(Mend::Restrict); "sticky")]
+    fn root_tightens_host_locks_to_exactly_0600(bits: RawMode, want: Result<Mend, LockProblem>) {
+        assert_eq!(
+            lock_verdict(facts(0, bits), 0, Policy::Host, Access::ReadWrite),
+            want
+        );
+    }
+
+    #[test_case(0o644; "public readable")]
+    #[test_case(0o660; "old group delegated lock")]
+    fn a_nonroot_caller_cannot_tighten_a_host_lock(bits: RawMode) {
+        assert_eq!(
+            lock_verdict(facts(0, bits), CALLER, Policy::Host, Access::ReadWrite),
+            Err(LockProblem::LegacyModeNotOwner)
+        );
+    }
+
+    #[test_case(0o600; "owner read write")]
+    #[test_case(0o644; "public readable")]
+    fn host_locks_need_read_write_access_even_as_root(bits: RawMode) {
+        assert_eq!(
+            lock_verdict(facts(0, bits), 0, Policy::Host, Access::ReadOnly),
+            Err(LockProblem::ReadOnly)
         );
     }
 

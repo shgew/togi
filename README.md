@@ -119,6 +119,6 @@ extra-trusted-public-keys = togi.cachix.org-1:1EZ2zQlDkNhHZmROZzR0n0/CcYGLPfAmPs
 
 or run `cachix use togi` as a user listed in `trusted-users`. After changing the system configuration file, by hand or by running `cachix use togi` as root outside NixOS, restart the Nix daemon, because it reads that file only when it starts. Local `just check` then downloads every local-tier check whose inputs are unchanged and builds only the rest. Trusting the key makes Nix on that machine accept any store path the cache serves, for any build and not only togi's checks, including outputs pushed by pull request runs that hold the push token ([cache trust](docs/development.md#check-cache)). The flake configures no cache ([cache policy](docs/development.md#check-cache)).
 
-Hardware tests run as root and share the [host lock](docs/spec/runtime.md#host-lock) with `run` and `reset`. See [host-lock provisioning](docs/howto.md#host-lock) when upgrading from a public-readable lock.
+Hardware tests run as root and share the [host lock](docs/spec/runtime.md#host-lock) that the NixOS module creates for `run` and `reset`.
 
 togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS, the dev shell, the tests, `just sim`, every flake check except the VM tests and the trial scope tests, and `status`, `events` and `reset` against a copied state directory work; CI runs only on Linux and builds nothing on macOS ([CI policy](docs/development.md#ci-and-release-gates)), and `togi run` exits with an error.
