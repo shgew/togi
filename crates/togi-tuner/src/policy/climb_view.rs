@@ -332,7 +332,7 @@ impl State {
             };
             let meta = view.meta.get(&event.id);
             events.push(ClimbEventProjection {
-                event: id.clone(),
+                event: id,
                 aliases: charge.map_or_else(Vec::new, |charge| {
                     charge
                         .aliases

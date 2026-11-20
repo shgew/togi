@@ -15,7 +15,6 @@ nix = { workspace = true, features = ["user", "signal"] }
 rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
 togi-backend.workspace = true
 togi-command.workspace = true
@@ -23,6 +22,9 @@ togi-journal.workspace = true
 togi-machine.workspace = true
 togi-trialfiles.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sha2.workspace = true
 
 [dev-dependencies]
 rustix = { workspace = true, features = ["time"] }

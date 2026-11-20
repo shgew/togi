@@ -306,7 +306,7 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
         let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
         let mut rig = Rig::new(&definition, 1);
         if file_backed {
-            rig.sim.set_sample_storage(dir.clone());
+            rig.sim.set_sample_storage(dir);
         }
         let workload = togi_machine::pick_workload(Regime::R7, 0);
         rig.pass(spec(
