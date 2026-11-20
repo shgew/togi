@@ -114,6 +114,14 @@ impl ScriptedMachine {
     }
 }
 
+/// Where a scripted machine check is reported, independently of the workload's stopped worker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScriptedMce {
+    pub core: CoreId,
+    pub bank: u16,
+    pub bank_type: BankType,
+}
+
 /// What the script makes one simulated trial do. The times are relative to its start.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrialOutcome {
@@ -126,6 +134,10 @@ pub enum TrialOutcome {
         core: CoreId,
         at: Duration,
     },
+    Stall {
+        core: CoreId,
+        at: Duration,
+    },
     /// A durable backend error report before the machine disappears, not a completed trial.
     ReportedFailureThenReset {
         core: CoreId,
@@ -134,9 +146,7 @@ pub enum TrialOutcome {
     },
     /// The kernel records a corrected check while the workload runs its full duration.
     CorrectedMce {
-        core: CoreId,
-        bank: u16,
-        bank_type: BankType,
+        mce: ScriptedMce,
         at: Duration,
     },
     Reset {
@@ -146,7 +156,7 @@ pub enum TrialOutcome {
     },
     /// Independent reset and successor-boot kernel evidence, without an in-trial MCE report.
     ResetWithMce {
-        mce_core: CoreId,
+        mce: ScriptedMce,
         stalled: Option<CoreId>,
         kind: ResetKind,
         at: Duration,

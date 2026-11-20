@@ -39,8 +39,8 @@ pub use runtime::{ArithmeticError, EPOCH, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
 pub use source::{
-    MachineSource, ReportedFailure, ScriptedMachine, ScriptedTopology, ScriptedVoltageSamples,
-    TrialOutcome,
+    MachineSource, ReportedFailure, ScriptedMachine, ScriptedMce, ScriptedTopology,
+    ScriptedVoltageSamples, TrialOutcome,
 };
 pub use trials::CONTROLLER_PID;
 pub use vocab::{

@@ -6,8 +6,8 @@ use togi_machine::{
     TrialSpec,
 };
 use togi_sim::{
-    History, ReportedFailure, RestoreError, ScriptError, ScriptedMachine, ScriptedTopology,
-    ScriptedVoltageSamples, Simulator, TrialOutcome, model::Script,
+    History, ReportedFailure, RestoreError, ScriptError, ScriptedMachine, ScriptedMce,
+    ScriptedTopology, ScriptedVoltageSamples, Simulator, TrialOutcome, model::Script,
 };
 
 use crate::common::{Journal, Rig, basic, core, machine, offset};
@@ -293,9 +293,11 @@ fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
 #[test]
 fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
     let mut rig = rig(ScriptedTopology::FourCores, |_, _| TrialOutcome::CorrectedMce {
-        core: core(0),
-        bank: 2,
-        bank_type: BankType::L2Cache,
+        mce: ScriptedMce {
+            core: core(0),
+            bank: 2,
+            bank_type: BankType::L2Cache,
+        },
         at: AFTER,
     });
     let boot = rig.boot();
@@ -317,7 +319,11 @@ fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
 #[test]
 fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
     let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| TrialOutcome::ResetWithMce {
-        mce_core: core(15),
+        mce: ScriptedMce {
+            core: core(15),
+            bank: 6,
+            bank_type: BankType::L3Cache,
+        },
         stalled: Some(core(0)),
         kind: ResetKind::Watchdog,
         at: AFTER,
@@ -339,25 +345,23 @@ fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
         panic!("expected a check in the successor boot: {evidence:?}")
     };
     assert_eq!(
-        (check.core, check.bank_type, check.corrected),
-        (Some(core(15)), BankType::LoadStore, false)
+        (check.core, check.bank, check.bank_type, check.corrected),
+        (Some(core(15)), 6, BankType::L3Cache, false)
     );
 }
 
-#[test]
-fn an_unexpected_exit_ends_the_trial_without_resetting() {
-    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| TrialOutcome::UnexpectedExit {
-        core: core(0),
-        at: AFTER,
-    });
+#[test_case(|_, _| TrialOutcome::UnexpectedExit { core: core(0), at: AFTER }, Signal::UnexpectedExit; "unexpected exit")]
+#[test_case(|_, _| TrialOutcome::Stall { core: core(0), at: AFTER }, Signal::Stall; "stall")]
+fn a_backend_failure_ends_the_trial_without_resetting(
+    outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+    signal: Signal,
+) {
+    let mut rig = rig(ScriptedTopology::SixteenCores, outcome);
     let boot = rig.boot();
     let result = rig.pass(basic(Regime::R2, &[0], DURATION));
     assert_eq!(result.ran, AFTER);
     let failure = result.failure.unwrap();
-    assert_eq!(
-        (failure.core, failure.signal),
-        (core(0), Signal::UnexpectedExit)
-    );
+    assert_eq!((failure.core, failure.signal), (core(0), signal));
     assert_eq!(rig.boot(), boot);
 }
 

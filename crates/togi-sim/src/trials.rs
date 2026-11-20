@@ -585,6 +585,14 @@ impl Runtime {
                     signal: Signal::UnexpectedExit,
                 },
             ),
+            TrialOutcome::Stall { core, at } => (
+                at,
+                Some(core),
+                Effect::Backend {
+                    core,
+                    signal: Signal::Stall,
+                },
+            ),
             TrialOutcome::ReportedFailureThenReset { core, failure, at } => (
                 at,
                 Some(core),
@@ -595,19 +603,14 @@ impl Runtime {
                     report: CrashReport::Signal(core, failure.signal()),
                 },
             ),
-            TrialOutcome::CorrectedMce {
-                core,
-                bank,
-                bank_type,
+            TrialOutcome::CorrectedMce { mce, at } => (
                 at,
-            } => (
-                at,
-                Some(core),
+                Some(mce.core),
                 Effect::Corrected {
                     mce: PendingMce {
-                        core,
-                        bank,
-                        bank_type,
+                        core: mce.core,
+                        bank: mce.bank,
+                        bank_type: mce.bank_type,
                         corrected: true,
                     },
                     ran: spec.duration,
@@ -624,7 +627,7 @@ impl Runtime {
                 },
             ),
             TrialOutcome::ResetWithMce {
-                mce_core,
+                mce,
                 stalled,
                 kind,
                 at,
@@ -634,11 +637,16 @@ impl Runtime {
                 }
                 (
                     at,
-                    Some(mce_core),
+                    Some(mce.core),
                     Effect::Crash {
                         reset: Some(kind),
                         stalled,
-                        mce: Some(load_store_mce(mce_core)),
+                        mce: Some(PendingMce {
+                            core: mce.core,
+                            bank: mce.bank,
+                            bank_type: mce.bank_type,
+                            corrected: false,
+                        }),
                         report: CrashReport::Progress,
                     },
                 )
