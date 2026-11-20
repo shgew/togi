@@ -1,11 +1,10 @@
 use togi_defect::{DefectState, Entry, KNOWN_DEFECTS};
 use togi_journal::{DefectDirection, DefectId, Payload};
-use togi_machine::Signal;
-use togi_sim::MachineDefinition;
-use togi_sim::definition::ModelDef;
+use togi_machine::ControllerMode;
+use togi_sim::{ReportedFailure, TrialOutcome};
 
 use super::*;
-use crate::testing::Bench;
+use crate::testing::{Bench, core, scripted_machine};
 use crate::{Ended, Stop, run};
 
 static CAUTIOUS: [Entry; 1] = [entry(DefectDirection::TooCautious)];
@@ -23,14 +22,7 @@ const fn entry(direction: DefectDirection) -> Entry {
 }
 
 fn bench() -> Bench {
-    Bench::defined(&MachineDefinition {
-        cores: 2,
-        model: ModelDef {
-            past_limit_rate: 0.0,
-            ..ModelDef::default()
-        },
-        ..MachineDefinition::default()
-    })
+    Bench::new(2)
 }
 
 fn one_cycle(bench: &Bench, resume: Option<ResumeCapsule>) -> Ended {
@@ -184,20 +176,22 @@ fn a_run_given_the_capsule_of_another_journal_folds_its_own() {
     assert_eq!(journal_text(&ended), journal_text(&expected));
 }
 
+fn crashing_bench() -> Bench {
+    Bench::scripted(scripted_machine(2, |trial, _| {
+        let ControllerMode::Managed { rotation, .. } = trial.controller;
+        if rotation == 1 {
+            TrialOutcome::ReportedFailureThenReset {
+                core: core(0),
+                failure: ReportedFailure::ComputationError,
+                at: std::time::Duration::from_secs(1),
+            }
+        } else {
+            TrialOutcome::Pass
+        }
+    }))
+}
+
 fn crashed(bench: &Bench) -> Ended {
-    bench
-        .sim
-        .script_trial(
-            "0001",
-            togi_sim::model::Script {
-                signal: Some(Signal::ComputationError),
-                at_s: 1.0,
-                core: crate::testing::core(0),
-                reset: None,
-                then_crash: true,
-            },
-        )
-        .unwrap();
     let input = bench.input_ending_at(bench.short_night());
     let ended = run(input);
     assert!(
@@ -210,7 +204,7 @@ fn crashed(bench: &Bench) -> Ended {
 
 #[test]
 fn a_crash_returns_the_folds_of_its_durable_events() {
-    let bench = bench();
+    let bench = crashing_bench();
     let ended = crashed(&bench);
     ended
         .capsule
@@ -222,14 +216,14 @@ fn a_crash_returns_the_folds_of_its_durable_events() {
 
 #[test]
 fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
-    let warm = bench();
+    let warm = crashing_bench();
     let Ended {
         journal, capsule, ..
     } = crashed(&warm);
     warm.sim.reboot().unwrap();
     let resumed = run(warm.continuing_at(journal, capsule, warm.short_night()));
 
-    let cold = bench();
+    let cold = crashing_bench();
     drop(crashed(&cold).journal.close().unwrap());
     cold.sim.reboot().unwrap();
     let replayed = one_cycle(&cold, None);
@@ -246,7 +240,7 @@ fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
 
 #[test]
 fn cold_resume_ignores_legacy_state_without_reading_or_rewriting_it() {
-    let cold = bench();
+    let cold = crashing_bench();
     drop(crashed(&cold).journal.close().unwrap());
     cold.sim.reboot().unwrap();
     let leftover = br#"{"snapshot":{"build":"foreign"}"#;

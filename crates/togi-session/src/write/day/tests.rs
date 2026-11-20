@@ -10,12 +10,11 @@ use togi_machine::{
     CcdId, CcdProfile, CcdProfileError, Clock, CoreId, CoreInfo, Error, Machine, ObservedOffset,
     PerCore, Smu, TargetOffset,
 };
-use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
 
 use super::{DayAppliedProfile, DayRecovery, DayWriteError, apply_day_profile};
 use crate::appender::Folds;
-use crate::testing::{Rig, core, target};
+use crate::testing::{Rig, core, passing_machine, target};
 use crate::write::{ProfileFailure, WriteFailure};
 
 /// Four cores, cores 0 and 1 on CCD 0 and cores 2 and 3 on CCD 1, every core at a nonzero offset.
@@ -27,11 +26,9 @@ struct Day {
 
 impl Day {
     fn new() -> Self {
-        let rig = Rig::defined(&MachineDefinition {
-            cores: 4,
-            bios: Some(vec![-5, -7, -9, -11]),
-            ..MachineDefinition::default()
-        });
+        let rig = Rig::scripted(
+            passing_machine(4).with_boot_offsets(|core| target([-5, -7, -9, -11][core.index()])),
+        );
         let Machine {
             clock, mut host, ..
         } = rig.sim.seams();

@@ -12,11 +12,14 @@ use togi_journal::{
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, CoreId, CoreSet, FrequencyEvent, FrequencyJournal,
-    Machine, ObservedOffset, PerCore, Smu, SmuValidated, TargetOffset,
+    Machine, ObservedOffset, PerCore, Smu, SmuValidated, TargetOffset, TrialSpec,
 };
 use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{
+    History, MachineDefinition, Model, RunSettings, ScriptedMachine, ScriptedTopology, Simulator,
+    TrialOutcome,
+};
 
 use crate::appender::Appender;
 use crate::boot::BootHandoff;
@@ -63,6 +66,27 @@ pub(crate) fn target(n: i64) -> TargetOffset {
     TargetOffset::new(n).unwrap()
 }
 
+pub(crate) fn scripted_machine(
+    cores: i64,
+    outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+) -> ScriptedMachine {
+    let topology = match cores {
+        2 => ScriptedTopology::TwoCores,
+        4 => ScriptedTopology::FourCores,
+        8 => ScriptedTopology::EightCores,
+        _ => panic!("no session fixture for {cores} cores"),
+    };
+    ScriptedMachine::new(topology, TargetOffset::ZERO, outcome)
+}
+
+pub(crate) fn passing_machine(cores: i64) -> ScriptedMachine {
+    scripted_machine(cores, |_, _| TrialOutcome::Pass)
+}
+
+fn simulator(script: ScriptedMachine) -> Simulator {
+    Simulator::scripted(script, 1, History::default()).unwrap()
+}
+
 pub(crate) fn build() -> Build {
     Build {
         version: "0.0.0".into(),
@@ -76,14 +100,11 @@ pub(crate) fn build() -> Build {
 
 impl Rig {
     pub(crate) fn new(cores: i64) -> Self {
-        Self::defined(&MachineDefinition {
-            cores,
-            ..MachineDefinition::default()
-        })
+        Self::scripted(passing_machine(cores))
     }
 
-    pub(crate) fn defined(definition: &MachineDefinition) -> Self {
-        let (rig, first) = Self::build(definition, None, |_| {});
+    pub(crate) fn scripted(script: ScriptedMachine) -> Self {
+        let (rig, first) = Self::build(script, None, |_| {});
         first.unwrap();
         rig
     }
@@ -95,27 +116,15 @@ impl Rig {
         handoff: Option<BootHandoff>,
         setup: impl FnOnce(&MemFs),
     ) -> (Self, Result<Seq, AppendFailure>) {
-        let definition = MachineDefinition {
-            cores,
-            ..MachineDefinition::default()
-        };
-        Self::build(&definition, handoff, setup)
+        Self::build(passing_machine(cores), handoff, setup)
     }
 
     fn build(
-        definition: &MachineDefinition,
+        script: ScriptedMachine,
         handoff: Option<BootHandoff>,
         setup: impl FnOnce(&MemFs),
     ) -> (Self, Result<Seq, AppendFailure>) {
-        let model = Model::new(definition, 1).unwrap();
-        let sim = Simulator::new(
-            model,
-            RunSettings {
-                seed: 1,
-                ..RunSettings::default()
-            },
-        )
-        .unwrap();
+        let sim = simulator(script);
         let Machine {
             clock,
             smu,
@@ -234,10 +243,11 @@ pub(crate) struct Bench {
 
 impl Bench {
     pub(crate) fn new(cores: i64) -> Self {
-        Self::defined(&MachineDefinition {
-            cores,
-            ..MachineDefinition::default()
-        })
+        Self::scripted(passing_machine(cores))
+    }
+
+    pub(crate) fn scripted(script: ScriptedMachine) -> Self {
+        Self::with_simulator(simulator(script))
     }
 
     pub(crate) fn defined(definition: &MachineDefinition) -> Self {
@@ -249,6 +259,10 @@ impl Bench {
             },
         )
         .unwrap();
+        Self::with_simulator(sim)
+    }
+
+    fn with_simulator(sim: Simulator) -> Self {
         Self {
             sim,
             mem: MemFs::new(),

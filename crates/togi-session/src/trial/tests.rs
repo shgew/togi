@@ -10,16 +10,16 @@ use togi_journal::{
     fs::{Fault, Op},
 };
 use togi_machine::{
-    BootId, CancellationToken, CpuId, FrequencyAction, FrequencyDiscarded, FrequencyEvent,
-    FrequencyIntent, FrequencyJournal, FrequencyPolicyId, FrequencyReadback, Reporter, Sample,
-    Signal,
+    BootId, CancellationToken, ControllerMode, CpuId, FrequencyAction, FrequencyDiscarded,
+    FrequencyEvent, FrequencyIntent, FrequencyJournal, FrequencyPolicyId, FrequencyReadback,
+    Reporter, Sample, Signal,
 };
-use togi_sim::model::Script;
+use togi_sim::{ReportedFailure, TrialOutcome};
 
 use super::{FrequencySink, Journaled};
 use crate::error::{AppendFailure, JournalCause};
-use crate::testing::{Bench, Rig, core};
-use crate::{Ended, run};
+use crate::testing::{Bench, Rig, core, scripted_machine};
+use crate::run;
 
 fn trial() -> TrialId {
     TrialId::from("0042".to_owned())
@@ -121,27 +121,21 @@ fn every_signal_is_journaled_with_its_label_and_a_core_only_where_one_is_named(
     assert_eq!(rig.events().last().unwrap().cause, [start], "{signal:?}");
 }
 
-fn crashed_after(bench: &Bench, signal: Signal) -> Ended {
-    bench
-        .sim
-        .script_trial(
-            "0001",
-            Script {
-                signal: Some(signal),
-                at_s: 1.0,
-                core: core(0),
-                reset: None,
-                then_crash: true,
-            },
-        )
-        .unwrap();
-    run(bench.input_ending_at(bench.short_night()))
-}
-
 #[test]
 fn a_stall_journaled_before_a_crash_is_recovered_as_the_failure_of_the_interrupted_trial() {
-    let bench = Bench::new(2);
-    let crashed = crashed_after(&bench, Signal::Stall);
+    let bench = Bench::scripted(scripted_machine(2, |trial, _| {
+        let ControllerMode::Managed { rotation, .. } = trial.controller;
+        if rotation == 1 {
+            TrialOutcome::ReportedFailureThenReset {
+                core: core(0),
+                failure: ReportedFailure::Stall,
+                at: std::time::Duration::from_secs(1),
+            }
+        } else {
+            TrialOutcome::Pass
+        }
+    }));
+    let crashed = run(bench.input_ending_at(bench.short_night()));
     assert!(crashed.errors.iter().any(crate::SessionError::is_crash));
     let progress = crashed
         .journal

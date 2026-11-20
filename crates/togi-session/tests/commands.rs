@@ -12,11 +12,13 @@ use togi_journal::{
     Build, DeadEndCondition, FixStamp, Journal, MemFs, Payload, ResetTarget, SCHEMA, SessionStart,
     ShutdownReason, Stamp, StateDir, StockAttested,
 };
-use togi_machine::{CancellationToken, CoreId, Error, ObservedOffset, TargetOffset};
+use togi_machine::{
+    CancellationToken, ControllerMode, CoreId, Error, ObservedOffset, TargetOffset, TrialSpec,
+};
 use togi_render::Renderer;
 use togi_session::{CommandError, ConfigSource, Ended, RunInput, Stop, reset_all, run};
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 
 fn build() -> Build {
     Build {
@@ -42,21 +44,12 @@ fn dir(mem: &MemFs) -> StateDir {
 }
 
 fn simulator() -> Simulator {
-    simulator_of(&MachineDefinition {
-        cores: 2,
-        ..MachineDefinition::default()
-    })
+    simulator_of(|_, _| TrialOutcome::Pass)
 }
 
-fn simulator_of(definition: &MachineDefinition) -> Simulator {
-    Simulator::new(
-        Model::new(definition, 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap()
+fn simulator_of(outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome) -> Simulator {
+    let script = ScriptedMachine::new(ScriptedTopology::TwoCores, TargetOffset::ZERO, outcome);
+    Simulator::scripted(script, 1, History::default()).unwrap()
 }
 
 /// A run on the simulator's current boot whose session already holds the operator's stock attestation for the
@@ -2011,14 +2004,16 @@ fn a_backend_missing_at_preflight_is_excluded_from_the_night_without_a_launch_or
 fn a_stop_after_a_failed_first_mapping_trial_is_not_a_failure_at_zero_dead_end() {
     // Ruleset 14 runs no stock trial: the first trial is a nonzero mapping step, so its failure is mapping
     // evidence and an operator stop right after it never reads as an unstable stock platform.
-    let sim = simulator_of(&MachineDefinition {
-        cores: 2,
-        script: vec![togi_sim::definition::ScriptDef {
-            trial: "0001".into(),
-            signal: Some(togi_machine::Signal::ComputationError),
-            ..togi_sim::definition::ScriptDef::default()
-        }],
-        ..MachineDefinition::default()
+    let sim = simulator_of(|trial, _| {
+        let ControllerMode::Managed { rotation, .. } = trial.controller;
+        if rotation == 1 {
+            TrialOutcome::ComputationError {
+                core: core(0),
+                at: std::time::Duration::ZERO,
+            }
+        } else {
+            TrialOutcome::Pass
+        }
     });
     let mem = MemFs::new();
     let mut input = input(&sim, &mem);
