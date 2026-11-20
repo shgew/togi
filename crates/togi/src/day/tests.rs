@@ -102,7 +102,6 @@ fn a_close_failure_and_emergency_zero_failure_report_both_causes_in_order() {
 type LiveLog = dyn FnMut(Option<&KernelCursor>) -> Result<KernelRead, Partial<KernelRead>>;
 
 struct Reading {
-    offsets: VecDeque<PerCore<ObservedOffset>>,
     reason: Option<ResetKind>,
     watchdog: VecDeque<WatchdogState>,
     live: Box<LiveLog>,
@@ -120,7 +119,6 @@ fn armed() -> WatchdogState {
 impl Reading {
     fn fixed() -> Self {
         Self {
-            offsets: [offsets(-10)].into(),
             reason: None,
             watchdog: [armed()].into(),
             live: Box::new(|_| Ok(KernelRead::default())),
@@ -135,45 +133,8 @@ impl Reading {
         self.live = Box::new(live);
         self
     }
-}
 
-impl togi_machine::Smu for Reading {
-    fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, MachineError> {
-        self.offsets()?.get(core).ok_or(MachineError::BootMissing)
-    }
-    fn set_offset(&mut self, _: CoreId, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
-        Err(MachineError::BootMissing)
-    }
-    fn set_all_offsets(&mut self, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
-        Err(MachineError::BootMissing)
-    }
-    fn emergency_zero(
-        &mut self,
-        _: togi_machine::SmuValidated,
-        _: &togi_machine::Stopped,
-    ) -> Result<(), MachineError> {
-        Err(MachineError::BootMissing)
-    }
-}
-
-impl Observer for Reading {
-    fn validated(&mut self) -> Result<togi_machine::SmuValidated, MachineError> {
-        Err(MachineError::BootMissing)
-    }
-    fn stop_workloads(&mut self) -> Result<togi_machine::Stopped, MachineError> {
-        Err(MachineError::BootMissing)
-    }
-    fn bios_context(&mut self) -> Result<BiosContext, MachineError> {
-        Ok(bios())
-    }
-    fn offsets(&mut self) -> Result<PerCore<ObservedOffset>, MachineError> {
-        Ok(if self.offsets.len() > 1 {
-            self.offsets.pop_front().unwrap()
-        } else {
-            *self.offsets.front().unwrap()
-        })
-    }
-    fn reset_reason_after(&mut self, _: &BootId) -> Result<ResetReason, MachineError> {
+    fn reset_reason_after(&self) -> Result<ResetReason, MachineError> {
         self.reason
             .map(|kind| ResetReason {
                 kind: Some(kind),
@@ -181,9 +142,6 @@ impl Observer for Reading {
                 supported: true,
             })
             .ok_or(MachineError::BootMissing)
-    }
-    fn end_evidence(&mut self, _: &BootId) -> togi_machine::EndEvidence {
-        togi_machine::EndEvidence::unknown()
     }
     fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, MachineError> {
         if self.cancellable && cancel.is_cancelled() {
@@ -197,70 +155,9 @@ impl Observer for Reading {
     }
     fn live_faults(
         &mut self,
-        _: &BootId,
         after: Option<&KernelCursor>,
     ) -> Result<KernelRead, Partial<KernelRead>> {
         (self.live)(after)
-    }
-}
-
-/// Reads like `reading` until `reads` readings succeeded, then fails every read.
-struct FailingAfter {
-    reading: Reading,
-    reads: usize,
-}
-
-impl togi_machine::Smu for FailingAfter {
-    fn offset(&mut self, core: CoreId) -> Result<ObservedOffset, MachineError> {
-        togi_machine::Smu::offset(&mut self.reading, core)
-    }
-    fn set_offset(&mut self, _: CoreId, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
-        Err(MachineError::BootMissing)
-    }
-    fn set_all_offsets(&mut self, _: togi_machine::TargetOffset) -> Result<(), MachineError> {
-        Err(MachineError::BootMissing)
-    }
-    fn emergency_zero(
-        &mut self,
-        _: togi_machine::SmuValidated,
-        _: &togi_machine::Stopped,
-    ) -> Result<(), MachineError> {
-        Err(MachineError::BootMissing)
-    }
-}
-
-impl Observer for FailingAfter {
-    fn validated(&mut self) -> Result<togi_machine::SmuValidated, MachineError> {
-        self.reading.validated()
-    }
-    fn stop_workloads(&mut self) -> Result<togi_machine::Stopped, MachineError> {
-        self.reading.stop_workloads()
-    }
-    fn bios_context(&mut self) -> Result<BiosContext, MachineError> {
-        self.reading.bios_context()
-    }
-    fn offsets(&mut self) -> Result<PerCore<ObservedOffset>, MachineError> {
-        if self.reads == 0 {
-            return Err(MachineError::BootMissing);
-        }
-        self.reads -= 1;
-        self.reading.offsets()
-    }
-    fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
-        self.reading.reset_reason_after(boot)
-    }
-    fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
-        self.reading.end_evidence(boot)
-    }
-    fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, MachineError> {
-        self.reading.watchdog(cancel)
-    }
-    fn live_faults(
-        &mut self,
-        boot: &BootId,
-        after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<KernelRead>> {
-        self.reading.live_faults(boot, after)
     }
 }
 
@@ -304,56 +201,6 @@ impl Clock for ActiveClock {
     }
 }
 
-#[test]
-fn checkpoints_exclude_suspend_and_clean_marker_follows_final_checkpoint() {
-    let mut journal = journal();
-    let mut clock = ActiveClock {
-        active: Duration::ZERO,
-        wall: Duration::ZERO,
-        sleeps: [
-            (Duration::from_secs(600), Duration::from_secs(600)),
-            (Duration::from_secs(120), Duration::from_mins(62)),
-        ]
-        .into(),
-    };
-    observe(
-        &mut journal,
-        &mut Reading::fixed(),
-        &mut clock,
-        &CancellationToken::new(),
-        &current_build(),
-    )
-    .unwrap();
-    let events = journal.events();
-    assert_eq!(
-        events
-            .iter()
-            .filter_map(|event| if let Payload::DayCheckpoint(p) = &event.payload {
-                Some(p.applied_secs)
-            } else {
-                None
-            })
-            .collect::<Vec<_>>(),
-        [600, 720]
-    );
-    assert_eq!(
-        events[events.len() - 2].kind(),
-        togi_journal::EventKind::DayCheckpoint
-    );
-    assert_eq!(
-        events.last().unwrap().kind(),
-        togi_journal::EventKind::DayCleanStop
-    );
-    assert_eq!(
-        Ledger::of(events)
-            .profiles
-            .values()
-            .copied()
-            .collect::<Vec<_>>(),
-        [720]
-    );
-}
-
 #[derive(Clone, Copy, Debug)]
 enum FinalFailure {
     Readback,
@@ -366,23 +213,30 @@ fn a_failure_after_cancellation_records_no_clean_stop_and_the_next_boot_reports_
     failure: FinalFailure,
 ) {
     let fs = Arc::new(MemFs::new());
-    let mut journal = journal_on(fs.clone());
-    let mut observer = FailingAfter {
-        reading: Reading::fixed(),
-        reads: match failure {
-            // The boot-start read succeeds; the readback after cancellation fails.
-            FinalFailure::Readback => 1,
-            FinalFailure::CheckpointAppend => usize::MAX,
-        },
-    };
-    if let FinalFailure::CheckpointAppend = failure {
-        // The day.boot_start line is the first write after injection, the final checkpoint the second.
-        fs.inject(Fault::before(Op::Write, 2).named("events.jsonl"));
-    }
+    let mut journal = applying::seed_on(Arc::clone(&fs));
     let cancel = CancellationToken::new();
-    let error = observe(
+    let mut hardware = match failure {
+        FinalFailure::Readback => {
+            let mut hardware = applying::Hardware::stock();
+            // Preflight, boot start, startup transaction and startup guard read successfully.
+            hardware.failure = applying::Failure::Read(5);
+            hardware
+        }
+        FinalFailure::CheckpointAppend => {
+            let fs = Arc::clone(&fs);
+            let cancel = cancel.clone();
+            applying::Hardware::with_reading(Reading::fixed().logging(move |_| {
+                if cancel.is_cancelled() {
+                    // The stop checkpoint, zero intent, write and readback precede the final checkpoint.
+                    fs.inject(Fault::before(Op::Write, 5).named("events.jsonl"));
+                }
+                Ok(KernelRead::default())
+            }))
+        }
+    };
+    let error = serve(
         &mut journal,
-        &mut observer,
+        &mut hardware,
         &mut ActiveClock::one(),
         &cancel,
         &current_build(),
@@ -392,29 +246,68 @@ fn a_failure_after_cancellation_records_no_clean_stop_and_the_next_boot_reports_
     assert!(
         matches!(
             (failure, &error),
-            (FinalFailure::Readback, Error::Observe(_))
-                | (FinalFailure::CheckpointAppend, Error::Append(_))
+            (
+                FinalFailure::Readback,
+                Error::Observe(MachineError::BootMissing)
+            ) | (FinalFailure::CheckpointAppend, Error::Append(_))
         ),
         "{error:?}"
     );
+    assert_eq!(hardware.emergency, 1);
+    assert_eq!(hardware.current, 0);
     drop(journal);
 
     let mut next = state_dir(fs)
         .open_at("day-b".to_owned().into(), Timestamp::UNIX_EPOCH)
         .unwrap();
+    let expected_checkpoints: &[_] = match failure {
+        FinalFailure::Readback => &[0],
+        FinalFailure::CheckpointAppend => &[0, 120],
+    };
+    let checkpoints: Vec<_> = next
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DayCheckpoint(checkpoint) = &event.payload {
+                Some((event.seq, checkpoint.applied_secs))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        checkpoints
+            .iter()
+            .map(|(_, seconds)| *seconds)
+            .collect::<Vec<_>>(),
+        expected_checkpoints
+    );
+    let last_checkpoint = checkpoints.last().unwrap().0;
+    let expected_tail: &[_] = match failure {
+        FinalFailure::Readback => &[],
+        FinalFailure::CheckpointAppend => &[
+            EventKind::SmuIntent,
+            EventKind::SmuWrite,
+            EventKind::SmuReadback,
+        ],
+    };
     assert_eq!(
         next.events()
             .iter()
-            .map(togi_journal::Event::kind)
+            .filter(|event| event.seq > last_checkpoint)
+            .map(Event::kind)
             .collect::<Vec<_>>(),
-        [
-            togi_journal::EventKind::SessionStart,
-            togi_journal::EventKind::DayBootStart
-        ]
+        expected_tail
     );
-    observe(
+    assert!(
+        !next
+            .events()
+            .iter()
+            .any(|event| event.kind() == EventKind::DayCleanStop)
+    );
+    serve(
         &mut next,
-        &mut Reading::fixed(),
+        &mut applying::Hardware::stock(),
         &mut ActiveClock::one(),
         &CancellationToken::new(),
         &current_build(),
@@ -433,14 +326,18 @@ fn a_failure_after_cancellation_records_no_clean_stop_and_the_next_boot_reports_
         .collect();
     assert_eq!(ends.len(), 1);
     assert_eq!(ends[0].boot.as_str(), "day-a");
-    assert_eq!(ends[0].last_checkpoint, None);
-    assert_eq!(ends[0].offsets, offsets(-10));
+    assert_eq!(ends[0].last_checkpoint, Some(last_checkpoint));
+    assert_eq!(ends[0].offsets, offsets(0));
 }
 
-#[test_case(Some(ResetKind::Watchdog) ; "successor reset evidence")]
-#[test_case(None ; "unavailable successor evidence")]
-fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind>) {
-    let mut journal = journal();
+#[test_case(Some(ResetKind::Watchdog), true; "successor reset evidence")]
+#[test_case(None, true; "unavailable successor evidence")]
+#[test_case(None, false; "previous boot has no checkpoint")]
+fn next_boot_records_unclean_end_without_classifying_it(
+    reason: Option<ResetKind>,
+    checkpointed: bool,
+) {
+    let mut journal = applying::seed();
     journal
         .append(
             Stamp {
@@ -457,28 +354,30 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
             &[],
         )
         .unwrap();
-    let checkpoint = journal
-        .append(
-            Stamp {
-                time: Timestamp::UNIX_EPOCH,
-                mono: Some(Duration::from_secs(600)),
-            },
-            DayCheckpoint {
-                applied_secs: 600,
-                load_mix: LoadMix::default(),
-                watchdog: None,
-            }
-            .into(),
-            &[],
-        )
-        .unwrap()
-        .seq;
+    let checkpoint = checkpointed.then(|| {
+        journal
+            .append(
+                Stamp {
+                    time: Timestamp::UNIX_EPOCH,
+                    mono: Some(Duration::from_secs(600)),
+                },
+                DayCheckpoint {
+                    applied_secs: 600,
+                    load_mix: LoadMix::default(),
+                    watchdog: None,
+                }
+                .into(),
+                &[],
+            )
+            .unwrap()
+            .seq
+    });
     journal.reboot("day-b".to_owned().into()).unwrap();
     let mut reading = Reading::fixed();
     reading.reason = reason;
-    observe(
+    serve(
         &mut journal,
-        &mut reading,
+        &mut applying::Hardware::with_reading(reading),
         &mut ActiveClock::one(),
         &CancellationToken::new(),
         &current_build(),
@@ -497,7 +396,7 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
         .collect();
     assert_eq!(ends.len(), 1);
     assert_eq!(ends[0].boot.as_str(), "day-a");
-    assert_eq!(ends[0].last_checkpoint, Some(checkpoint));
+    assert_eq!(ends[0].last_checkpoint, checkpoint);
     assert_eq!(ends[0].offsets, offsets(-10));
     assert_eq!(ends[0].reset_reason.kind, reason);
     assert_eq!(ends[0].reset_reason.supported, reason.is_some());
@@ -505,19 +404,19 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
 
 #[test]
 fn clean_previous_boot_is_not_journaled_as_unclean() {
-    let mut journal = journal();
-    observe(
+    let mut journal = applying::seed();
+    serve(
         &mut journal,
-        &mut Reading::fixed(),
+        &mut applying::Hardware::stock(),
         &mut ActiveClock::one(),
         &CancellationToken::new(),
         &current_build(),
     )
     .unwrap();
     journal.reboot("day-b".to_owned().into()).unwrap();
-    observe(
+    serve(
         &mut journal,
-        &mut Reading::fixed(),
+        &mut applying::Hardware::stock(),
         &mut ActiveClock::one(),
         &CancellationToken::new(),
         &current_build(),
@@ -534,10 +433,10 @@ fn clean_previous_boot_is_not_journaled_as_unclean() {
 
 #[test]
 fn same_boot_restart_preserves_hours_without_counting_downtime() {
-    let mut journal = journal();
-    observe(
+    let mut journal = applying::seed();
+    serve(
         &mut journal,
-        &mut Reading::fixed(),
+        &mut applying::Hardware::stock(),
         &mut ActiveClock::one(),
         &CancellationToken::new(),
         &current_build(),
@@ -545,9 +444,9 @@ fn same_boot_restart_preserves_hours_without_counting_downtime() {
     .unwrap();
     let mut clock = ActiveClock::one();
     clock.active = Duration::from_mins(150);
-    observe(
+    serve(
         &mut journal,
-        &mut Reading::fixed(),
+        &mut applying::Hardware::stock(),
         &mut clock,
         &CancellationToken::new(),
         &current_build(),
@@ -559,76 +458,25 @@ fn same_boot_restart_preserves_hours_without_counting_downtime() {
     assert_eq!(ledger.profiles.values().copied().collect::<Vec<_>>(), [240]);
 }
 
-#[test]
-fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_profile_hours() {
-    let mut journal = journal();
-    let mut reading = Reading {
-        offsets: [offsets(-10), offsets(-5)].into(),
-        watchdog: [armed()].into(),
-        ..Reading::fixed()
-    };
-    observe(
-        &mut journal,
-        &mut reading,
-        &mut ActiveClock::one(),
-        &CancellationToken::new(),
-        &current_build(),
-    )
-    .unwrap();
-    let events = journal.events();
-    assert_eq!(
-        events[events.len() - 3].kind(),
-        togi_journal::EventKind::DayOffsetsChanged
-    );
-    let ledger = Ledger::of(events);
-    assert_eq!(ledger.boots.values().next().unwrap().seconds, 120);
-    assert!(ledger.profiles.is_empty());
-}
-
-#[test_case(armed() ; "armed")]
-#[test_case(WatchdogState::Unarmed { detail: "watchdog0 state \"inactive\", want active".into() } ; "unarmed")]
-fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: WatchdogState) {
-    let mut journal = journal();
-    let mut reading = Reading {
-        watchdog: [state.clone()].into(),
-        ..Reading::fixed()
-    };
-    observe(
-        &mut journal,
-        &mut reading,
-        &mut ActiveClock::one(),
-        &CancellationToken::new(),
-        &current_build(),
-    )
-    .unwrap();
-    let events = journal.events();
-    let first = events
-        .iter()
-        .find(|event| event.kind() == togi_journal::EventKind::DayBootStart)
-        .unwrap();
-    let Payload::DayBootStart(start) = &first.payload else {
-        panic!("a day.boot_start event carries a DayBootStart payload");
-    };
-    assert_eq!(start.watchdog, Some(state.clone()));
-    assert_eq!(Ledger::of(journal.events()).watchdog, Some(state));
-}
-
 #[test_case(Duration::from_secs(5), Duration::from_secs(5); "sample tick")]
 #[test_case(Duration::from_secs(5), Duration::from_secs(125); "first tick after deep sleep")]
 #[test_case(Duration::from_secs(600), Duration::from_secs(600); "checkpoint")]
-fn a_stopped_timer_is_journaled_before_the_observer_stops(active: Duration, wall: Duration) {
+fn a_stopped_timer_at_stock_is_journaled_before_the_next_armed_read(
+    active: Duration,
+    wall: Duration,
+) {
     let stopped = WatchdogState::Unarmed {
         detail: "watchdog0 open but not counting: timeleft 4294967295 s exceeds timeout 60 s"
             .into(),
     };
-    let mut reading = Reading {
-        watchdog: [armed(), stopped.clone(), armed()].into(),
+    let reading = Reading {
+        watchdog: [armed(), armed(), stopped.clone(), armed()].into(),
         ..Reading::fixed()
     };
-    let mut journal = journal();
-    observe(
+    let mut journal = applying::seed();
+    serve(
         &mut journal,
-        &mut reading,
+        &mut applying::Hardware::with_reading(reading),
         &mut ticking(2, active, wall),
         &CancellationToken::new(),
         &current_build(),
@@ -645,7 +493,10 @@ fn a_stopped_timer_is_journaled_before_the_observer_stops(active: Duration, wall
             }
         })
         .collect();
-    assert_eq!(checks, [Some(stopped), Some(armed())]);
+    assert_eq!(
+        checks,
+        [Some(armed()), Some(stopped), Some(armed()), Some(armed())]
+    );
     assert_eq!(Ledger::of(journal.events()).watchdog, Some(armed()));
 }
 
@@ -714,10 +565,10 @@ fn day_faults(journal: &Journal) -> Vec<(&BootId, &DayFault)> {
         .collect()
 }
 
-fn observe_for(journal: &mut Journal, reading: &mut Reading, ticks: usize) {
-    observe(
+fn serve_for(journal: &mut Journal, reading: Reading, ticks: usize) {
+    serve(
         journal,
-        reading,
+        &mut applying::Hardware::with_reading(reading),
         &mut ticking(ticks, Duration::from_secs(30), Duration::from_secs(30)),
         &CancellationToken::new(),
         &current_build(),
@@ -730,12 +581,12 @@ fn each_live_fault_is_journaled_once_with_its_boot_and_the_applied_offsets_howev
  {
     let afters = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&afters);
-    let mut reading = Reading::fixed().logging(move |after| {
+    let reading = Reading::fixed().logging(move |after| {
         seen.borrow_mut().push(after.cloned());
         Ok(logged_faults())
     });
-    let mut journal = journal();
-    observe_for(&mut journal, &mut reading, 3);
+    let mut journal = applying::seed();
+    serve_for(&mut journal, reading, 3);
 
     let faults = day_faults(&journal);
     assert_eq!(
@@ -775,7 +626,7 @@ fn each_live_fault_is_journaled_once_with_its_boot_and_the_applied_offsets_howev
     );
     for (boot, fault) in &faults {
         assert_eq!(boot.as_str(), "day-a");
-        assert_eq!(fault.offsets, offsets(-10));
+        assert_eq!(fault.offsets, offsets(0));
     }
     assert_eq!(
         *afters.borrow(),
@@ -791,23 +642,23 @@ fn each_live_fault_is_journaled_once_with_its_boot_and_the_applied_offsets_howev
 
 #[test]
 fn a_restart_within_the_boot_does_not_journal_a_fault_again_but_a_new_boot_does() {
-    let mut journal = journal();
-    observe_for(
+    let mut journal = applying::seed();
+    serve_for(
         &mut journal,
-        &mut Reading::fixed().logging(|_| Ok(logged_faults())),
+        Reading::fixed().logging(|_| Ok(logged_faults())),
         1,
     );
-    observe_for(
+    serve_for(
         &mut journal,
-        &mut Reading::fixed().logging(|_| Ok(logged_faults())),
+        Reading::fixed().logging(|_| Ok(logged_faults())),
         1,
     );
     assert_eq!(day_faults(&journal).len(), 3);
 
     journal.reboot("day-b".to_owned().into()).unwrap();
-    observe_for(
+    serve_for(
         &mut journal,
-        &mut Reading::fixed().logging(|_| Ok(logged_faults())),
+        Reading::fixed().logging(|_| Ok(logged_faults())),
         1,
     );
     let faults = day_faults(&journal);
@@ -822,8 +673,8 @@ fn a_restart_within_the_boot_does_not_journal_a_fault_again_but_a_new_boot_does(
 
 #[test]
 fn the_kernel_line_and_the_core_dump_of_one_killed_process_are_one_fault() {
-    let mut journal = journal();
-    let mut reading = Reading::fixed().logging(|_| {
+    let mut journal = applying::seed();
+    let reading = Reading::fixed().logging(|_| {
         Ok(KernelRead {
             faults: vec![
                 trap(ProcessFaultKind::Bus, 7, Some(0), 10),
@@ -833,7 +684,7 @@ fn the_kernel_line_and_the_core_dump_of_one_killed_process_are_one_fault() {
             ..KernelRead::default()
         })
     });
-    observe_for(&mut journal, &mut reading, 1);
+    serve_for(&mut journal, reading, 1);
     let pids: Vec<_> = day_faults(&journal)
         .iter()
         .map(|(_, fault)| {
@@ -851,7 +702,7 @@ fn an_unresumable_cursor_reads_the_boot_again_without_repeating_a_fault() {
     let afters = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&afters);
     let mut calls = 0;
-    let mut reading = Reading::fixed().logging(move |after| {
+    let reading = Reading::fixed().logging(move |after| {
         seen.borrow_mut().push(after.cloned());
         calls += 1;
         if calls == 2 {
@@ -862,8 +713,8 @@ fn an_unresumable_cursor_reads_the_boot_again_without_repeating_a_fault() {
         }
         Ok(logged_faults())
     });
-    let mut journal = journal();
-    observe_for(&mut journal, &mut reading, 3);
+    let mut journal = applying::seed();
+    serve_for(&mut journal, reading, 3);
     assert_eq!(day_faults(&journal).len(), 3);
     assert_eq!(
         *afters.borrow(),
@@ -881,7 +732,7 @@ fn an_unresumable_cursor_reads_the_boot_again_without_repeating_a_fault() {
 #[test]
 fn a_cursor_lost_at_the_stop_is_replaced_before_the_clean_stop_so_no_later_fault_is_lost() {
     let mut calls = 0;
-    let mut reading = Reading::fixed().logging(move |after| {
+    let reading = Reading::fixed().logging(move |after| {
         calls += 1;
         match (calls, after) {
             (1, None) => Ok(logged_faults()),
@@ -897,8 +748,8 @@ fn a_cursor_lost_at_the_stop_is_replaced_before_the_clean_stop_so_no_later_fault
             other => panic!("{other:?}"),
         }
     });
-    let mut journal = journal();
-    observe_for(&mut journal, &mut reading, 1);
+    let mut journal = applying::seed();
+    serve_for(&mut journal, reading, 1);
     let kinds: Vec<_> = journal
         .events()
         .iter()
@@ -919,7 +770,7 @@ fn a_cursor_lost_at_the_stop_is_replaced_before_the_clean_stop_so_no_later_fault
 
 #[test]
 fn a_later_crash_that_reuses_the_pid_is_another_fault() {
-    let mut journal = journal();
+    let mut journal = applying::seed();
     let crash = |seconds: u64| {
         move |_: Option<&KernelCursor>| {
             Ok(KernelRead {
@@ -931,13 +782,13 @@ fn a_later_crash_that_reuses_the_pid_is_another_fault() {
             })
         }
     };
-    observe_for(&mut journal, &mut Reading::fixed().logging(crash(400)), 1);
+    serve_for(&mut journal, Reading::fixed().logging(crash(400)), 1);
     assert_eq!(
         day_faults(&journal).len(),
         2,
         "400 s later is a second death"
     );
-    observe_for(&mut journal, &mut Reading::fixed().logging(crash(400)), 1);
+    serve_for(&mut journal, Reading::fixed().logging(crash(400)), 1);
     assert_eq!(
         day_faults(&journal).len(),
         2,
@@ -947,19 +798,19 @@ fn a_later_crash_that_reuses_the_pid_is_another_fault() {
 
 #[test]
 fn a_general_protection_fault_is_journaled_with_its_trap_boot_and_offsets() {
-    let mut journal = journal();
-    let mut reading = Reading::fixed().logging(|_| {
+    let mut journal = applying::seed();
+    let reading = Reading::fixed().logging(|_| {
         Ok(KernelRead {
             faults: vec![trap(ProcessFaultKind::GeneralProtection, 9, Some(0), 5)],
             ..KernelRead::default()
         })
     });
-    observe_for(&mut journal, &mut reading, 1);
+    serve_for(&mut journal, reading, 1);
     let faults = day_faults(&journal);
     assert_eq!(faults.len(), 1);
     let (boot, fault) = faults[0];
     assert_eq!(boot.as_str(), "day-a");
-    assert_eq!(fault.offsets, offsets(-10));
+    assert_eq!(fault.offsets, offsets(0));
     assert!(matches!(
         fault.fault,
         LiveFault::Trap {
@@ -971,8 +822,8 @@ fn a_general_protection_fault_is_journaled_with_its_trap_boot_and_offsets() {
 }
 
 #[test]
-fn a_failed_log_read_journals_what_it_read_and_ends_the_observer_without_a_clean_stop() {
-    let mut reading = Reading::fixed().logging(|_| {
+fn a_failed_log_read_keeps_the_first_error_and_never_writes_a_clean_stop() {
+    let reading = Reading::fixed().logging(|_| {
         Err(Partial {
             value: KernelRead {
                 mces: vec![uncorrected_mce(2)],
@@ -981,10 +832,11 @@ fn a_failed_log_read_journals_what_it_read_and_ends_the_observer_without_a_clean
             error: MachineError::BootMissing,
         })
     });
-    let mut journal = journal();
-    let error = observe(
+    let mut journal = applying::seed();
+    let mut hardware = applying::Hardware::with_reading(reading);
+    let error = serve(
         &mut journal,
-        &mut reading,
+        &mut hardware,
         &mut ticking(1, Duration::from_secs(30), Duration::from_secs(30)),
         &CancellationToken::new(),
         &current_build(),
@@ -995,6 +847,8 @@ fn a_failed_log_read_journals_what_it_read_and_ends_the_observer_without_a_clean
         "{error:?}"
     );
     assert_eq!(day_faults(&journal).len(), 1);
+    assert_eq!(hardware.emergency, 1);
+    assert_eq!(hardware.current, 0);
     assert!(
         !journal
             .events()

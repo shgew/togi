@@ -28,8 +28,12 @@ pub(super) struct Hardware {
 
 impl Hardware {
     pub(super) fn stock() -> Self {
+        Self::with_reading(Reading::fixed())
+    }
+
+    pub(super) fn with_reading(reading: Reading) -> Self {
         Self {
-            reading: Reading::fixed(),
+            reading,
             current: 0,
             writes: Vec::new(),
             read_count: 0,
@@ -106,22 +110,22 @@ impl Observer for Hardware {
     fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, MachineError> {
         self.reading.watchdog(cancel)
     }
-    fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
-        self.reading.reset_reason_after(boot)
+    fn reset_reason_after(&mut self, _: &BootId) -> Result<ResetReason, MachineError> {
+        self.reading.reset_reason_after()
     }
-    fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
-        self.reading.end_evidence(boot)
+    fn end_evidence(&mut self, _: &BootId) -> togi_machine::EndEvidence {
+        togi_machine::EndEvidence::unknown()
     }
     fn live_faults(
         &mut self,
-        boot: &BootId,
+        _: &BootId,
         after: Option<&KernelCursor>,
     ) -> Result<KernelRead, Partial<KernelRead>> {
-        self.reading.live_faults(boot, after)
+        self.reading.live_faults(after)
     }
 }
 
-fn seed_on(fs: Arc<MemFs>) -> Journal {
+pub(super) fn seed_on(fs: Arc<MemFs>) -> Journal {
     seeded(journal_on(fs))
 }
 
@@ -143,7 +147,7 @@ fn seeded(mut journal: Journal) -> Journal {
     journal
 }
 
-fn seed() -> Journal {
+pub(super) fn seed() -> Journal {
     seed_on(Arc::new(MemFs::new()))
 }
 
@@ -273,6 +277,8 @@ fn cold_boot_applies_stock_without_permission_and_stop_verifies_before_clean_mar
     assert_eq!(hardware.emergency, 0);
     assert_eq!(applications(&journal).len(), 1);
     assert_eq!(applications(&journal)[0].target, target(&journal, 0));
+    assert_eq!(start_watchdog(&journal), Some(&armed()));
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(armed()));
     let kinds: Vec<_> = journal.events().iter().map(Event::kind).collect();
     assert_eq!(
         &kinds[kinds.len() - 3..],
@@ -604,6 +610,16 @@ fn offset_drift_is_recorded_before_restoring_stock(fail_readback: bool, drift_at
         matches!(&event.payload, Payload::DayOffsetsChanged(change) if change.offsets == offsets(-5))
     }));
     assert_eq!(journal.events()[drift + 1].kind(), EventKind::DayCheckpoint);
+    let at_drift = Ledger::of(&journal.events()[..=drift + 1]);
+    assert_eq!(
+        at_drift.boots[journal.boot()].seconds,
+        if drift_at == 6 {
+            0
+        } else {
+            CHECKPOINT.as_secs()
+        }
+    );
+    assert!(at_drift.profiles.is_empty());
     assert_eq!(
         crate::day::current_baseline(
             &journal.events()[..=drift],
@@ -815,6 +831,16 @@ fn an_unarmed_or_noncounting_watchdog_refuses_without_a_write(detail: &str) {
     assert_eq!(hardware.emergency, 0);
 }
 
+fn start_watchdog(journal: &Journal) -> Option<&WatchdogState> {
+    journal.events().iter().find_map(|event| {
+        if let Payload::DayBootStart(start) = &event.payload {
+            start.watchdog.as_ref()
+        } else {
+            None
+        }
+    })
+}
+
 #[test]
 fn an_unarmed_read_after_an_armed_preflight_applies_nothing() {
     let mut journal = seed();
@@ -835,6 +861,7 @@ fn an_unarmed_read_after_an_armed_preflight_applies_nothing() {
     assert_eq!(hardware.writes, []);
     assert_eq!(hardware.emergency, 1);
     assert_eq!(applications(&journal).len(), 0);
+    assert_eq!(start_watchdog(&journal), Some(&lost));
     assert_eq!(Ledger::of(journal.events()).watchdog, Some(lost));
     assert!(!journal.events().iter().any(|event| {
         matches!(
@@ -1342,6 +1369,18 @@ fn stock_applied_hours_exclude_suspended_wall_time() {
         &current_build(),
     )
     .unwrap();
+    let checkpoints: Vec<_> = journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DayCheckpoint(checkpoint) = &event.payload {
+                Some(checkpoint.applied_secs)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(checkpoints, [0, 600, 720, 720]);
     assert_eq!(
         Ledger::of(journal.events())
             .profiles
