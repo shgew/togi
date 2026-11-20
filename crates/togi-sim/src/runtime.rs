@@ -177,6 +177,13 @@ impl Runtime {
                 model: source.cores(),
             });
         }
+        let given = source.persisted_kind();
+        if persisted.source != given {
+            return Err(RestoreError::SourceMismatch {
+                persisted: persisted.source.name(),
+                given: given.name(),
+            });
+        }
         if persisted.boots.is_empty() {
             return Err(RestoreError::NoBoot);
         }
@@ -220,6 +227,7 @@ impl Runtime {
 
     pub(crate) fn persisted(&self) -> Persisted {
         Persisted {
+            source: self.source.persisted_kind(),
             seed: self.seed,
             epoch: self.epoch,
             clock: self.clock,

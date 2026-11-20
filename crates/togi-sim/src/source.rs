@@ -9,6 +9,7 @@ use crate::Model;
 use crate::definition::{
     DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ, DEFAULT_MICROCODE,
 };
+use crate::persisted::PersistedSource;
 use crate::replay::Replay;
 
 /// The inputs of a fake machine, supplied again when restoring its mutable state.
@@ -24,7 +25,6 @@ pub enum MachineSource {
 /// The two-CCD topologies used by the scripted fixtures.
 #[derive(Clone, Copy, Debug)]
 pub enum ScriptedTopology {
-    TwoCores,
     FourCores,
     SixteenCores,
 }
@@ -32,7 +32,6 @@ pub enum ScriptedTopology {
 impl ScriptedTopology {
     const fn cores(self) -> usize {
         match self {
-            Self::TwoCores => 2,
             Self::FourCores => 4,
             Self::SixteenCores => 16,
         }
@@ -88,6 +87,13 @@ impl MachineSource {
         Self::Fitted {
             model,
             replay: replay.map(Rc::new),
+        }
+    }
+
+    pub(crate) const fn persisted_kind(&self) -> PersistedSource {
+        match self {
+            Self::Fitted { .. } => PersistedSource::Fitted,
+            Self::Scripted(_) => PersistedSource::Scripted,
         }
     }
 
