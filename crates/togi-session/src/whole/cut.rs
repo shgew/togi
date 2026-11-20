@@ -44,9 +44,8 @@ use togi_machine::{
     BootId, CancellationToken, Condition, EndEvidence, Error, Machine, ObservedOffset, PerCore,
     ResetReason, Signal,
 };
-use togi_sim::definition::CoreDef;
 use togi_sim::faults::SmuOperation;
-use togi_sim::{MachineDefinition, MachineSource, Persisted, Simulator};
+use togi_sim::{MachineSource, Persisted, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, Projection, State};
 
@@ -54,23 +53,13 @@ use super::compare::Names;
 use crate::Stop;
 use crate::testing::{Bench, build, simulated};
 
-fn limits(id: i64, deepest: i64) -> CoreDef {
-    CoreDef {
-        id,
-        alone: [deepest; 5],
-        together: [deepest; 7],
-        flat: 0.0,
-        idle: None,
-        workload: BTreeMap::new(),
-    }
-}
-
 fn bench() -> Bench {
-    Bench::defined(&MachineDefinition {
-        cores: 4,
-        core: (0..4).map(|id| limits(id, -50)).collect(),
-        ..MachineDefinition::default()
-    })
+    let bench = Bench::new(4);
+    let mut bios = bench.sim.seams().host.bios_context().unwrap();
+    // Keep the reference's firmware identity so its journal compares exactly after the switch.
+    bios.cpu_model = "Simulated Zen 5 16-Core Processor".into();
+    bench.sim.set_bios_context(bios);
+    bench
 }
 
 /// A night's milestone, given the night's events so far.
@@ -1229,8 +1218,8 @@ fn assert_crash_accounted(events: &[Event], after: usize, boot: &BootId) {
 
 /// Plays `played`'s phase from its start with the journal cut after its `after`th event and `fate` befalling the
 /// machine there, and checks that the journal left is resumable. Returns the journal at the phase's end.
-fn resume(played: &Played, model: &MachineSource, after: usize, fate: Fate) -> Vec<Event> {
-    let bench = played.before.bench(model);
+fn resume(played: &Played, source: &MachineSource, after: usize, fate: Fate) -> Vec<Event> {
+    let bench = played.before.bench(source);
     let (_, mut events) = play(&bench, played.phase, played.start, Some((after, fate)));
     if !matches!(fate, Fate::Killed) {
         events = drain_failure(&bench, played.phase, events);
@@ -1245,8 +1234,8 @@ fn resume(played: &Played, model: &MachineSource, after: usize, fate: Fate) -> V
 }
 
 /// The same phase runner, losing power before or after the selected actual SMU access.
-fn resume_at_smu(played: &Played, model: &MachineSource, at: usize) -> Vec<Event> {
-    let bench = played.before.bench(model);
+fn resume_at_smu(played: &Played, source: &MachineSource, at: usize) -> Vec<Event> {
+    let bench = played.before.bench(source);
     let boot = bench.sim.seams().host.boot_id().unwrap();
     let sim = bench.sim.clone();
     let mem = bench.mem.clone();
@@ -1282,7 +1271,7 @@ fn resume_at_smu(played: &Played, model: &MachineSource, at: usize) -> Vec<Event
     );
     assert_settled(&bench, played.phase, &events);
     assert_crash_accounted(&events, after, &boot);
-    assert_unchanged_decisions(played, model, &events, after, &boot, Some(at));
+    assert_unchanged_decisions(played, source, &events, after, &boot, Some(at));
     events
 }
 
@@ -1290,7 +1279,7 @@ fn resume_at_smu(played: &Played, model: &MachineSource, at: usize) -> Vec<Event
 /// be compared to a run without that evidence. Between night trials, however, all policy decisions must agree.
 fn assert_unchanged_decisions(
     played: &Played,
-    model: &MachineSource,
+    source: &MachineSource,
     events: &[Event],
     after: usize,
     boot: &BootId,
@@ -1318,7 +1307,7 @@ fn assert_unchanged_decisions(
     if !open {
         // Recovery downtime is charged to the task. Keep it in the uninterrupted control too: comparing to
         // a faster run would demand identical scheduling from different wall-budget evidence.
-        let control = played.before.bench(model);
+        let control = played.before.bench(source);
         let append = if let Some(at) = smu {
             let sim = control.sim.clone();
             let mut accesses = 0;
@@ -1390,7 +1379,7 @@ fn projection(events: &[Event]) -> Vec<String> {
 /// can change coverage diagnostics or a queue's next cell. No policy commitment is copied into the control.
 fn charged_kill_control(
     played: &Played,
-    model: &MachineSource,
+    source: &MachineSource,
     after: usize,
     resumed: &[Event],
 ) -> Option<Vec<Event>> {
@@ -1471,7 +1460,7 @@ fn charged_kill_control(
         assert!(observed.failures.is_empty());
     }
 
-    let control = played.before.bench(model);
+    let control = played.before.bench(source);
     let Phase::Run { trials } = played.phase else {
         panic!("an open night trial belongs to a run phase");
     };
@@ -1615,7 +1604,7 @@ fn assert_window(played: &[Played], from: usize, cuts: &[(usize, usize)]) {
 fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection_and_commitments(
     shard: usize,
 ) {
-    let (model, played, from) = scenario();
+    let (source, played, from) = scenario();
     let cuts = cuts(&played, from);
     assert_window(&played, from, &cuts);
     let wanted: Vec<_> = played
@@ -1624,9 +1613,9 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
         .collect();
     each(&cuts, shard, |phase, after| {
         let reference = &played[phase];
-        let events = resume(reference, &model, after, Fate::Killed);
+        let events = resume(reference, &source, after, Fate::Killed);
         assert_eq!(&events[..after], &reference.events[..after]);
-        let control = charged_kill_control(reference, &model, after, &events);
+        let control = charged_kill_control(reference, &source, after, &events);
         let expected_events = control.as_deref().unwrap_or(&reference.events);
         let expected_projection = control.as_deref().map(projection);
         assert_lines_equal(
@@ -1652,7 +1641,7 @@ fn killing_the_scenario_after_every_durable_event_resumes_to_the_same_projection
 #[test_case(false, true; "before serial launch")]
 #[test_case(true, false; "after measured execution")]
 fn an_interruption_compares_against_identically_charged_observations(measured: bool, serial: bool) {
-    let (model, played, from) = scenario();
+    let (source, played, from) = scenario();
     let (phase, after) = cuts(&played, from)
         .into_iter()
         .find(|&(phase, after)| {
@@ -1671,13 +1660,13 @@ fn an_interruption_compares_against_identically_charged_observations(measured: b
         })
         .expect("the swept qualification includes both interruption boundaries");
     let reference = &played[phase];
-    let resumed = resume(reference, &model, after, Fate::Killed);
+    let resumed = resume(reference, &source, after, Fate::Killed);
     assert_eq!(
         projection(&resumed) != projection(&reference.events),
         measured,
         "the selected measured interruption changes the soft-share schedule",
     );
-    let control = charged_kill_control(reference, &model, after, &resumed)
+    let control = charged_kill_control(reference, &source, after, &resumed)
         .expect("every interrupted trial has an independently ended control");
     assert_lines_equal(&projection(&resumed), &projection(&control), "projection");
     assert_lines_equal(
@@ -1760,15 +1749,15 @@ fn sweep_shards_cover_every_durable_dual_kind_and_smu_cut_exactly_once() {
 fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve_decisions(
     shard: usize,
 ) {
-    let (model, played, from) = scenario();
+    let (source, played, from) = scenario();
     let trials = trial_cuts(&played, from);
     let cuts = cuts(&played, from);
     assert_window(&played, from, &cuts);
     each(&cuts, shard, |phase, after| {
-        let events = resume(&played[phase], &model, after, Fate::PowerLoss);
+        let events = resume(&played[phase], &source, after, Fate::PowerLoss);
         assert_unchanged_decisions(
             &played[phase],
-            &model,
+            &source,
             &events,
             after,
             &events[after - 1].boot,
@@ -1777,13 +1766,13 @@ fn crashes_at_every_durable_event_and_smu_access_account_for_trials_and_preserve
         // Reset reason can change an open trial's classification. Outside its window both kinds take the
         // same recovery path, so the power-loss cut already covers it.
         if trials.contains(&(phase, after)) {
-            resume(&played[phase], &model, after, Fate::Crashed);
+            resume(&played[phase], &source, after, Fate::Crashed);
         }
     });
     let smu = smu_cuts(&played, from);
     assert!(!smu.is_empty(), "the swept phases touched no SMU");
     each(&smu, shard, |phase, at| {
-        resume_at_smu(&played[phase], &model, at);
+        resume_at_smu(&played[phase], &source, at);
     });
     eprintln!(
         "crash coverage shard {}/{}: {} power-loss durable events ({} dual-kind trial events), {} SMU hooks; no stride",
@@ -2044,7 +2033,7 @@ fn a_unit_edge_citing_a_different_event_changes_the_projection() {
 
 #[test]
 fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state() {
-    let (model, played, _) = scenario();
+    let (source, played, _) = scenario();
     let mut checked = BTreeSet::new();
     for phase in &played {
         if let Some(at) = phase.own().iter().position(|event| {
@@ -2054,7 +2043,7 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
             )
         }) {
             let after = phase.start + at + 1;
-            let resumed = resume(phase, &model, after, Fate::Killed);
+            let resumed = resume(phase, &source, after, Fate::Killed);
             assert_eq!(projection(&resumed), projection(&phase.events));
             assert_eq!(
                 commitments(&resumed, after, true),
@@ -2068,7 +2057,7 @@ fn a_kill_between_observation_and_derived_commitment_resumes_to_the_same_state()
 
 #[test]
 fn a_lost_qualification_or_retreat_commitment_is_recomputed() {
-    let (model, played, _) = scenario();
+    let (source, played, _) = scenario();
     for qualification in [true, false] {
         let (phase, at) = played
             .iter()
@@ -2089,7 +2078,7 @@ fn a_lost_qualification_or_retreat_commitment_is_recomputed() {
             })
             .expect("the scenario must qualify a step and retreat after a CPU-suspect event");
         let after = phase.start + at;
-        let resumed = resume(phase, &model, after, Fate::Killed);
+        let resumed = resume(phase, &source, after, Fate::Killed);
         assert_eq!(projection(&resumed), projection(&phase.events));
         assert_eq!(
             commitments(&resumed, after, true),

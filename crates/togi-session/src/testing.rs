@@ -16,10 +16,7 @@ use togi_machine::{
 };
 use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
-use togi_sim::{
-    History, MachineDefinition, Model, RunSettings, ScriptedMachine, ScriptedTopology, Simulator,
-    TrialOutcome,
-};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 
 use crate::appender::Appender;
 use crate::boot::BootHandoff;
@@ -247,22 +244,7 @@ impl Bench {
     }
 
     pub(crate) fn scripted(script: ScriptedMachine) -> Self {
-        Self::with_simulator(simulator(script))
-    }
-
-    pub(crate) fn defined(definition: &MachineDefinition) -> Self {
-        let sim = Simulator::new(
-            Model::new(definition, 1).unwrap(),
-            RunSettings {
-                seed: 1,
-                ..RunSettings::default()
-            },
-        )
-        .unwrap();
-        Self::with_simulator(sim)
-    }
-
-    fn with_simulator(sim: Simulator) -> Self {
+        let sim = simulator(script);
         Self {
             sim,
             mem: MemFs::new(),
