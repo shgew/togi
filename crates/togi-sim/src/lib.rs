@@ -35,7 +35,7 @@ pub use error::{InvalidMachine, Problem, ShapeError};
 pub use hazard::{HazardSource, Load, SourceKind, saturating_count, shared_voltage_applies};
 pub use model::Model;
 pub use persisted::{Persisted, RestoreError};
-pub use runtime::{ArithmeticError, History, REBOOT_TIME, RunSettings};
+pub use runtime::{ArithmeticError, EPOCH, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
 pub use source::{MachineSource, ScriptedMachine, ScriptedTopology, TrialOutcome};
