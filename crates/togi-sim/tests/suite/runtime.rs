@@ -652,6 +652,7 @@ fn a_persisted_machine_decodes_only_from_objects() {
         &crashed_machine,
         "",
         &[
+            "source",
             "seed",
             "epoch",
             "clock",

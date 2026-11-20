@@ -278,7 +278,8 @@ impl Simulator {
     ///
     /// # Errors
     ///
-    /// A persisted state for another number of cores, one without a boot, or an unrepresentable wall clock.
+    /// A persisted state with a different source kind or core count, one without a boot, or an
+    /// unrepresentable wall clock.
     pub fn restore(source: MachineSource, persisted: Persisted) -> Result<Self, RestoreError> {
         Ok(Self {
             shared: Rc::new(RefCell::new(Runtime::restore(source, persisted)?)),
