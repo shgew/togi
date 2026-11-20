@@ -577,6 +577,42 @@ impl Runtime {
                     signal: Signal::ComputationError,
                 },
             ),
+            TrialOutcome::UnexpectedExit { core, at } => (
+                at,
+                Some(core),
+                Effect::Backend {
+                    core,
+                    signal: Signal::UnexpectedExit,
+                },
+            ),
+            TrialOutcome::ReportedFailureThenReset { core, failure, at } => (
+                at,
+                Some(core),
+                Effect::Crash {
+                    reset: None,
+                    stalled: Some(core),
+                    mce: None,
+                    report: CrashReport::Signal(core, failure.signal()),
+                },
+            ),
+            TrialOutcome::CorrectedMce {
+                core,
+                bank,
+                bank_type,
+                at,
+            } => (
+                at,
+                Some(core),
+                Effect::Corrected {
+                    mce: PendingMce {
+                        core,
+                        bank,
+                        bank_type,
+                        corrected: true,
+                    },
+                    ran: spec.duration,
+                },
+            ),
             TrialOutcome::Reset { stalled, kind, at } => (
                 at,
                 stalled,
@@ -587,6 +623,26 @@ impl Runtime {
                     report: CrashReport::Progress,
                 },
             ),
+            TrialOutcome::ResetWithMce {
+                mce_core,
+                stalled,
+                kind,
+                at,
+            } => {
+                if let Some(core) = stalled {
+                    self.existing_core(core)?;
+                }
+                (
+                    at,
+                    Some(mce_core),
+                    Effect::Crash {
+                        reset: Some(kind),
+                        stalled,
+                        mce: Some(load_store_mce(mce_core)),
+                        report: CrashReport::Progress,
+                    },
+                )
+            }
             TrialOutcome::UncorrectedMce { core, at } => (
                 at,
                 Some(core),
@@ -700,7 +756,7 @@ impl Runtime {
                 MachineSource::Fitted { model, .. } => {
                     model.voltage_state(&self.regs, load).ok().flatten()
                 }
-                MachineSource::Scripted(_) => None,
+                MachineSource::Scripted(script) => script.voltage_state(load.cores),
             },
         };
         if let Some(storage) = &self.sample_storage {

@@ -289,12 +289,7 @@ impl Host for SimHost {
             .collect();
         checks.push(Check {
             name: "pm_table".to_owned(),
-            detail: if runtime.source.has_voltage_lanes() {
-                "simulated shared-voltage model supplies per-core voltage requests and loaded-core clocks"
-            } else {
-                "pm_table version unavailable: simulator reports no per-core lanes"
-            }
-            .to_owned(),
+            detail: runtime.source.voltage_lanes_detail().to_owned(),
             ok: true,
         });
         checks

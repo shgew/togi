@@ -6,8 +6,8 @@ use togi_machine::{
     TrialSpec,
 };
 use togi_sim::{
-    History, RestoreError, ScriptError, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome,
-    model::Script,
+    History, ReportedFailure, RestoreError, ScriptError, ScriptedMachine, ScriptedTopology,
+    ScriptedVoltageSamples, Simulator, TrialOutcome, model::Script,
 };
 
 use crate::common::{Journal, Rig, basic, core, machine, offset};
@@ -20,6 +20,10 @@ fn rig(
     outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
 ) -> Rig {
     let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, outcome);
+    rig_with(inputs)
+}
+
+fn rig_with(inputs: ScriptedMachine) -> Rig {
     let sim = Simulator::scripted(inputs, 1, History::default()).expect("a scripted machine");
     Rig {
         machine: sim.seams(),
@@ -230,5 +234,160 @@ fn a_scripted_machine_reports_no_preferred_core_ranking() {
     assert_eq!(
         missing.error.to_string(),
         "simulated preferred-core ranking unavailable"
+    );
+}
+
+#[test_case(ScriptedTopology::TwoCores, 2; "two cores")]
+#[test_case(ScriptedTopology::EightCores, 8; "eight cores")]
+fn mixed_registers_are_restored_on_each_boot(topology: ScriptedTopology, count: i64) {
+    let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, |_, _| TrialOutcome::Pass)
+        .with_boot_offsets(|core| offset(-5 - i64::from(core.get())));
+    let mut rig = rig_with(inputs);
+    assert_eq!(
+        rig.machine.host.topology().unwrap().len(),
+        usize::try_from(count).unwrap()
+    );
+    let expected: Vec<_> = (0..count)
+        .map(|core| offset(-5 - core).observed())
+        .collect();
+    let before: Vec<_> = (0..count).map(|core| rig.read(core).unwrap()).collect();
+    assert_eq!(before, expected);
+    rig.set_all(-2).unwrap();
+    rig.sim.reboot().unwrap();
+    let after: Vec<_> = (0..count).map(|core| rig.read(core).unwrap()).collect();
+    assert_eq!(after, expected);
+}
+
+#[test_case(ReportedFailure::ComputationError, Signal::ComputationError; "computation error")]
+#[test_case(ReportedFailure::Stall, Signal::Stall; "stall")]
+fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
+    failure: ReportedFailure,
+    expected: Signal,
+) {
+    let script: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome = match failure {
+        ReportedFailure::ComputationError => |_, _| TrialOutcome::ReportedFailureThenReset {
+            core: core(0),
+            failure: ReportedFailure::ComputationError,
+            at: AFTER,
+        },
+        ReportedFailure::Stall => |_, _| TrialOutcome::ReportedFailureThenReset {
+            core: core(0),
+            failure: ReportedFailure::Stall,
+            at: AFTER,
+        },
+    };
+    let mut rig = rig(ScriptedTopology::TwoCores, script);
+    let boot = rig.boot();
+    let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
+    let crash = result.unwrap_err();
+    assert!(matches!(crash.error, Error::Crashed));
+    assert_eq!(crash.value.ran, AFTER);
+    assert_eq!(report.signals, [(core(0), expected)]);
+    rig.sim.reboot().unwrap();
+    assert_eq!(
+        rig.machine.kernel.reset_reason_after(&boot).unwrap().kind,
+        Some(ResetKind::Watchdog)
+    );
+}
+
+#[test]
+fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
+    let mut rig = rig(ScriptedTopology::FourCores, |_, _| TrialOutcome::CorrectedMce {
+        core: core(0),
+        bank: 2,
+        bank_type: BankType::L2Cache,
+        at: AFTER,
+    });
+    let boot = rig.boot();
+    let before = rig.sim.monotonic();
+    assert_eq!(rig.pass(basic(Regime::R2, &[0], DURATION)).ran, DURATION);
+    assert_eq!(rig.boot(), boot);
+    let evidence = rig.mces(&boot);
+    let [check] = evidence.as_slice() else {
+        panic!("expected a corrected check: {evidence:?}")
+    };
+    assert_eq!(
+        (check.core, check.bank, check.bank_type),
+        (Some(core(0)), 2, BankType::L2Cache)
+    );
+    assert!(check.corrected);
+    assert_eq!(check.monotonic, before + AFTER);
+}
+
+#[test]
+fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
+    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| TrialOutcome::ResetWithMce {
+        mce_core: core(15),
+        stalled: Some(core(0)),
+        kind: ResetKind::Watchdog,
+        at: AFTER,
+    });
+    let before = rig.boot();
+    let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
+    assert!(matches!(result.unwrap_err().error, Error::Crashed));
+    assert!(report.signals.is_empty());
+    let sim = Simulator::restore(rig.sim.source(), rig.sim.persisted()).unwrap();
+    sim.reboot().unwrap();
+    let mut machine = sim.seams();
+    let current = machine.host.boot_id().unwrap();
+    assert_eq!(
+        machine.kernel.reset_reason_after(&before).unwrap().kind,
+        Some(ResetKind::Watchdog)
+    );
+    let evidence = machine.kernel.mces(&current, Duration::ZERO).unwrap();
+    let [check] = evidence.as_slice() else {
+        panic!("expected a check in the successor boot: {evidence:?}")
+    };
+    assert_eq!(
+        (check.core, check.bank_type, check.corrected),
+        (Some(core(15)), BankType::LoadStore, false)
+    );
+}
+
+#[test]
+fn an_unexpected_exit_ends_the_trial_without_resetting() {
+    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| TrialOutcome::UnexpectedExit {
+        core: core(0),
+        at: AFTER,
+    });
+    let boot = rig.boot();
+    let result = rig.pass(basic(Regime::R2, &[0], DURATION));
+    assert_eq!(result.ran, AFTER);
+    let failure = result.failure.unwrap();
+    assert_eq!(
+        (failure.core, failure.signal),
+        (core(0), Signal::UnexpectedExit)
+    );
+    assert_eq!(rig.boot(), boot);
+}
+
+#[test]
+fn voltage_samples_keep_the_written_lanes_after_snapshot_restoration() {
+    static SAMPLES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: [1.25; 16],
+        ccd_mhz: [5_400, 5_200],
+    };
+    let inputs = ScriptedMachine::sixteen_with_voltage_samples(
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::Pass,
+        &SAMPLES,
+    );
+    let mut rig = rig_with(inputs);
+    rig.pass(basic(Regime::R2, &[8], DURATION));
+    let restored = Simulator::restore(rig.sim.source(), rig.sim.persisted()).unwrap();
+    let mut machine = restored.seams();
+    let sample = machine.trials.samples("0001").next().unwrap().unwrap();
+    assert_eq!(sample.pm_table.unwrap().voltage_request_v, SAMPLES.requests_v);
+    assert_eq!(sample.core_mhz.iter().collect::<Vec<_>>(), [(core(8), 5_200)]);
+    let lanes = machine
+        .host
+        .preflight()
+        .into_iter()
+        .find(|check| check.name == "pm_table")
+        .unwrap();
+    assert!(lanes.ok);
+    assert_eq!(
+        lanes.detail,
+        "scripted samples supply per-core voltage requests and loaded-core clocks"
     );
 }
