@@ -1251,8 +1251,8 @@ fn day_checkpoint(p: &DayCheckpoint) -> String {
         "day observer has been active {} s in total this boot",
         p.applied_secs
     );
-    let mix = p.load_mix;
-    if mix.total_ms() > 0 {
+    let mix = &p.load_mix;
+    if !mix.is_empty() {
         let _ = write!(
             text,
             "; sampled load: {} s single-thread, {} s light beside busy cores, {} s all threads, {} s idle transitions, {} s quiet, {} s other",

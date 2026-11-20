@@ -5,7 +5,7 @@ use std::path::Path;
 
 use togi_hostlock::HostLock;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, CoreInfo, CpuTime, EndEvidence, Error, Kernel as _,
+    BiosContext, BootId, CancellationToken, CoreInfo, EndEvidence, Error, Kernel as _,
     KernelCursor, KernelRead, ObservedOffset, Partial, PerCore, ResetReason, Smu, SmuValidated,
     Stopped, TargetOffset, Trials as _, WatchdogState,
 };
@@ -42,8 +42,6 @@ pub trait Observer: Smu {
         boot: &BootId,
         after: Option<&KernelCursor>,
     ) -> Result<KernelRead, Partial<KernelRead>>;
-    /// Every logical CPU's cumulative scheduler time since boot.
-    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, Error>;
 }
 
 struct DayHardware<'lock> {
@@ -119,10 +117,6 @@ impl Observer for DayHardware<'_> {
         after: Option<&KernelCursor>,
     ) -> Result<KernelRead, Partial<KernelRead>> {
         self.kernel.read_mces(boot, after)
-    }
-
-    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, Error> {
-        Ok(self.kernel.read_cpu_times()?)
     }
 }
 

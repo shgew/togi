@@ -186,11 +186,9 @@ Gather evidence and ask after an unclean end; an orderly shutdown or reboot, inc
 
 At nonzero D, an `unsure` answer, or an Unknown or CF9 end left unanswered, becomes a **provisional CPU-suspect event**: create its veto, require retreat of the newest step at the next cold boot, and assign one reproduction night under [escalation](#whole-profile-veto-and-escalation) (owner, 2026-10-24, confirming the 2026-10-20 rule). Its question remains answerable but stops counting as pending once the provisional event forms. Other pending questions still block promotion even if a reset or an unrelated answer changed other state. Its veto and step-back persist after resolution; a later reclassifying answer undoes them through [guarded restoration from durable step history](#undoing-a-reclassified-retreat), respecting all other events, caps and qualifications rather than blindly restoring an unsafe offset.
 
-### Live faults and load mix
+### Live faults
 
 Consume `day.fault` at its recorded profile under [the classification rules](#classification-and-pending-questions), including faults in cleanly ended boots (#1215 Q15). Determine core locality from the decoded [SMCA bank type](workloads.md#mce-locality), never merely from a known reporting CPU or core. An uncorrected machine check is CPU-suspect regardless of bank locality or a known core. A corrected shared-bank or unknown-bank machine check, kernel errors and process traps remain raw visible daily evidence, with no automatic retreat, veto or hold reset unless other evidence classifies the event CPU-suspect. Use the journal's fault identity to deduplicate observations and imports of the same fault.
-
-`day.checkpoint.load_mix` describes sampled daily load shapes, as decided in #1214. Preserve and show it beside applied-hour and fault evidence, but never turn its shape milliseconds into trial-class exposure, qualification, a cap, or an additional hold/promotion condition. The [runtime](runtime.md#load-mix) owns sampling and shape definitions; checkpoint active time and eligible hold intervals remain different quantities.
 
 ### Whole-profile veto and escalation
 

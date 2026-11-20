@@ -5,9 +5,7 @@ use serde_json::json;
 use test_case::test_case;
 use togi_machine::Kernel as _;
 
-use super::support::{
-    LATER, OLD, boot, caused_by, kernel, locked, ok, pstore, scripted, scripted_at,
-};
+use super::support::{LATER, OLD, boot, caused_by, kernel, locked, ok, scripted, scripted_at};
 use crate::boot::JournalBoot;
 use crate::runner::{JOURNALCTL_BUDGET, RunError};
 use crate::{Error, Kernel};
@@ -23,14 +21,8 @@ fn timed_out() -> Result<togi_command::Output, RunError> {
 #[test_case(&|k| drop(k.read_mces(&boot(OLD), None)); "read_mces")]
 #[test_case(&|k| drop(k.reset_reason(&boot(OLD))); "reset_reason")]
 #[test_case(&|k| drop(k.reset_reason_after(&boot(OLD))); "reset_reason_after")]
-#[test_case(&|k| drop(k.saved_pstore(&boot(OLD))); "saved_pstore")]
 fn every_seam_call_starts_its_command_with_the_whole_budget(call: &dyn Fn(&mut Kernel)) {
-    let (mut kernel, recorded) = scripted(
-        &[],
-        pstore(&[("150/001/dmesg.txt", b"")]),
-        JOURNALCTL_BUDGET,
-        |_| ok(b"[]"),
-    );
+    let (mut kernel, recorded) = scripted(&[], JOURNALCTL_BUDGET, |_| ok(b"[]"));
     call(&mut kernel);
     let recorded = locked(&recorded);
     assert_eq!(recorded.len(), 1);
@@ -62,7 +54,6 @@ fn the_commands_of_one_call_share_one_budget() {
     let clock = Arc::new(Mutex::new(Instant::now()));
     let (kernel, calls) = scripted_at(
         &[],
-        pstore(&[]),
         Duration::from_millis(150),
         Arc::clone(&clock),
         move |_| {
@@ -82,7 +73,7 @@ fn later_commands_get_what_is_left_of_the_budget() {
     let list = json!([{"boot_id": OLD}, {"boot_id": LATER}]).to_string();
     let budget = Duration::from_secs(5);
     let clock = Arc::new(Mutex::new(Instant::now()));
-    let (kernel, calls) = scripted_at(&[], pstore(&[]), budget, Arc::clone(&clock), move |args| {
+    let (kernel, calls) = scripted_at(&[], budget, Arc::clone(&clock), move |args| {
         if args[0] == "--list-boots" {
             *locked(&clock) += Duration::from_millis(100);
             ok(&list)
@@ -99,7 +90,7 @@ fn later_commands_get_what_is_left_of_the_budget() {
 
 #[test]
 fn a_used_up_budget_runs_nothing() {
-    let (kernel, calls) = scripted(&[], pstore(&[]), Duration::ZERO, |_| ok(""));
+    let (kernel, calls) = scripted(&[], Duration::ZERO, |_| ok(""));
     let error = kernel
         .read_whole_boot(&JournalBoot::parse(OLD).unwrap(), Duration::ZERO)
         .unwrap_err();

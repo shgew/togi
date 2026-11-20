@@ -830,7 +830,6 @@ fn the_live_control_seam_brackets_a_pause_with_checkpoints_and_acknowledges_afte
     let mut hardware = Hardware::stock();
     let mut live = crate::day::apply::Live::preflight(&journal, &mut hardware).unwrap();
     let mut state = Pause::of(&journal);
-    let sampler = Sampler::new(session_cores(journal.events()).unwrap(), LoadMix::default());
     let mut progress = Progress {
         started: Duration::ZERO,
         accumulated: Duration::ZERO,
@@ -843,7 +842,6 @@ fn the_live_control_seam_brackets_a_pause_with_checkpoints_and_acknowledges_afte
         dial.set(seconds);
         let mut controls = Controls {
             progress: &mut progress,
-            sampler: &sampler,
             observer: hardware,
             pause: &mut state,
             live: Some(&mut live),

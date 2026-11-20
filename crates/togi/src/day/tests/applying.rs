@@ -119,9 +119,6 @@ impl Observer for Hardware {
     ) -> Result<KernelRead, Partial<KernelRead>> {
         self.reading.live_faults(boot, after)
     }
-    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, MachineError> {
-        self.reading.cpu_times()
-    }
 }
 
 fn seed_on(fs: Arc<MemFs>) -> Journal {
@@ -483,7 +480,7 @@ fn a_lost_watchdog_zeroes_the_nonzero_profile_and_stops_without_reapplying(ticks
     let result = serve(
         &mut journal,
         &mut hardware,
-        &mut ticking(ticks, SAMPLE, SAMPLE),
+        &mut ticking(ticks, WATCHDOG_POLL, WATCHDOG_POLL),
         &cancel,
         &current_build(),
     );
@@ -550,7 +547,7 @@ fn failed_watchdog_loss_cleanup_never_claims_verified_stock(failure: Failure) {
     let result = serve(
         &mut journal,
         &mut hardware,
-        &mut ticking(2, SAMPLE, SAMPLE),
+        &mut ticking(2, WATCHDOG_POLL, WATCHDOG_POLL),
         &CancellationToken::new(),
         &current_build(),
     );
@@ -858,7 +855,7 @@ fn repeated_unarmed_reads_at_stock_write_nothing_and_keep_observing() {
     serve(
         &mut journal,
         &mut hardware,
-        &mut ticking(3, SAMPLE, SAMPLE),
+        &mut ticking(3, WATCHDOG_POLL, WATCHDOG_POLL),
         &CancellationToken::new(),
         &current_build(),
     )

@@ -8,9 +8,6 @@ pub struct PmTable {
     pub power_w: [f32; 16],
     pub voltage_request_v: [f32; 16],
     pub temperature_c: [f32; 16],
-    pub c0_pct: [f32; 16],
-    pub cc1_pct: [f32; 16],
-    pub cc6_pct: [f32; 16],
 }
 
 pub trait PmTableReader {

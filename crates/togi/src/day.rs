@@ -8,7 +8,7 @@ use clap::Args as ClapArgs;
 use togi_hardware::day::Observer;
 use togi_journal::{
     Build, DayBootStart, DayCheckpoint, DayCleanStop, DayIntervalCredit, DayIntervals,
-    DayOffsetsChanged, DayUncleanEnd, Event, Journal, LoadMix, Payload, Seq, Stamp,
+    DayOffsetsChanged, DayUncleanEnd, Event, Journal, Payload, Seq, Stamp,
 };
 use togi_machine::{
     BootId, CancellationToken, Clock, CoreId, CoreInfo, ObservedOffset, PerCore, ResetReason,
@@ -23,16 +23,15 @@ mod apply;
 pub(crate) use apply::current_baseline;
 mod control_cli;
 mod faults;
-mod load_mix;
 mod notify;
 mod pause;
 mod record;
 pub mod socket;
 
 use faults::Faults;
-use load_mix::{SAMPLE, Sampler};
 
 const CHECKPOINT: Duration = Duration::from_secs(600);
+const WATCHDOG_POLL: Duration = Duration::from_secs(5);
 
 /// How often the kernel log is read for new faults. A fault is journaled with the offsets last read back, so
 /// reading more often than that matters less than reading at all; half a minute keeps the journalctl process
@@ -469,13 +468,6 @@ fn observe_with_socket(
     let mut pause = pause::Pause::of(journal);
     let starts_paused = pause.starts_paused(journal.boot(), clock);
     let expired_at_start = pause.expired(journal.boot(), clock);
-    let mut sampler = Sampler::new(
-        session_cores(journal.events())?,
-        ledger
-            .boots
-            .get(journal.boot())
-            .map_or_else(LoadMix::default, |boot| boot.load_mix),
-    );
     let mut progress = Progress {
         started,
         accumulated,
@@ -488,7 +480,7 @@ fn observe_with_socket(
         // `day.boot_start` already holds it durably, and nothing is applied over it. Drift decides before
         // the watchdog because the hardware is no longer at the verified stock either refusal assumes.
         if offsets != live.applied() {
-            progress.restore_stock(journal, observer, clock, &sampler, live)?;
+            progress.restore_stock(journal, observer, clock, live)?;
             return Err(Error::OffsetDrift);
         }
         // Preflight's armed read may no longer hold: the read journaled above decides, by the rule
@@ -521,21 +513,16 @@ fn observe_with_socket(
         }
     }
     let applied_offsets = live.as_deref().map_or(offsets, apply::Live::applied);
-    // The boot-start check above waited, so the baseline belongs to the clock reading taken when the
-    // counters are read, not to `started`: the first interval must not be credited that wait.
-    let baseline = observer.cpu_times()?;
-    let mut sampled = clock.monotonic()?;
-    sampler.record(sampled, baseline)?;
+    let mut watchdog_polled = clock.monotonic()?;
     if live.is_some() {
-        progress.checkpoint(journal, clock, &sampler, applied_offsets)?;
-        progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
+        progress.checkpoint(journal, clock, applied_offsets)?;
+        progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
     }
     let mut polled = started;
     loop {
         if let Some(socket) = socket {
             let mut controls = Controls {
                 progress: &mut progress,
-                sampler: &sampler,
                 observer: &mut *observer,
                 pause: &mut pause,
                 live: live.as_deref_mut(),
@@ -545,21 +532,19 @@ fn observe_with_socket(
             })?;
         }
         if let Some(source) = pause.expired(journal.boot(), clock) {
-            let observed =
-                progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
-            progress.checkpoint(journal, clock, &sampler, observed)?;
+            let observed = progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
+            progress.checkpoint(journal, clock, observed)?;
             live.as_deref_mut()
                 .ok_or(Error::NotApplying)?
                 .reapply(journal, observer, clock)?;
             pause.ended(journal, clock, source)?;
-            let observed =
-                progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
-            progress.checkpoint(journal, clock, &sampler, observed)?;
+            let observed = progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
+            progress.checkpoint(journal, clock, observed)?;
         }
         let wait = if socket.is_some() {
             Duration::from_secs(1)
         } else {
-            SAMPLE
+            WATCHDOG_POLL
         };
         match clock.sleep(cancel, wait) {
             Ok(()) | Err(togi_machine::Error::Cancelled) => {}
@@ -571,10 +556,13 @@ fn observe_with_socket(
             .checked_sub(progress.checkpointed)
             .ok_or(Error::ClockReversed)?
             >= CHECKPOINT;
-        let sample = now.checked_sub(sampled).ok_or(Error::ClockReversed)? >= SAMPLE;
-        // The first scheduled sample after waking checks again too: active state alone can survive S3
+        let watchdog_due = now
+            .checked_sub(watchdog_polled)
+            .ok_or(Error::ClockReversed)?
+            >= WATCHDOG_POLL;
+        // The first scheduled poll after waking checks again too: active state alone can survive S3
         // while the timer loses its MMIO decoding. Changes get a checkpoint immediately.
-        let watchdog_read = stopping || sample || due;
+        let watchdog_read = stopping || watchdog_due || due;
         let watchdog_changed = if watchdog_read {
             match observer.watchdog(cancel) {
                 Ok(checked) => {
@@ -602,17 +590,12 @@ fn observe_with_socket(
         {
             // The loss is journaled before the fallible restore so a failed cleanup keeps its cause.
             let applied = progress.offsets;
-            progress.checkpoint(journal, clock, &sampler, applied)?;
-            progress.restore_stock(journal, observer, clock, &sampler, live)?;
+            progress.checkpoint(journal, clock, applied)?;
+            progress.restore_stock(journal, observer, clock, live)?;
             return Err(Error::Watchdog);
         }
-        if stopping || sample {
-            let times = observer.cpu_times()?;
-            // The watchdog read above may have waited, so the interval ends when the counters were read,
-            // not when this pass began; crediting the earlier `now` would drop that wait from the interval.
-            let read_at = clock.monotonic()?;
-            sampler.record(read_at, times)?;
-            sampled = read_at;
+        if stopping || watchdog_due {
+            watchdog_polled = clock.monotonic()?;
         }
         if stopping || now.checked_sub(polled).ok_or(Error::ClockReversed)? >= FAULT_POLL {
             faults.poll(journal, observer, clock, progress.offsets)?;
@@ -621,15 +604,14 @@ fn observe_with_socket(
         if !stopping && !due && !watchdog_changed {
             continue;
         }
-        let observed =
-            progress.read_offsets(journal, observer, clock, &sampler, live.as_deref_mut())?;
+        let observed = progress.read_offsets(journal, observer, clock, live.as_deref_mut())?;
         let readback = if stopping && let Some(live) = live.as_deref_mut() {
-            progress.checkpoint(journal, clock, &sampler, observed)?;
+            progress.checkpoint(journal, clock, observed)?;
             live.zero(journal, observer, clock)?
         } else {
             observed
         };
-        progress.checkpoint(journal, clock, &sampler, readback)?;
+        progress.checkpoint(journal, clock, readback)?;
         if stopping {
             append(journal, clock, DayCleanStop {})?;
             return Ok(());
@@ -641,7 +623,6 @@ fn observe_with_socket(
 /// interval fold credits the running time before it and excludes the held time after it.
 struct Controls<'a> {
     progress: &'a mut Progress,
-    sampler: &'a Sampler,
     observer: &'a mut dyn Observer,
     pause: &'a mut pause::Pause,
     live: Option<&'a mut apply::Live>,
@@ -666,11 +647,9 @@ impl Controls<'_> {
                 journal,
                 self.observer,
                 clock,
-                self.sampler,
                 self.live.as_deref_mut(),
             )?;
-            self.progress
-                .checkpoint(journal, clock, self.sampler, observed)?;
+            self.progress.checkpoint(journal, clock, observed)?;
         }
         let status = self.pause.control(
             journal,
@@ -684,11 +663,9 @@ impl Controls<'_> {
                 journal,
                 self.observer,
                 clock,
-                self.sampler,
                 self.live.as_deref_mut(),
             )?;
-            self.progress
-                .checkpoint(journal, clock, self.sampler, observed)?;
+            self.progress.checkpoint(journal, clock, observed)?;
         }
         Ok(status)
     }
@@ -709,7 +686,6 @@ impl Progress {
         journal: &mut Journal,
         observer: &mut dyn Observer,
         clock: &dyn Clock,
-        sampler: &Sampler,
         live: Option<&mut apply::Live>,
     ) -> Result<PerCore<ObservedOffset>, Error> {
         let observed = observer.offsets()?;
@@ -717,12 +693,12 @@ impl Progress {
         if let Some(live) = live {
             let applied = live.applied();
             if applied != self.offsets {
-                self.checkpoint(journal, clock, sampler, applied)?;
+                self.checkpoint(journal, clock, applied)?;
             }
             if observed != applied {
                 // The preceding profile and this read remain durable if restoring stock fails.
-                self.checkpoint(journal, clock, sampler, observed)?;
-                self.restore_stock(journal, observer, clock, sampler, live)?;
+                self.checkpoint(journal, clock, observed)?;
+                self.restore_stock(journal, observer, clock, live)?;
                 return Err(Error::OffsetDrift);
             }
         }
@@ -734,18 +710,16 @@ impl Progress {
         journal: &mut Journal,
         observer: &mut dyn Observer,
         clock: &dyn Clock,
-        sampler: &Sampler,
         live: &mut apply::Live,
     ) -> Result<(), Error> {
         let readback = live.zero(journal, observer, clock)?;
-        self.checkpoint(journal, clock, sampler, readback)
+        self.checkpoint(journal, clock, readback)
     }
 
     fn checkpoint(
         &mut self,
         journal: &mut Journal,
         clock: &dyn Clock,
-        sampler: &Sampler,
         readback: PerCore<ObservedOffset>,
     ) -> Result<(), Error> {
         let now = clock.monotonic()?;
@@ -767,7 +741,7 @@ impl Progress {
             },
             DayCheckpoint {
                 applied_secs: applied.as_secs(),
-                load_mix: sampler.mix(),
+                load_mix: togi_journal::LoadMix::default(),
                 watchdog: Some(self.watchdog.clone()),
             }
             .into(),
@@ -778,7 +752,7 @@ impl Progress {
     }
 }
 
-/// The cores the session journal recorded, which group the sampled CPUs.
+/// The cores recorded by the session, against which the baseline is verified.
 fn session_cores(events: &[Event]) -> Result<&[CoreInfo], Error> {
     events
         .iter()
@@ -796,7 +770,6 @@ pub(crate) struct Boot {
     pub offsets: PerCore<ObservedOffset>,
     pub checkpoint: Option<Seq>,
     pub seconds: u64,
-    pub load_mix: LoadMix,
     pub clean: bool,
     pub unclean: bool,
 }
@@ -839,9 +812,6 @@ impl Ledger {
                         offsets: observed.offsets,
                         checkpoint: previous.as_ref().and_then(|boot| boot.checkpoint),
                         seconds: observed.seconds,
-                        load_mix: previous
-                            .as_ref()
-                            .map_or_else(LoadMix::default, |boot| boot.load_mix),
                         clean: false,
                         unclean: false,
                     },
@@ -861,7 +831,6 @@ impl Ledger {
                     && let Some(boot) = ledger.boots.get_mut(&event.boot)
                 {
                     boot.seconds = observed.seconds;
-                    boot.load_mix = checkpoint.load_mix;
                     boot.checkpoint = Some(event.seq);
                 }
             }

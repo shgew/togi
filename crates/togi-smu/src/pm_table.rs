@@ -21,9 +21,6 @@ pub enum Lane {
     Power,
     VoltageRequest,
     Temperature,
-    C0,
-    Cc1,
-    Cc6,
 }
 
 impl fmt::Display for Lane {
@@ -32,9 +29,6 @@ impl fmt::Display for Lane {
             Self::Power => "power",
             Self::VoltageRequest => "voltage request",
             Self::Temperature => "temperature",
-            Self::C0 => "C0 residency",
-            Self::Cc1 => "CC1 residency",
-            Self::Cc6 => "CC6 residency",
         })
     }
 }
@@ -76,13 +70,10 @@ pub enum Unavailable {
     Stale,
 }
 
-const BLOCKS: [(Lane, usize); 6] = [
+const BLOCKS: [(Lane, usize); 3] = [
     (Lane::Power, 301),
     (Lane::VoltageRequest, 317),
     (Lane::Temperature, 333),
-    (Lane::C0, 381),
-    (Lane::Cc1, 397),
-    (Lane::Cc6, 413),
 ];
 
 fn block(raw: &[u8], index: usize, lane: Lane) -> Result<[f32; PER_CORE_MAX], DecodeError> {
@@ -104,15 +95,11 @@ pub(crate) fn decode(raw: &[u8]) -> Result<PmTable, DecodeError> {
     if raw.len() != TABLE_LEN {
         return Err(DecodeError::Size { len: raw.len() });
     }
-    let [power, voltage, temperature, c0, cc1, cc6] =
-        BLOCKS.map(|(lane, index)| block(raw, index, lane));
+    let [power, voltage, temperature] = BLOCKS.map(|(lane, index)| block(raw, index, lane));
     Ok(PmTable {
         power_w: power?,
         voltage_request_v: voltage?,
         temperature_c: temperature?,
-        c0_pct: c0?,
-        cc1_pct: cc1?,
-        cc6_pct: cc6?,
     })
 }
 

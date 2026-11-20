@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use togi_machine::Kernel as _;
 
-use super::support::{OLD, boot, caused_by, pstore};
+use super::support::{OLD, boot, caused_by};
 use crate::Kernel;
 use crate::runner::Process;
 
@@ -21,7 +21,7 @@ fn program(dir: &Path, body: &str) -> PathBuf {
 }
 
 fn kernel_running(program: PathBuf, budget: Duration) -> Kernel {
-    Kernel::with_parts(&[], Box::new(Process::at(program)), budget, pstore(&[])).unwrap()
+    Kernel::with_parts(&[], Box::new(Process::at(program)), budget).unwrap()
 }
 
 struct Identity {

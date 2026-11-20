@@ -340,11 +340,6 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
                 pm.voltage_request_v[7] > pm.voltage_request_v[8],
                 "{storage}: loaded cores request more"
             );
-            assert_eq!(
-                (pm.c0_pct[0], pm.c0_pct[7], pm.c0_pct[8], pm.cc6_pct[8]),
-                (100.0, 100.0, 0.0, 100.0),
-                "{storage}"
-            );
         }
         let first = samples[0].core_mhz;
         assert_eq!(

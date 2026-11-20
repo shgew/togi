@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::rc::Rc;
@@ -10,7 +10,7 @@ use togi_journal::fs::{Fault, Op};
 use togi_journal::{DayFault, EventKind, LiveFault, LoadMix, Trap};
 use togi_journal::{MemFs, SessionId, SessionStart, StateDir};
 use togi_machine::{
-    BankType, BiosContext, CcdId, CoreInfo, CpuId, CpuTime, Error as MachineError, KernelCursor,
+    BankType, BiosContext, CcdId, CoreInfo, CpuId, Error as MachineError, KernelCursor,
     KernelError, KernelErrorKind, KernelRead, Mce, Partial, ProcessFault, ProcessFaultKind,
     ResetKind,
 };
@@ -105,14 +105,10 @@ struct Reading {
     offsets: VecDeque<PerCore<ObservedOffset>>,
     reason: Option<ResetKind>,
     watchdog: VecDeque<WatchdogState>,
-    times: VecDeque<Vec<CpuTime>>,
     live: Box<LiveLog>,
     /// Whether a read under a cancelled token fails like the hardware read, which gives up its wait.
     /// Off by default: a read that finished before the signal still returns its scripted state.
     cancellable: bool,
-    /// The shared active clock and how long each successive watchdog read advances it, as the counter
-    /// wait does; the last duration repeats.
-    waits: Option<(Rc<Cell<Duration>>, VecDeque<Duration>)>,
 }
 
 fn armed() -> WatchdogState {
@@ -127,15 +123,8 @@ impl Reading {
             offsets: [offsets(-10)].into(),
             reason: None,
             watchdog: [armed()].into(),
-            times: [vec![CpuTime {
-                cpu: CpuId::from(0_u16),
-                busy: 0,
-                total: 0,
-            }]]
-            .into(),
             live: Box::new(|_| Ok(KernelRead::default())),
             cancellable: false,
-            waits: None,
         }
     }
 
@@ -200,14 +189,6 @@ impl Observer for Reading {
         if self.cancellable && cancel.is_cancelled() {
             return Err(MachineError::Cancelled);
         }
-        if let Some((clock, waits)) = &mut self.waits {
-            let wait = if waits.len() > 1 {
-                waits.pop_front().unwrap()
-            } else {
-                waits.front().copied().unwrap()
-            };
-            clock.set(clock.get() + wait);
-        }
         Ok(if self.watchdog.len() > 1 {
             self.watchdog.pop_front().unwrap()
         } else {
@@ -220,13 +201,6 @@ impl Observer for Reading {
         after: Option<&KernelCursor>,
     ) -> Result<KernelRead, Partial<KernelRead>> {
         (self.live)(after)
-    }
-    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, MachineError> {
-        Ok(if self.times.len() > 1 {
-            self.times.pop_front().unwrap()
-        } else {
-            self.times.front().unwrap().clone()
-        })
     }
 }
 
@@ -288,9 +262,6 @@ impl Observer for FailingAfter {
     ) -> Result<KernelRead, Partial<KernelRead>> {
         self.reading.live_faults(boot, after)
     }
-    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, MachineError> {
-        self.reading.cpu_times()
-    }
 }
 
 struct ActiveClock {
@@ -321,7 +292,7 @@ impl Clock for ActiveClock {
         cancel: &CancellationToken,
         duration: Duration,
     ) -> Result<(), MachineError> {
-        assert_eq!(duration, SAMPLE);
+        assert_eq!(duration, WATCHDOG_POLL);
         let (active, wall) = self.sleeps.pop_front().unwrap();
         self.active += active;
         self.wall += wall;
@@ -1029,169 +1000,5 @@ fn a_failed_log_read_journals_what_it_read_and_ends_the_observer_without_a_clean
             .events()
             .iter()
             .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
-    );
-}
-
-fn busy_ticks(step: u64, busy: u64) -> Vec<CpuTime> {
-    vec![CpuTime {
-        cpu: CpuId::from(0_u16),
-        busy: busy * step,
-        total: 100 * step,
-    }]
-}
-
-#[test]
-fn the_checkpoint_carries_the_load_mix_of_the_active_time_and_a_suspended_interval_adds_nothing() {
-    let mut reading = Reading {
-        times: [
-            busy_ticks(0, 0),
-            busy_ticks(1, 100),
-            busy_ticks(2, 100),
-            busy_ticks(3, 100),
-        ]
-        .into(),
-        ..Reading::fixed()
-    };
-    let mut clock = ActiveClock {
-        active: Duration::ZERO,
-        wall: Duration::ZERO,
-        sleeps: [
-            (SAMPLE, SAMPLE),
-            (SAMPLE, SAMPLE),
-            // The machine slept for an hour of wall time; no active time passed, so nothing is sampled.
-            (Duration::ZERO, Duration::from_hours(1)),
-            (SAMPLE, SAMPLE),
-        ]
-        .into(),
-    };
-    let mut journal = journal();
-    observe(
-        &mut journal,
-        &mut reading,
-        &mut clock,
-        &CancellationToken::new(),
-        &current_build(),
-    )
-    .unwrap();
-    let Some(Payload::DayCheckpoint(last)) = journal
-        .events()
-        .iter()
-        .rev()
-        .map(|event| &event.payload)
-        .find(|payload| matches!(payload, Payload::DayCheckpoint(_)))
-    else {
-        panic!("no checkpoint")
-    };
-    assert_eq!(last.applied_secs, 15);
-    assert_eq!(
-        last.load_mix,
-        LoadMix {
-            all_threads_ms: 15_000,
-            ..LoadMix::default()
-        }
-    );
-    assert_eq!(
-        Ledger::of(journal.events())
-            .boots
-            .values()
-            .next()
-            .unwrap()
-            .load_mix,
-        last.load_mix
-    );
-}
-
-#[test]
-fn a_restart_within_the_boot_continues_the_recorded_load_mix() {
-    let mut journal = journal();
-    for _ in 0..2 {
-        let mut reading = Reading {
-            times: [busy_ticks(0, 0), busy_ticks(1, 100)].into(),
-            ..Reading::fixed()
-        };
-        observe(
-            &mut journal,
-            &mut reading,
-            &mut ticking(1, SAMPLE, SAMPLE),
-            &CancellationToken::new(),
-            &current_build(),
-        )
-        .unwrap();
-    }
-    assert_eq!(
-        Ledger::of(journal.events())
-            .boots
-            .values()
-            .next()
-            .unwrap()
-            .load_mix
-            .all_threads_ms,
-        10_000
-    );
-}
-
-/// An active clock the observer shares, so a watchdog read that waits moves the time the loop sees.
-struct SharedClock {
-    active: Rc<Cell<Duration>>,
-    sleeps: usize,
-}
-
-impl Clock for SharedClock {
-    fn now(&self) -> Timestamp {
-        Timestamp::UNIX_EPOCH
-            .checked_add(self.active.get())
-            .unwrap()
-    }
-    fn monotonic(&self) -> Result<Duration, MachineError> {
-        Ok(self.active.get())
-    }
-    fn sleep(
-        &mut self,
-        cancel: &CancellationToken,
-        duration: Duration,
-    ) -> Result<(), MachineError> {
-        self.active.set(self.active.get() + duration);
-        self.sleeps -= 1;
-        if self.sleeps == 0 {
-            cancel.cancel();
-            return Err(MachineError::Cancelled);
-        }
-        Ok(())
-    }
-}
-
-#[test]
-fn cpu_times_are_credited_to_when_they_were_read_not_to_when_the_pass_began() {
-    let active = Rc::new(Cell::new(Duration::ZERO));
-    let mut reading = Reading {
-        times: [busy_ticks(0, 0), busy_ticks(1, 100)].into(),
-        waits: Some((
-            Rc::clone(&active),
-            [Duration::from_secs(1), Duration::from_secs(3)].into(),
-        )),
-        ..Reading::fixed()
-    };
-    let mut journal = journal();
-    observe(
-        &mut journal,
-        &mut reading,
-        &mut SharedClock { active, sleeps: 1 },
-        &CancellationToken::new(),
-        &current_build(),
-    )
-    .unwrap();
-    // The boot-start read waits 1 s before the baseline counters are read at 1 s; the sleep ends at 6 s
-    // and the stop's watchdog read waits 3 s more before the counters are read at 9 s. The counters
-    // cover those 8 s: anchoring both reads to their pass's start would give 6 s, and the baseline alone
-    // 9 s.
-    assert_eq!(
-        Ledger::of(journal.events())
-            .boots
-            .values()
-            .next()
-            .unwrap()
-            .load_mix
-            .all_threads_ms,
-        8_000
     );
 }

@@ -343,6 +343,7 @@ object_only! {
         pub reset_reason_raw: Vec<String>,
         #[serde(default, skip_serializing_if = "is_false")]
         pub inconclusive: bool,
+        /// Historical diagnostic tail; not used to classify a crash.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub pstore: Option<PstoreRecord>,
     }

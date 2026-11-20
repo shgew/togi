@@ -93,7 +93,7 @@ fn hardware_smu_round_trips_sixteen_distinct_offsets_and_restores_stock() {
 }
 
 #[test]
-fn hardware_pm_table_lanes_decode_and_residencies_sum_to_100() {
+fn hardware_pm_table_lanes_decode() {
     let _serial = exclusive();
     let mut driver = validated_driver();
     let reader = must(driver.pm_reader(), "open the PM table reader");
@@ -103,22 +103,10 @@ fn hardware_pm_table_lanes_decode_and_residencies_sum_to_100() {
     let table = reader
         .pm_table()
         .unwrap_or_else(|| panic!("{}", check.detail));
-    for core in 0..table.c0_pct.len() {
-        let sum = f64::from(table.c0_pct[core])
-            + f64::from(table.cc1_pct[core])
-            + f64::from(table.cc6_pct[core]);
-        assert!(
-            (sum - 100.0).abs() <= 1.0,
-            "core {core:02} C0+CC1+CC6 = {sum:.4}%, want 100% within 1%"
-        );
+    for core in 0..table.power_w.len() {
         println!(
-            "core {core:02}: {:.4} W, {:.4} V requested, {:.2} C, C0 {:.3}% CC1 {:.3}% CC6 {:.3}%",
-            table.power_w[core],
-            table.voltage_request_v[core],
-            table.temperature_c[core],
-            table.c0_pct[core],
-            table.cc1_pct[core],
-            table.cc6_pct[core],
+            "core {core:02}: {:.4} W, {:.4} V requested, {:.2} C",
+            table.power_w[core], table.voltage_request_v[core], table.temperature_c[core],
         );
     }
 }

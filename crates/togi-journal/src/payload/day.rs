@@ -44,9 +44,8 @@ object_only! {
         /// Whole seconds (floor) the observer has been active this boot, cumulative across its `day.boot_start`
         /// records; downtime between restarts is not credited.
         pub applied_secs: u64,
-        /// How the sampled part of that active time divided among the load shapes, cumulative like `applied_secs`.
-        /// A checkpoint written before the mix was sampled has none, which reads as zero.
-        #[serde(default)]
+        /// Historical scheduler-time breakdown, no longer collected by the day observer.
+        #[serde(default, skip_serializing_if = "LoadMix::is_empty")]
         pub load_mix: LoadMix,
         /// The latest hardware watchdog check. Older checkpoints omit it and preserve the previous check.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -55,9 +54,7 @@ object_only! {
 }
 
 object_only! {
-    /// Milliseconds of sampled active time per load shape. Each sample interval counts toward exactly one shape,
-    /// so the sum is the sampled time; an interval the sampler missed (a gap over three sample periods) counts
-    /// toward none.
+    /// Historical milliseconds of sampled active time per load shape.
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct LoadMix {
@@ -83,18 +80,8 @@ object_only! {
 }
 
 impl LoadMix {
-    /// The sampled time.
-    pub fn total_ms(&self) -> u64 {
-        [
-            self.single_thread_ms,
-            self.light_beside_busy_ms,
-            self.all_threads_ms,
-            self.idle_transition_ms,
-            self.quiet_ms,
-            self.other_ms,
-        ]
-        .into_iter()
-        .fold(0, u64::saturating_add)
+    pub(crate) fn is_empty(&self) -> bool {
+        *self == Self::default()
     }
 }
 

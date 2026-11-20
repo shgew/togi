@@ -33,7 +33,7 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - Hardware tests run as root and NixOS provisions the host lock; alternate delegation and manual provisioning add unused paths.
 - The public commands are night, status, pause, resume, watch, reset and doctor; run is event-only and lifecycle helpers are internal to keep one interface.
 - The tuning display is a plain console using standard widgets, with one layout that shows less in small terminals; a GPU terminal adds no tuning value.
-- Raw diagnostics have a storage budget, keeping failures first and summaries views use; unread diagnostics do not justify permanent storage.
+- Raw diagnostics have a storage budget, keeping failures first and summaries views use. C-state residency, daily load-mix sampling and saved kernel-dump ingestion are retired because they do not inform a decision or gain measurement.
 - The experimental banner stays until a complete search, soak, day application and back-off cycle is observed on the target desktop; software mechanics alone do not establish that result.
 - The simulator proves crash recovery, safety and agreement with the page, not tuning policy; each tuning-behavior change reaches hardware before the next is designed.
 - The owner runs togi on the target desktop and invokes retros optionally; an agent session there reads the journal read-only to keep execution under owner control.
