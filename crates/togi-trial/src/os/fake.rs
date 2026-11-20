@@ -216,8 +216,7 @@ impl ProcShared {
     }
 }
 
-/// What a process script holds. `account` comes from the scope's credential drop, or from
-/// `--uid`/`--gid` for an unprivileged user-manager launch.
+/// What a process script holds. `account` comes from the scope's credential drop.
 pub(crate) struct ProcCtx {
     pub(crate) shared: Rc<ProcShared>,
     pub(crate) stdout: Counted,
@@ -387,15 +386,8 @@ fn scope_in(command: &LaunchCommand) -> Option<String> {
 
 fn account_in(command: &LaunchCommand) -> Option<(u32, u32)> {
     let separator = command.argv.iter().position(|arg| arg == "--")?;
-    let scope = &command.argv[..separator];
-    if scope.first()? != "systemd-run" {
+    if command.argv.first()? != "systemd-run" {
         return None;
-    }
-    if scope.iter().any(|arg| arg == "--user") {
-        return Some((
-            flag_in(command, "--uid")?.parse().ok()?,
-            flag_in(command, "--gid")?.parse().ok()?,
-        ));
     }
     let [program, uid, gid, groups, end, ..] = &command.argv[separator + 1..] else {
         return None;

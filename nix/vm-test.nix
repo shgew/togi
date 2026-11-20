@@ -439,13 +439,6 @@ let
       nodes.machine = {
         imports = [ tuningBoot ];
         virtualisation.cores = 4;
-        services.togi.hardwareTestGroup = "togi-hardware";
-        users.groups.togi-hardware = { };
-        users.users.togi-hardware = {
-          isNormalUser = true;
-          group = "togi-hardware";
-        };
-        systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
         environment.systemPackages = [ trialTests ];
       };
 
@@ -453,50 +446,42 @@ let
         import json
 
         # Stock-offset completion and controller clock trials need real SMU/cpufreq hardware.
-        hardware = (
+        selection = (
             "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
             "--skip an_r8_trial --skip an_r9_trial "
             "--skip managed_mapping_caps_idle_ccd_policies --skip managed_all_core_trial_rotates_controller_host"
         )
-        delegated_hardware = f"{hardware} --skip a_backend_runs_as_the_account --skip the_sweep_removes_orphaned"
-        flags = "--test-threads 1 --nocapture"
-        scopes = "systemctl {manager} list-units --all 'togi-*.scope' --plain --no-legend"
-
-
-        def run_scope_tests(prefix, binary, selection, manager):
-            log = "/tmp/scope-tests.log"
-            status, _ = machine.execute(f"{prefix} {binary} {selection} {flags} > {log} 2>&1")
-            output = machine.succeed(f"cat {log}")
-            machine.log(output)
-            assert status == 0, output
-            left = machine.succeed(f"{prefix} {scopes.format(manager=manager)}").strip()
-            assert left == "", left
-
-
         machine.wait_for_unit("multi-user.target")
         assert json.loads(machine.succeed("cat /etc/togi/config.json"))["backend_user"] == "togi-trial"
         assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
         lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
-        for binary, selection, count in [
-            ("togi-trial-tests", hardware, 13),
-            ("togi-trial-tests", delegated_hardware, 11),
-            ("togi-trial-cached-errors", "cached_errors::", 2),
-        ]:
-            listed = machine.succeed(f"{binary} {selection} --list").splitlines()
-            assert sum(line.endswith(": test") for line in listed) == count, listed
-        run_scope_tests("", "togi-trial-tests", hardware, "")
-        assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
-        machine.succeed("loginctl enable-linger togi-hardware")
-        delegated_uid = machine.succeed("id -u togi-hardware").strip()
-        machine.wait_for_unit(f"user@{delegated_uid}.service")
-        delegated_prefix = (
-            f"runuser -u togi-hardware -- env XDG_RUNTIME_DIR=/run/user/{delegated_uid} "
-            f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{delegated_uid}/bus"
-        )
-        run_scope_tests(delegated_prefix, "togi-trial-tests", delegated_hardware, "--user")
-        run_scope_tests(delegated_prefix, "togi-trial-cached-errors", "cached_errors::", "--user")
+        listed = machine.succeed(f"togi-trial-tests {selection} --list").splitlines()
+        assert sum(line.endswith(": test") for line in listed) == 9, listed
+        log = "/tmp/scope-tests.log"
+        status, _ = machine.execute(f"togi-trial-tests {selection} --test-threads 1 --nocapture > {log} 2>&1")
+        output = machine.succeed(f"cat {log}")
+        machine.log(output)
+        assert status == 0, output
+        list_scopes = "systemctl list-units --all 'togi-*.scope' --plain --no-legend"
+        left = machine.succeed(list_scopes).strip()
+        assert left == "", left
         assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
         assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
+
+        # The guest has no SMU driver. Unprivileged doctor still prints its checks and exits
+        # not-ready; constructing its runner must not take a lock or start a scope.
+        status, output = machine.execute(
+            "runuser -u unrelated -- togi --state-dir /tmp/doctor-lock-state doctor 2>&1"
+        )
+        machine.log(output)
+        assert status == 15, output
+        assert any(
+            line.split() == ["systemd_run", "skipped", "needs", "root"]
+            for line in output.splitlines()
+        ), output
+        assert "togi doctor: not ready:" in output, output
+        assert machine.succeed(list_scopes).strip() == ""
+        machine.succeed("test ! -e /tmp/doctor-lock-state")
       '';
     };
 

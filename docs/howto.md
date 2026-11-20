@@ -57,21 +57,13 @@ The module installs `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.def
 
 mprime and y-cruncher come from the host's `nixpkgs`. Updating one of them, for example with `nix flake update nixpkgs`, can cost that backend's passes: [Evidence](spec/tuner.md#evidence) says when a pass still counts. Update the backends when the extra trials are worth it, not as routine.
 
-### Host lock and delegated hardware tests
+### Host lock
 
 `run`, `reset` and hardware tests share one [host lock](spec/runtime.md#host-lock); a busy lock exits 3. Do not delete `/run/lock/togi.lock` to unblock it: replacing an inode while another process holds it would allow two owners.
 
 The module provisions the lock during boot, before user logins. On an upgrade from the public-readable lock, stop all tuning and hardware-test processes and close their lock descriptors, or rebuild and reboot, to complete the security migration: changing permissions cannot revoke descriptors opened earlier. A refused lock (foreign-owned, symlink, special or multiply linked) is not deleted or repaired blindly; on Linux, rebooting into the rebuilt normal system recreates `/run` and provisions the trusted lock before users can create one. [Host lock](spec/runtime.md#host-lock) states the rules.
 
-Delegated hardware tests need an explicitly authorized dedicated group, as well as their existing SMU/SMN permissions and delegated cpuset controller. Do not give this access to the unprivileged backend account. For example:
-
-```nix
-users.groups.togi-hardware = { };
-users.users.operator.extraGroups = [ "togi-hardware" ];
-services.togi.hardwareTestGroup = "togi-hardware";
-```
-
-Rebuild, then reboot to provision the lock for that group; log in again for group membership to take effect. A rebuild alone does not change an existing lock ([Host lock](spec/runtime.md#host-lock)). Run `just hardware` sequentially as before; ordinary users without this group cannot open the lock, even if they can read togi's state.
+Hardware tests run as root on Linux; see [Rust test execution](development.md#rust-test-execution). An existing `services.togi.hardwareTestGroup` setting only delegates access to the host lock, not hardware or scope management. Do not give that access to the unprivileged backend account.
 
 For a manual Linux install, protect the lock's parent from unprivileged writes, or provision it during trusted early boot before users can precreate its name in a sticky shared directory. After quiescing all lock users, the descriptor-based program [`nix/provision-lock.py`](../nix/provision-lock.py) provisions or migrates a single root-owned regular inode without following a lock symlink. The example requires an existing `togi-hardware` group; replace the final argument with `-` for root-only mode 0600. An existing foreign or multiply linked inode is refused without changing it, and a held lock makes the program fail rather than replacing it.
 

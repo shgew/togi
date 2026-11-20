@@ -60,7 +60,6 @@ pub(crate) struct Env<O: Os> {
     pub(crate) topology: Vec<CoreInfo>,
     pub(crate) identity: Option<BackendIdentity>,
     pub(crate) unscoped: bool,
-    pub(crate) user_manager: bool,
     pub(crate) pm_table: Option<Arc<dyn PmTableReader + Send + Sync>>,
     /// Test construction: where samples go instead of the trial's `samples.jsonl`.
     pub(crate) storage: Option<Rc<dyn Fn() -> Result<Open, StorageError>>>,
@@ -84,10 +83,7 @@ impl<O: Os> Env<O> {
             return Ok(Confinement::Unscoped);
         }
         let identity = self.identity.ok_or(IdentityError::NotConfigured)?;
-        Ok(Confinement::Scoped {
-            identity,
-            user_manager: self.user_manager,
-        })
+        Ok(Confinement::Scoped(identity))
     }
 }
 
@@ -371,7 +367,7 @@ pub(crate) async fn start<O: Os>(
         return Err(early(InvalidTrial::UnrepresentableDuration.into(), ready));
     }
     let identity = match confinement {
-        Confinement::Scoped { identity, .. } => Some(identity),
+        Confinement::Scoped(identity) => Some(identity),
         Confinement::Unscoped => None,
     };
     // A trial never runs beside limits an earlier trial left armed, whatever placement it takes:
@@ -641,7 +637,7 @@ async fn launch_all<O: Os>(
     launched: &mut Launched,
 ) -> Result<(), Error> {
     let identity = match confinement {
-        Confinement::Scoped { identity, .. } => Some(identity),
+        Confinement::Scoped(identity) => Some(identity),
         Confinement::Unscoped => None,
     };
     let scoped = identity.is_some();

@@ -228,7 +228,6 @@ pub(super) fn rig_edit(
         topology: topology(),
         identity: Some(fixture_identity()),
         unscoped: false,
-        user_manager: false,
         pm_table: None,
         storage: None,
         durability: crate::samples::Durability::Unsynced,
@@ -678,7 +677,6 @@ mod tests {
         let argv = crate::launch::scope_argv(
             "togi-trial-t1-c00.scope",
             identity,
-            false,
             cwd,
             &[CpuId::from(0)],
             &["worker".into()],
@@ -756,7 +754,6 @@ mod tests {
                 argv: crate::launch::scope_argv(
                     "togi-trial-t1-c00.scope",
                     identity,
-                    false,
                     std::path::Path::new("/trials/t1/c00"),
                     &[CpuId::from(0)],
                     &["worker".into()],
