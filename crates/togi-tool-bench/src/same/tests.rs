@@ -1030,57 +1030,6 @@ fn a_corrupt_digest_record_misses(case: (&str, &str)) {
     assert_eq!(cache.get(MappingStop), None, "{what}");
 }
 
-fn options() -> super::Options {
-    super::Options {
-        base: PathBuf::from("/base"),
-        head: PathBuf::from("/head"),
-        smoke: false,
-        semantic: None,
-        keep_going: false,
-        no_cache: false,
-        keep: None,
-        jobs: std::num::NonZeroUsize::MIN,
-        timeout: Duration::from_secs(1),
-        cache: PathBuf::from("/cache"),
-        simulators: [None, None],
-    }
-}
-
-#[test_case::test_case((true, false); "true false")]
-#[test_case::test_case((false, true); "false true")]
-fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing(case: (bool, bool)) {
-    let (no_cache, keep) = case;
-    let options = options();
-    let cases = ScriptedCase::ALL;
-    let done =
-        super::identical_report(&options, cases.len(), true, super::Timings::default()).unwrap();
-    assert!(done.identical && !done.different());
-    assert_eq!(done.outcome.scheduled, [0, 0]);
-    let mut text = Vec::new();
-    done.write(&mut text).unwrap();
-    assert_eq!(
-        String::from_utf8(text).unwrap(),
-        "same: both trees build the same simulator and read the same inputs; 0 of 5 sessions differ\n"
-    );
-    assert!(
-        super::identical_report(&options, cases.len(), false, super::Timings::default()).is_none()
-    );
-
-    let mut options = options;
-    options.no_cache = no_cache;
-    options.keep = keep.then(|| PathBuf::from("/kept"));
-    assert!(
-        super::identical_report(&options, cases.len(), true, super::Timings::default()).is_none()
-    );
-
-    options.semantic = Some(Vec::new());
-    options.no_cache = false;
-    options.keep = None;
-    assert!(
-        super::identical_report(&options, cases.len(), true, super::Timings::default()).is_none()
-    );
-}
-
 #[test]
 fn real_fs_journal_discovery_uses_file_types_and_archive_names() {
     use std::os::unix::fs::symlink;

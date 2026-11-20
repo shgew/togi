@@ -28,6 +28,7 @@ togi-tuner.workspace = true
 togi-version.workspace = true
 
 [dev-dependencies]
+sha2.workspace = true
 test-case.workspace = true
 
 [lints]

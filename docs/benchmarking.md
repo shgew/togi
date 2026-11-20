@@ -197,7 +197,7 @@ To control concurrency, caching or retention directly, run `togi-tool-bench same
 
 `just same-semantic BASE --retired KIND` compares retained journal meaning with the same fixed inputs as `same`, or the same two-case subset with `--smoke`. It is on demand, not a CI gate or raw-journal equality claim. Historical R04 comparisons predate the scripted input contract; reproducing them requires the comparator of that revision.
 
-The recipe exports the base exactly as `same` does and passes `--semantic` to `togi-tool-bench same`. This mode runs both sides freshly, bypasses digest-cache reads and writes and the identical-binary shortcut, and compares every selected session. Build artifacts and scheduling costs still reuse the existing harness cache. A failed child or an unreadable journal is an error. `--keep` retains all runs; without it, only differing runs remain.
+The recipe exports the base exactly as `same` does and passes `--semantic` to `togi-tool-bench same`. This mode runs both sides freshly, bypasses digest-cache reads and writes, and compares every selected session. Build artifacts and scheduling costs still reuse the existing harness cache. A failed child or an unreadable journal is an error. `--keep` retains all runs; without it, only differing runs remain.
 
 Normalization is deliberately narrow:
 
@@ -377,7 +377,7 @@ The compare command checks both source trees' `crates/togi-tool-sim/scripted-inp
 
 An exact comparison digests the live `events.jsonl` and every `archive/*.jsonl`, including relative names and sizes. Only build stamps are normalized. A missing or empty journal, failed child, or timeout is not a match. A differing case reports the first differing journal and line and retains both runs. `--keep` retains all runs and implies `--no-cache`.
 
-Cached runs bind the input contract, simulator binary digest and case. An identical simulator can skip actual runs only when caching is allowed; `--no-cache` forces both sides to execute. Cached journals are rerun when needed to explain a difference. Durations are informational and never affect equality.
+Cached runs bind the input contract, simulator binary digest and case, and are written only by a run that completed its case. Every selected case is compared, from a cached run or a new one, even when both trees build the same simulator; `--no-cache` forces both sides to execute. Cached journals are rerun when needed to explain a difference. Durations are informational and never affect equality.
 
 ## Checking a machine against real evidence
 

@@ -182,8 +182,6 @@ pub struct Timings {
 #[derive(Debug)]
 pub struct Report {
     pub outcome: Outcome,
-    /// Whether both trees built the same simulator and read the same inputs, so no session ran.
-    pub identical: bool,
     /// The run directory kept: all of it with `keep`, otherwise what a differing session left.
     pub kept: Option<PathBuf>,
     pub timings: Timings,
@@ -196,15 +194,7 @@ impl Report {
     }
 
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
-        if self.identical {
-            writeln!(
-                w,
-                "same: both trees build the same simulator and read the same inputs; 0 of {} sessions differ",
-                self.outcome.sessions
-            )
-        } else {
-            self.outcome.write(w)
-        }
+        self.outcome.write(w)
     }
 }
 
@@ -248,7 +238,6 @@ pub fn execute(
     } else {
         &ScriptedCase::ALL
     };
-    let identical = keys[0] == keys[1];
     let keyed = started.elapsed();
     let mut timings = Timings {
         contracts: loaded,
@@ -256,9 +245,6 @@ pub fn execute(
         keys: keyed.saturating_sub(built),
         sessions: Duration::ZERO,
     };
-    if let Some(report) = identical_report(options, cases.len(), identical, timings) {
-        return Ok(report);
-    }
     let cache_error = |what, source| SameError::Io {
         what,
         path: options.cache.clone(),
@@ -326,7 +312,6 @@ pub fn execute(
             warnings.extend(outcome.warnings.iter().cloned());
             Ok(Report {
                 outcome,
-                identical: false,
                 kept,
                 timings,
                 warnings,
@@ -337,34 +322,6 @@ pub fn execute(
             kept,
         }),
     }
-}
-
-fn identical_report(
-    options: &Options,
-    sessions: usize,
-    identical: bool,
-    timings: Timings,
-) -> Option<Report> {
-    if !identical || options.no_cache || options.keep.is_some() || options.semantic.is_some() {
-        return None;
-    }
-    Some(Report {
-        outcome: Outcome {
-            sessions,
-            differences: Vec::new(),
-            keep_going: options.keep_going,
-            cached: [0; 2],
-            scheduled: [0; 2],
-            total_s: [0.0; 2],
-            slow: Vec::new(),
-            warnings: Vec::new(),
-            semantic: None,
-        },
-        identical: true,
-        kept: None,
-        timings,
-        warnings: Vec::new(),
-    })
 }
 
 fn check_contracts(trees: &[PathBuf; 2]) -> Result<(), SameError> {

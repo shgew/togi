@@ -339,10 +339,12 @@ fn real_process_a_relative_cache_directory_holds_the_base_target_directory_of_th
     );
 }
 
-#[test_case::test_case(false; "one failed child")]
-#[test_case::test_case(true; "identical failed children")]
+#[test_case::test_case(false, false; "one failed child")]
+#[test_case::test_case(true, false; "identical failed children")]
+#[test_case::test_case(true, true; "identical failed children with the cache allowed")]
 fn real_process_a_failed_session_exits_one_and_names_the_only_directory_it_left_in_the_temporary_directory(
     same_binary: bool,
+    cache_allowed: bool,
 ) {
     let trees = Trees::new();
     let head = trees.simulator("head-sim", &recorded(None), 7);
@@ -353,9 +355,13 @@ fn real_process_a_failed_session_exits_one_and_names_the_only_directory_it_left_
     };
     let temporary = trees.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
-    let output = command(&trees)
+    let mut command = command(&trees);
+    if !cache_allowed {
+        command.arg("--no-cache");
+    }
+    let output = command
         .env("TMPDIR", &temporary)
-        .args(["--no-cache", "--jobs", "1"])
+        .args(["--jobs", "1"])
         .arg("--base-sim")
         .arg(&base)
         .arg("--head-sim")

@@ -71,3 +71,6 @@ fn developer_outcome(trial: &TrialSpec, offsets: &[TargetOffset]) -> TrialOutcom
     }
     TrialOutcome::Pass
 }
+
+#[cfg(test)]
+mod tests;

@@ -165,9 +165,10 @@ impl Simulator {
             .arg(&dir)
             .arg("--max-boots")
             .arg(max_boots.to_string());
-        if let Some(machine) = &spec.machine {
-            command.arg("--machine").arg(&machine.path);
-        }
+        match &spec.machine {
+            Some(machine) => command.arg("--machine").arg(&machine.path),
+            None => command.arg("--default-fitted-machine"),
+        };
         if spec.replay.is_some() {
             command.arg("--replay-facts");
         }

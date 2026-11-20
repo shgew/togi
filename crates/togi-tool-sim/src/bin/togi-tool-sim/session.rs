@@ -17,6 +17,7 @@ use togi_tuner::policy::{FoldError, Params, State};
 
 use crate::content::{RecordedContent, RecordedContentError};
 use crate::log::Log;
+use crate::machine::SessionMachine;
 use crate::{SessionArgs, build, machine, signals};
 
 const FAILED: u8 = 1;
@@ -113,12 +114,12 @@ fn simulate(
         renderer,
         zone,
     } = context()?;
-    let machine = machine::load_session(
-        args.machine.as_deref(),
-        args.seed,
-        args.replay_facts,
-        read_machine,
-    )?;
+    let selected = match (args.machine.as_deref(), args.default_fitted_machine) {
+        (Some(path), _) => SessionMachine::File(path),
+        (None, true) => SessionMachine::DefaultFitted,
+        (None, false) => SessionMachine::Script,
+    };
+    let machine = machine::load_session(selected, args.seed, args.replay_facts, read_machine)?;
     let seed = args.seed;
     let cold_boots = args.cold_boots;
     let verify_every = args.verify_every;

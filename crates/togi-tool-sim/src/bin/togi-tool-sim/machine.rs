@@ -19,21 +19,32 @@ pub(crate) enum LoadError {
     Replay(#[from] ExtractsError),
 }
 
-/// The standalone session defaults to a script. Explicit research machines use the suite's fitted loader.
+/// The machine a standalone session simulates.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum SessionMachine<'a> {
+    /// The developer mechanics script.
+    Script,
+    /// The research suite's seeded default fitted machine, which its machine-free scenarios run.
+    DefaultFitted,
+    /// A fitted research machine file.
+    File(&'a Path),
+}
+
+/// The standalone session defaults to a script. Research machines use the suite's fitted loader.
 pub(crate) fn load_session(
-    path: Option<&Path>,
+    machine: SessionMachine<'_>,
     seed: u64,
     replay: bool,
     read: impl FnOnce(&Path) -> Result<MachineDefinition, file::LoadError>,
 ) -> Result<MachineSource, LoadError> {
-    match (path, replay) {
-        (None, false) => Ok(MachineSource::Scripted(developer_machine())),
-        (None, true) => Err(LoadError::ReplayWithoutMachine),
-        (Some(path), replay) => {
-            let (model, replay) = load_with(Some(path), seed, replay, &mut Extracts::new(), read)?;
-            Ok(MachineSource::fitted(model, replay))
-        }
-    }
+    let path = match machine {
+        SessionMachine::Script if replay => return Err(LoadError::ReplayWithoutMachine),
+        SessionMachine::Script => return Ok(MachineSource::Scripted(developer_machine())),
+        SessionMachine::DefaultFitted => None,
+        SessionMachine::File(path) => Some(path),
+    };
+    let (model, replay) = load_with(path, seed, replay, &mut Extracts::new(), read)?;
+    Ok(MachineSource::fitted(model, replay))
 }
 
 /// The suite's seeded research model and its replay oracle when asked for. Nothing here touches a state directory.

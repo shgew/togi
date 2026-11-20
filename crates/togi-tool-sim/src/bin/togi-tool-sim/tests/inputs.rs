@@ -55,6 +55,7 @@ fn scripted_refuses_invalid_typed_arguments(case: &str, boots: &str, expected: E
 
 #[test_case(&[], true; "default mechanics")]
 #[test_case(&["--machine", "/hunt.json"], false; "explicit research")]
+#[test_case(&["--default-fitted-machine"], false; "default research")]
 fn a_parsed_session_selects_its_machine_source(args: &[&str], scripted: bool) {
     let ran = Host::hunting().execute(
         args.iter().copied().chain(["--state-dir", "/state"]),
@@ -78,6 +79,7 @@ fn a_parsed_session_selects_its_machine_source(args: &[&str], scripted: bool) {
 #[test_case(&["--max-boots", "0"], "--max-boots"; "zero boots")]
 #[test_case(&["--verify-every", "-1"], "-1"; "negative verify interval")]
 #[test_case(&["--seed", "x"], "--seed"; "non-numeric seed")]
+#[test_case(&["--default-fitted-machine", "--machine", "/hunt.json"], "--default-fitted-machine"; "two machines")]
 fn invalid_arguments_are_usage_errors_that_touch_nothing(args: &[&str], named: &str) {
     let mut host = Host::default();
     let ran = host.run(args.iter().copied().chain(["--state-dir", "/state"]));

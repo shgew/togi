@@ -118,14 +118,12 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
         "togi-tool-bench: harness overhead: contracts {:.0?}, simulators {:.0?}, keys {:.0?}; sessions took {:.0?}",
         timings.contracts, timings.builds, timings.keys, timings.sessions
     );
-    if !report.identical {
-        let outcome = &report.outcome;
-        let _ = writeln!(
-            stderr,
-            "togi-tool-bench: base {} cached, {} run; head {} cached, {} run",
-            outcome.cached[0], outcome.scheduled[0], outcome.cached[1], outcome.scheduled[1]
-        );
-    }
+    let outcome = &report.outcome;
+    let _ = writeln!(
+        stderr,
+        "togi-tool-bench: base {} cached, {} run; head {} cached, {} run",
+        outcome.cached[0], outcome.scheduled[0], outcome.cached[1], outcome.scheduled[1]
+    );
     if let Some(kept) = &report.kept {
         let _ = writeln!(
             stderr,

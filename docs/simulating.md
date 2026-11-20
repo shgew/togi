@@ -5,11 +5,12 @@
 The script exercises mechanics, not tuning policy or hardware reliability. Fitted machines remain available for the separate research commands. [Campaign launching and day/night scoring](benchmarking.md#research-campaigns), [fitting, forward comparison and model checking](benchmarking.md#fitting-the-target-machine) are retired. A simulated night ends when the operator ends it (`--night-hours`) or a dead end stops it.
 
 ```sh
-just sim [--seed N] [--machine FILE] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+just sim [--seed N] [--machine FILE | --default-fitted-machine] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
 ```
 
 - `--seed` (default 1) selects the simulated boot identities and, for a fitted machine, the model's random draws. The same inputs and history reproduce the journal.
 - `--machine FILE` loads an explicit simulator machine JSON file, including limits, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
+- `--default-fitted-machine` uses the research suite's seeded default fitted machine instead of the developer script, as the bench runs a scenario that names no machine file.
 - `--replay-facts` requires `--machine FILE` and answers exact trial-class/full-profile matches from its `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
 - `--recorded-content` makes each simulated trial report the workload content identities the state directory's live journal recorded, instead of the simulator's synthetic ones. It reads every `exposure.observed` class and `trial.intent` content of that journal before any transition archives it, keyed by the workload each entry runs (an R8 or R9 entry by the R1 or R3 workload it runs). It is for a transition dry run on a copy of recorded state ([Inspecting a transition](reviewing.md#inspecting-a-transition-on-recorded-state)): recorded observations are matched against the identities of the workloads the simulated session runs, so synthetic identities differ from them. The identities are a simulation assumption: nothing checks that those executables exist on this machine, and backend availability stays the simulator's own (a simulated missing backend still fails). It does not replay recorded outcomes (that is `--replay-facts`) and is no evidence of real hardware or real content. Refused before the session starts: a journal that records no identity, two different identities for one workload, or an identity of a different backend than the workload runs. Refused when the session asks for a workload the journal recorded no identity for; it is never answered with a synthetic one. Without the option, identities stay synthetic.
 - `--night-hours` (default 8) is when the simulated operator ends the night, counted in simulated time from the machine's clock when the command starts; a night has no other deadline. The operator's end is a signal, seen at the first event appended at or after that time (a trial in flight finishes first).
@@ -507,7 +508,7 @@ The calendar adapter above still generates and replays the production journal; t
 `crates/togi-tool-sim` builds the `togi-tool-sim` command. It runs from a source checkout:
 
 ```sh
-just sim [--seed N] [--machine FILE] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+just sim [--seed N] [--machine FILE | --default-fitted-machine] [--replay-facts] [--recorded-content] [--night-hours N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
 just sim-suite [--jobs N] [--max-boots N]   # the whole suite in one shard, then its check; on demand, not a CI check
 cargo run --release -p togi-tool-sim -- suite --suite tools/bench/suite.json [--shards N] [--shard I] [--jobs N] --out DIR [--max-boots N]
 cargo run --release -p togi-tool-sim -- check --suite tools/bench/suite.json --shards N [--shard I] DIR

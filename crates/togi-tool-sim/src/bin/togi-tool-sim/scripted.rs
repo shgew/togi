@@ -52,7 +52,7 @@ pub(crate) fn run(args: ScriptedArgs, log: &mut Log) -> u8 {
     }
 }
 
-fn execute(case: ScriptedCase, persistence: &Persistence) -> Result<(), Error> {
+pub(crate) fn execute(case: ScriptedCase, persistence: &Persistence) -> Result<(), Error> {
     if !togi_simrun::events(persistence)?.is_empty() {
         return Err(Error::Milestone(
             "the scripted state directory must start with an empty journal",
@@ -105,11 +105,8 @@ fn execute(case: ScriptedCase, persistence: &Persistence) -> Result<(), Error> {
         }
         ScriptedCase::MceResume => {
             require(
-                events.iter().any(|event| {
-                    matches!(&event.payload, Payload::Mce(mce)
-                if !mce.corrected && mce.bank_type == BankType::LoadStore)
-                }),
-                "an uncorrected load/store machine check",
+                machine_check_attributed(&events),
+                "a sync-flood crash citing an uncorrected load/store machine check from a CPU of the interrupted trial",
             )?;
             resumed_after(&events, ResetKind::SyncFlood)?;
         }
@@ -212,6 +209,51 @@ fn profile_and_placement(events: &[Event]) -> bool {
             && events.iter().any(|event| matches!(&event.payload, Payload::TrialStart(start)
                 if start.trial == intent.trial && start.controller.as_ref().is_some_and(|controller|
                     !start.cpus.is_empty() && start.cpus.iter().all(|cpu| controller.tested_cpus.contains(cpu)))))
+    })
+}
+
+/// Whether a detected sync-flood crash cites an uncorrected load/store machine check from a CPU of the trial it
+/// interrupted.
+pub(crate) fn machine_check_attributed(events: &[Event]) -> bool {
+    events.iter().any(|crash| {
+        let Payload::CrashDetected(detected) = &crash.payload else {
+            return false;
+        };
+        let Some(flight) = detected.in_flight else {
+            return false;
+        };
+        if detected.reset_reason != Some(ResetKind::SyncFlood) {
+            return false;
+        }
+        let Some(trial) = events.iter().find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload
+                && event.seq == flight
+            {
+                Some(&intent.trial)
+            } else {
+                None
+            }
+        }) else {
+            return false;
+        };
+        let Some(cpus) = events.iter().find_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload
+                && start.trial == *trial
+            {
+                Some(&start.cpus)
+            } else {
+                None
+            }
+        }) else {
+            return false;
+        };
+        events.iter().any(|event| {
+            matches!(&event.payload, Payload::Mce(mce)
+                if crash.cause.contains(&event.seq)
+                    && !mce.corrected
+                    && mce.bank_type == BankType::LoadStore
+                    && cpus.contains(&mce.cpu))
+        })
     })
 }
 

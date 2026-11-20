@@ -78,6 +78,10 @@ struct SessionArgs {
     /// Load a fitted research machine from this JSON file; otherwise use the developer mechanics script.
     #[arg(long, value_name = "FILE")]
     machine: Option<PathBuf>,
+    /// Use the research suite's seeded default fitted machine, which its machine-free scenarios run, instead of the
+    /// developer mechanics script.
+    #[arg(long, conflicts_with = "machine")]
+    default_fitted_machine: bool,
     /// Answer exact class and profile matches from the machine's same-BIOS facts extract.
     #[arg(long)]
     replay_facts: bool,
