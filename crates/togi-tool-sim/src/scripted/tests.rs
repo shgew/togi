@@ -2,11 +2,16 @@ use std::fmt::Write as _;
 
 use sha2::{Digest as _, Sha256};
 
+use togi_sim::definition::{
+    DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ, DEFAULT_MICROCODE,
+};
+
 use super::CONTRACT_VERSION;
 
 /// The files that define the named cases' inputs: the case set and boot bounds, each case's outcomes and milestones,
-/// the staged day the profile case runs, and the scripted topology, register reset and BIOS context. How the
-/// simulator turns a scripted outcome into a crash, and the session itself, are what `same` compares, not inputs.
+/// the staged day the profile case runs, and the scripted topology, register reset and BIOS context, whose default
+/// values the test adds. How the simulator turns a scripted outcome into a crash, and the session itself, are what
+/// `same` compares, not inputs.
 const INPUTS: [(&str, &[u8]); 5] = [
     (
         "togi-tool-sim/src/scripted.rs",
@@ -30,10 +35,10 @@ const INPUTS: [(&str, &[u8]); 5] = [
     ),
 ];
 
-/// The contract version and the digest of [`INPUTS`] it was declared for.
+/// The contract version and the digest of [`INPUTS`] and the BIOS defaults it was declared for.
 const PINNED: (&str, &str) = (
     "1",
-    "8f09ea9b96f7fea9d742fc6eb184a6da36ae37f6d8722714e4567c927c2fe748",
+    "92a82a040e00d71159023ab408975ed6bdc3f9e87a21156ec4edb86f6ed3ac73",
 );
 
 #[test]
@@ -45,6 +50,9 @@ fn the_contract_version_is_pinned_to_the_files_that_define_the_scripted_inputs()
         hash.update(u64::try_from(bytes.len()).unwrap().to_le_bytes());
         hash.update(bytes);
     }
+    hash.update(format!(
+        "bios {DEFAULT_BIOS_VERSION:?} board {DEFAULT_BOARD:?} microcode {DEFAULT_MICROCODE:?} boost {DEFAULT_BOOST_LIMIT_MHZ}"
+    ));
     let digest = hash
         .finalize()
         .iter()

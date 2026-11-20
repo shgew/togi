@@ -95,6 +95,12 @@ pub(crate) fn execute(case: ScriptedCase, persistence: &Persistence) -> Result<(
             ScriptedCase::ProfilePlacement | ScriptedCase::NoNonzeroWork => false,
         },
     )?;
+    night_milestones(case, &events)?;
+    at_stock(&sim)
+}
+
+/// What the journal of a case that runs one scripted night must show once it ends.
+pub(crate) fn night_milestones(case: ScriptedCase, events: &[Event]) -> Result<(), Error> {
     match case {
         ScriptedCase::MappingStop => {
             require(events.iter().any(|event| matches!(&event.payload, Payload::TrialEnd(end)
@@ -102,15 +108,20 @@ pub(crate) fn execute(case: ScriptedCase, persistence: &Persistence) -> Result<(
                     matches!(&event.payload, Payload::ExposureObserved(witness)
                         if witness.class.regime == Regime::R2 && witness.outcome == Outcome::Pass && witness.eligible_s > 0)),
                 "credited R2 work and a nonzero computation error")?;
+            shutdown(events, ShutdownReason::Signal)
         }
         ScriptedCase::MceResume => {
             require(
-                machine_check_attributed(&events),
+                machine_check_attributed(events),
                 "a sync-flood crash citing an uncorrected load/store machine check from a CPU of the interrupted trial",
             )?;
-            resumed_after(&events, ResetKind::SyncFlood)?;
+            resumed_after(events, ResetKind::SyncFlood)?;
+            shutdown(events, ShutdownReason::Signal)
         }
-        ScriptedCase::PowerButtonReset => resumed_after(&events, ResetKind::PowerButton)?,
+        ScriptedCase::PowerButtonReset => {
+            resumed_after(events, ResetKind::PowerButton)?;
+            shutdown(events, ShutdownReason::Signal)
+        }
         ScriptedCase::NoNonzeroWork => {
             require(
                 events.iter().any(|event| {
@@ -119,13 +130,10 @@ pub(crate) fn execute(case: ScriptedCase, persistence: &Persistence) -> Result<(
                 }),
                 "a no-evidence dead end",
             )?;
-            shutdown(&events, ShutdownReason::DeadEnd)?;
-            return at_stock(&sim);
+            shutdown(events, ShutdownReason::DeadEnd)
         }
-        ScriptedCase::ProfilePlacement => return Err(Error::Milestone("a night-only script")),
+        ScriptedCase::ProfilePlacement => Err(Error::Milestone("a night-only script")),
     }
-    shutdown(&events, ShutdownReason::Signal)?;
-    at_stock(&sim)
 }
 
 fn mapping_outcome(spec: &TrialSpec, offsets: &[TargetOffset]) -> TrialOutcome {
@@ -212,9 +220,9 @@ fn profile_and_placement(events: &[Event]) -> bool {
     })
 }
 
-/// Whether a detected sync-flood crash cites an uncorrected load/store machine check from a CPU of the trial it
-/// interrupted.
-pub(crate) fn machine_check_attributed(events: &[Event]) -> bool {
+/// Whether a detected sync-flood crash cites an uncorrected load/store machine check, recorded from the crashed boot
+/// or retained into the boot that detected the crash, from a CPU of the trial it interrupted.
+fn machine_check_attributed(events: &[Event]) -> bool {
     events.iter().any(|crash| {
         let Payload::CrashDetected(detected) = &crash.payload else {
             return false;
@@ -252,7 +260,8 @@ pub(crate) fn machine_check_attributed(events: &[Event]) -> bool {
                 if crash.cause.contains(&event.seq)
                     && !mce.corrected
                     && mce.bank_type == BankType::LoadStore
-                    && cpus.contains(&mce.cpu))
+                    && cpus.contains(&mce.cpu)
+                    && mce.from_boot.as_ref().is_some_and(|from| *from == detected.previous_boot || *from == crash.boot))
         })
     })
 }
