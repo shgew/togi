@@ -144,7 +144,6 @@ fn control(ctx: &mut Context<'_>, request: &Request, command: &str, message: &st
             Reply::Questions { .. }
             | Reply::State { .. }
             | Reply::Answered
-            | Reply::Recorded { .. }
             | Reply::Reapplied
             | Reply::Refused { .. },
         ) => exit_with(ctx, command, "unexpected day service reply", Exit::Error),

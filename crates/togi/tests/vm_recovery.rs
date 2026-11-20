@@ -836,10 +836,6 @@ mod vm_recovery {
             self.0.answer()
         }
 
-        fn prompt_line(&self) -> io::Result<Option<String>> {
-            self.0.prompt_line()
-        }
-
         fn stderr_facts(&self) -> OutputFacts {
             self.0.stderr_facts()
         }

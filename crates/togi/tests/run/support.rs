@@ -602,10 +602,6 @@ impl System for Fake {
         Err(io::Error::other("test host has no terminal answer"))
     }
 
-    fn prompt_line(&self) -> io::Result<Option<String>> {
-        Err(io::Error::other("test host has no terminal input"))
-    }
-
     fn day_observer<'lock>(
         &self,
         _: &'lock HostLock,
