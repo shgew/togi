@@ -243,19 +243,30 @@ fn mixed_registers_are_restored_on_each_boot(topology: ScriptedTopology, count: 
     let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, |_, _| TrialOutcome::Pass)
         .with_boot_offsets(|core| offset(-5 - i64::from(core.get())));
     let mut rig = rig_with(inputs);
-    assert_eq!(
-        rig.machine.host.topology().unwrap().len(),
-        usize::try_from(count).unwrap()
-    );
+    let Ok(detected) = rig.machine.host.topology() else {
+        panic!("missing scripted topology");
+    };
+    assert_eq!(usize::try_from(count), Ok(detected.len()));
     let expected: Vec<_> = (0..count)
         .map(|core| offset(-5 - core).observed())
         .collect();
-    let before: Vec<_> = (0..count).map(|core| rig.read(core).unwrap()).collect();
-    assert_eq!(before, expected);
-    rig.set_all(-2).unwrap();
-    rig.sim.reboot().unwrap();
-    let after: Vec<_> = (0..count).map(|core| rig.read(core).unwrap()).collect();
-    assert_eq!(after, expected);
+    for (id, &value) in (0..count).zip(&expected) {
+        assert!(
+            matches!(rig.read(id), Ok(actual) if actual == value),
+            "initial register {id}"
+        );
+    }
+    assert!(rig.set_all(-2).is_ok(), "change the initial registers");
+    assert!(
+        rig.sim.reboot().is_ok(),
+        "reboot with mixed stock registers"
+    );
+    for (id, &value) in (0..count).zip(&expected) {
+        assert!(
+            matches!(rig.read(id), Ok(actual) if actual == value),
+            "reset register {id}"
+        );
+    }
 }
 
 #[test_case(ReportedFailure::ComputationError, Signal::ComputationError; "computation error")]
@@ -279,15 +290,17 @@ fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
     let mut rig = rig(ScriptedTopology::TwoCores, script);
     let boot = rig.boot();
     let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
-    let crash = result.unwrap_err();
+    let Err(crash) = result else {
+        panic!("reported failure was not followed by a reset");
+    };
     assert!(matches!(crash.error, Error::Crashed));
     assert_eq!(crash.value.ran, AFTER);
     assert_eq!(report.signals, [(core(0), expected)]);
-    rig.sim.reboot().unwrap();
-    assert_eq!(
-        rig.machine.kernel.reset_reason_after(&boot).unwrap().kind,
-        Some(ResetKind::Watchdog)
-    );
+    assert!(rig.sim.reboot().is_ok(), "boot after the reset");
+    assert!(matches!(
+        rig.machine.kernel.reset_reason_after(&boot),
+        Ok(reason) if reason.kind == Some(ResetKind::Watchdog)
+    ));
 }
 
 #[test]
@@ -334,17 +347,28 @@ fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
     });
     let before = rig.boot();
     let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
-    assert!(matches!(result.unwrap_err().error, Error::Crashed));
+    assert!(matches!(
+        result.expect_err("in-flight reset").error,
+        Error::Crashed
+    ));
     assert!(report.signals.is_empty());
-    let sim = Simulator::restore(rig.sim.source(), rig.sim.persisted()).unwrap();
-    sim.reboot().unwrap();
+    let sim =
+        Simulator::restore(rig.sim.source(), rig.sim.persisted()).expect("restore before reboot");
+    sim.reboot().expect("boot with pending kernel evidence");
     let mut machine = sim.seams();
-    let current = machine.host.boot_id().unwrap();
+    let current = machine.host.boot_id().expect("successor boot");
     assert_eq!(
-        machine.kernel.reset_reason_after(&before).unwrap().kind,
+        machine
+            .kernel
+            .reset_reason_after(&before)
+            .expect("successor reset reason")
+            .kind,
         Some(ResetKind::Watchdog)
     );
-    let evidence = machine.kernel.mces(&current, Duration::ZERO).unwrap();
+    let evidence = machine
+        .kernel
+        .mces(&current, Duration::ZERO)
+        .expect("successor kernel evidence");
     let [check] = evidence.as_slice() else {
         panic!("expected a check in the successor boot: {evidence:?}")
     };
@@ -364,7 +388,9 @@ fn a_backend_failure_ends_the_trial_without_resetting(
     let boot = rig.boot();
     let result = rig.pass(basic(Regime::R2, &[0], DURATION));
     assert_eq!(result.ran, AFTER);
-    let failure = result.failure.unwrap();
+    let Some(failure) = result.failure else {
+        panic!("missing in-process backend failure");
+    };
     assert_eq!((failure.core, failure.signal), (core(0), signal));
     assert_eq!(rig.boot(), boot);
 }
@@ -382,11 +408,20 @@ fn voltage_samples_keep_the_written_lanes_after_snapshot_restoration() {
     );
     let mut rig = rig_with(inputs);
     rig.pass(basic(Regime::R2, &[8], DURATION));
-    let restored = Simulator::restore(rig.sim.source(), rig.sim.persisted()).unwrap();
+    let restored =
+        Simulator::restore(rig.sim.source(), rig.sim.persisted()).expect("restore sampled machine");
     let mut machine = restored.seams();
-    let sample = machine.trials.samples("0001").next().unwrap().unwrap();
+    let sample = machine
+        .trials
+        .samples("0001")
+        .next()
+        .expect("recorded trial sample")
+        .expect("readable trial sample");
     assert_eq!(
-        sample.pm_table.unwrap().voltage_request_v,
+        sample
+            .pm_table
+            .expect("voltage requests in PM table")
+            .voltage_request_v,
         SAMPLES.requests_v
     );
     assert_eq!(
@@ -398,7 +433,7 @@ fn voltage_samples_keep_the_written_lanes_after_snapshot_restoration() {
         .preflight()
         .into_iter()
         .find(|check| check.name == "pm_table")
-        .unwrap();
+        .expect("the PM table preflight check");
     assert!(lanes.ok);
     assert_eq!(
         lanes.detail,

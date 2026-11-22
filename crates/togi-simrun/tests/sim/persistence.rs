@@ -176,26 +176,24 @@ fn assert_stratum(stratum: Stratum, records: &[Event]) {
     let mut voltage_ends = 0;
     let mut failures = Vec::new();
     for event in records {
-        match &event.payload {
-            Payload::ConfigLoaded(_) => boots += 1,
-            Payload::CrashDetected(crash) => {
-                assert_eq!(crash.reset_reason, Some(ResetKind::Watchdog));
-                assert!(crash.in_flight.is_some());
-                crashes += 1;
+        if let Payload::ConfigLoaded(_) = &event.payload {
+            boots += 1;
+        } else if let Payload::CrashDetected(crash) = &event.payload {
+            assert_eq!(crash.reset_reason, Some(ResetKind::Watchdog));
+            assert!(crash.in_flight.is_some());
+            crashes += 1;
+        } else if let Payload::Mce(mce) = &event.payload
+            && mce.corrected
+        {
+            assert_eq!(mce.core, Some(core(8)));
+            corrected += 1;
+        } else if let Payload::TrialEnd(end) = &event.payload {
+            if let Some(signal) = end.signal {
+                failures.push((signal, end.core));
             }
-            Payload::Mce(mce) if mce.corrected => {
-                assert_eq!(mce.core, Some(core(8)));
-                corrected += 1;
+            if end.voltage_request_median_v.is_some() && !end.voltage_requests_v.is_empty() {
+                voltage_ends += 1;
             }
-            Payload::TrialEnd(end) => {
-                if let Some(signal) = end.signal {
-                    failures.push((signal, end.core));
-                }
-                if end.voltage_request_median_v.is_some() && !end.voltage_requests_v.is_empty() {
-                    voltage_ends += 1;
-                }
-            }
-            _ => {}
         }
     }
     match stratum {

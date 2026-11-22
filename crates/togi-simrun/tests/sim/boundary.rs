@@ -67,7 +67,7 @@ fn torn_bench() -> Bench {
     let mut bytes = first.fs.contents(&path).unwrap();
     bytes.extend_from_slice(b"{\"seq\":99999,\"tim");
     first.fs.put(&path, bytes);
-    first.from_history(1)
+    first.reopened(1)
 }
 
 #[test]

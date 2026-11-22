@@ -162,7 +162,7 @@ impl Bench {
     }
 
     /// A fresh simulated process on the same machine, starting from the journal's recorded history.
-    pub(crate) fn from_history(&self, seed: u64) -> Self {
+    pub(crate) fn reopened(&self, seed: u64) -> Self {
         let history = togi_simrun::history_in(&self.dir()).unwrap();
         Self {
             sim: Simulator::start(self.sim.source(), seed, history).unwrap(),
@@ -198,7 +198,7 @@ impl Bench {
             sim: self.sim.clone(),
             fs: copy,
         }
-        .from_history(seed)
+        .reopened(seed)
     }
 }
 

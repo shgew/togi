@@ -113,13 +113,13 @@ fn a_changed_firmware_is_attested_again_and_an_unchanged_one_is_not() {
     input.stop_at = Some(first.sim.now() + night);
     finish(input);
 
-    let second = first.from_history(1);
+    let second = first.reopened(1);
     let mut input = second.input();
     input.stop_at = Some(second.sim.now() + night);
     finish(input);
     assert_eq!(attestations(&second.events()).len(), 1);
 
-    let third = second.from_history(1);
+    let third = second.reopened(1);
     let recorded = third.sim.seams().host.bios_context().unwrap();
     let changed = BiosContext {
         bios_version: "SIM.2".to_owned(),
@@ -177,7 +177,7 @@ fn an_operator_signal_ends_the_night_and_a_restart_opens_a_new_one() {
     let before = intents(&first.events()).len();
     assert!(before > 0);
 
-    let second = first.from_history(1);
+    let second = first.reopened(1);
     let mut input = second.input();
     input.stop_at = Some(second.sim.now() + SignedDuration::from_mins(20));
     let finished = finish(input);

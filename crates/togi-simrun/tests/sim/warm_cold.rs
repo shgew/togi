@@ -73,16 +73,22 @@ fn warm_equals_cold(stratum: Stratum, seed: u64) {
 
     let ends: Vec<_> = warm
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialEnd(end) => Some(end),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
         })
         .collect();
     let crashes: Vec<_> = warm
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CrashDetected(crash) => Some(crash),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(crash)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(crashes.len(), BOOTS as usize - 1);
@@ -103,14 +109,13 @@ fn warm_equals_cold(stratum: Stratum, seed: u64) {
         }
         Stratum::UnloadedMachineCheck => {
             assert_eq!(ends.len(), BOOTS as usize - 1);
-            let in_flight = crashes[0]
-                .in_flight
-                .expect("the first watchdog reset interrupts a trial");
-            let Payload::TrialIntent(intent) = &warm
+            let Some(in_flight) = crashes[0].in_flight else {
+                panic!("the first watchdog reset interrupts no trial");
+            };
+            let Some(Payload::TrialIntent(intent)) = warm
                 .iter()
                 .find(|event| event.seq == in_flight)
-                .unwrap()
-                .payload
+                .map(|event| &event.payload)
             else {
                 panic!("the in-flight intent is not a trial");
             };

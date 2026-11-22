@@ -69,7 +69,7 @@ fn a_resume_replays_what_the_earlier_run_recorded() {
     assert_eq!(finish(input).stop, Some(Stop::Signal));
     let before = first.events().len();
 
-    let second = first.from_history(1);
+    let second = first.reopened(1);
     let mut input = second.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     assert_eq!(finish(input).stop, Some(Stop::Signal));
