@@ -17,8 +17,9 @@ allow-print-in-tests = true
 # adapters; tests inject sync failures or record the ordering without flushing a drive.
 # Clippy resolves a path through a `pub use` re-export only from other crates; inside the
 # defining crate it needs the defining module's path, which other crates cannot see. A
-# re-exported entry is therefore listed under both paths, each with `allow-invalid`, and the
-# defining crate's own `#[expect]`ed calls are the negative controls of the defining path.
+# re-exported entry is therefore listed under both paths, each with `allow-invalid`. Where the
+# defining crate itself makes an approved call, its `#[expect]` fails the lint if the defining
+# path stops matching; other defining paths have no such control.
 disallowed-methods = [
     { path = "std::fs::File::sync_all", reason = "Only production durability adapters sync files; tests and simulations use memory or unsynced storage" },
     { path = "std::fs::File::sync_data", reason = "Only production durability adapters sync file data; tests and simulations use memory or unsynced storage" },
