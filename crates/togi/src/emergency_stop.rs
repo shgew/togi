@@ -6,11 +6,9 @@ use std::sync::LazyLock;
 
 use clap::Args as ClapArgs;
 use togi_config::Config;
+use togi_hardware::emergency::{Failure, Recovery, stop_locked};
 use togi_hostlock::Error as LockError;
-use togi_machine::{
-    CancellationToken, CoreInfo, CoreSet, Error as MachineError, Machine, ObservedOffset,
-};
-use togi_session::{Readback, zero_and_read_back};
+use togi_machine::{Error as MachineError, ObservedOffset, Readback};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -26,140 +24,35 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Internal emergency recovery that stops leftover trials and sets every core to offset 0
 ///
 /// Internal recovery for a togi process that died with trial workloads or Curve Optimizer offsets
-/// left behind; the tuning service runs it after an abnormal exit. It refuses outside Linux and
-/// without root, takes the host lock, validates the CPU, the SMU driver and the core
-/// topology, stops every stale togi trial scope and confirms none is left. Only then does it write
-/// 0 to every core and read every core back.
+/// left behind; the services run it after an abnormal exit. It requires Linux and root. It tries
+/// to take the host lock, validates the CPU, the SMU driver and the core topology, stops every
+/// stale togi trial scope and confirms none is left. Only then does it write 0 to every core
+/// and read every core back.
 ///
-/// It only ever writes 0: it takes no offsets and no configuration, and neither reads nor appends
-/// to the journal. Offsets stay as they were when another togi process holds the host lock, when
-/// validation fails, when a stale trial scope cannot be stopped or when the core slots cannot be
-/// mapped. Exit status 0 means every core read back 0; 3, that the host lock is busy; 1, anything
-/// else, with the cause on stderr.
+/// It accepts no offset or configuration and never opens the session journal. A foreign-owned
+/// or nonregular lock entry (including a symlink) does not prevent this zero-only recovery.
+/// Exit status 0 means every core read back 0 under the lock; 4 means every core read back 0
+/// but exclusion from another writer was not proven. A busy lock still leaves offsets unchanged
+/// and exits 3. A failed validation or slot mapping or an unconfirmed sweep still blocks zeroing.
+/// Other refusals and failures exit 1, with the cause on stderr.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {}
 
 const COMMAND: &str = "emergency-stop";
 
-/// What a completed stop did.
-#[derive(Debug, Eq, PartialEq)]
-pub struct Recovered {
-    /// What the sweep of the stale trial scopes found.
-    pub swept: String,
-    /// How many cores were written 0 and read back 0.
-    pub cores: usize,
-}
-
-/// A step before the first write that could not be confirmed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Step {
-    Topology,
-    Validation,
-    Sweep,
-}
-
-impl fmt::Display for Step {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Topology => "read the core topology",
-            Self::Validation => "validate the SMU interface",
-            Self::Sweep => "stop the stale trial scopes",
-        })
-    }
-}
-
-/// Why a stop did not end with every core read back 0.
 #[derive(Debug, thiserror::Error)]
-pub enum Failure {
-    /// `step` failed, so no offset was written.
-    #[error("{step}")]
-    Withheld {
-        step: Step,
-        #[source]
-        error: MachineError,
-    },
-    /// The write of 0, when `zero` holds its failure, or a readback did not confirm `missing` of `cores` at 0.
-    #[error("{missing} of {cores} cores did not read back 0")]
-    NotZero {
-        missing: usize,
-        cores: usize,
-        #[source]
-        zero: Option<ZeroFailed>,
-    },
+#[error("{missing} of {cores} cores did not read back 0")]
+struct Unconfirmed {
+    missing: usize,
+    cores: usize,
+    #[source]
+    zero: Option<ZeroFailed>,
 }
 
-/// The write of 0 to every core failed.
 #[derive(Debug, thiserror::Error)]
 #[error("set every core to 0")]
-pub struct ZeroFailed(#[source] pub MachineError);
-
-/// Stops what a dead togi left running, then sets every core to 0 and reads each back.
-///
-/// The order is the gate of the session's emergency: the topology and the validated SMU interface
-/// come first, the sweep of the stale trial scopes proves no workload runs, and only the proofs of
-/// both let the zero-only write through. Every step before the write that fails leaves the SMU
-/// as it was. Progress and every core's readback go to `report`; a failed report write changes
-/// nothing, since the zeroing matters more than its log.
-///
-/// # Errors
-///
-/// [`Failure::Withheld`] before any write; [`Failure::NotZero`] once the write was made but a
-/// core did not read back 0 or could not be read.
-pub fn stop(machine: &mut Machine, report: &mut dyn Write) -> Result<Recovered, Failure> {
-    let topology = machine.host.topology().map_err(withheld(Step::Topology))?;
-    let total = topology.len();
-    let cores = core_set(&topology).map_err(withheld(Step::Topology))?;
-    let validated = machine
-        .host
-        .validate_smu()
-        .map_err(withheld(Step::Validation))?;
-    let swept = machine
-        .trials
-        .sweep(&CancellationToken::new())
-        .map_err(withheld(Step::Sweep))?;
-    say(report, format_args!("trial scopes: {}", swept.detail));
-    let zeroed = zero_and_read_back(&mut *machine.smu, validated, &swept.stopped, cores);
-    for readback in &zeroed.readbacks {
-        say(report, readback_line(readback));
-    }
-    if zeroed.is_clean() {
-        Ok(Recovered {
-            swept: swept.detail,
-            cores: zeroed.readbacks.len(),
-        })
-    } else {
-        let confirmed = zeroed
-            .readbacks
-            .iter()
-            .filter(|readback| at_zero(readback))
-            .count();
-        Err(Failure::NotZero {
-            missing: total - confirmed,
-            cores: total,
-            zero: zeroed.zero.err().map(ZeroFailed),
-        })
-    }
-}
-
-fn withheld(step: Step) -> impl FnOnce(MachineError) -> Failure {
-    move |error| Failure::Withheld { step, error }
-}
-
-/// The cores of the topology, or why it cannot be trusted: a machine without cores has nothing to
-/// confirm at 0.
-fn core_set(topology: &[CoreInfo]) -> Result<CoreSet, MachineError> {
-    if topology.is_empty() {
-        return Err(MachineError::Other(
-            "the topology lists no core to zero".into(),
-        ));
-    }
-    Ok(topology.iter().map(|info| info.core).collect())
-}
-
-fn at_zero(readback: &Readback) -> bool {
-    matches!(readback.result, Ok(ObservedOffset(0)))
-}
+struct ZeroFailed(#[source] MachineError);
 
 fn readback_line(readback: &Readback) -> String {
     match &readback.result {
@@ -177,7 +70,7 @@ fn say(report: &mut dyn Write, line: impl fmt::Display) {
     let _ = writeln!(report, "togi {COMMAND}: {line}");
 }
 
-/// Stops the stale trials and zeroes every core under the host lock; see [`stop`].
+/// Stops stale trials and zeroes every core without opening the session journal.
 pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
     if let Err(error) = system.check_platform() {
@@ -190,8 +83,28 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             "needs root to write the SMU; offsets unchanged",
         );
     }
-    let lock = match system.acquire_host_lock() {
-        Ok(lock) => lock,
+    let (recovery, success) = match system.acquire_host_lock() {
+        Ok(lock) => {
+            let result = system
+                .open_machine(&Config::default(), ctx.state_dir, &lock)
+                .map_err(Failure::from)
+                .and_then(|mut machine| {
+                    stop_locked(&mut machine, |detail| {
+                        say(ctx.err, format_args!("trial scopes: {detail}"));
+                    })
+                });
+            (result, Exit::Ok)
+        }
+        Err(LockError::RefusedEntry(refused)) => {
+            say(
+                ctx.err,
+                format_args!("{refused}; attempting zero-only recovery without the lock"),
+            );
+            let result = system.recover_without_exclusion(&refused, ctx.state_dir, &mut |detail| {
+                say(ctx.err, format_args!("trial scopes: {detail}"));
+            });
+            (result, Exit::ZeroedWithoutExclusion)
+        }
         Err(error @ LockError::Busy { .. }) => {
             return exit_with(
                 ctx,
@@ -200,6 +113,21 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
                 Exit::Locked,
             );
         }
+        Err(
+            error @ (LockError::NotProvisioned { .. }
+            | LockError::UnsafeDirectory { .. }
+            | LockError::UnsafeLock { .. }
+            | LockError::Io { .. }),
+        ) => {
+            return fail(
+                ctx,
+                COMMAND,
+                format!("{}; offsets unchanged", togi_render::error_chain(&error)),
+            );
+        }
+    };
+    let Recovery { cores, zeroed } = match recovery {
+        Ok(recovered) => recovered,
         Err(error) => {
             return fail(
                 ctx,
@@ -208,31 +136,31 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             );
         }
     };
-    let mut machine = match system.open_machine(&Config::default(), ctx.state_dir, &lock) {
-        Ok(machine) => machine,
-        Err(error) => {
-            return fail(
-                ctx,
-                COMMAND,
-                format!("{}; offsets unchanged", togi_render::error_chain(&error)),
-            );
-        }
-    };
-    match stop(&mut machine, &mut *ctx.err) {
-        Ok(recovered) => {
-            say(
-                &mut *ctx.err,
-                format_args!("every core read back 0 ({} cores)", recovered.cores),
-            );
-            Exit::Ok
-        }
-        Err(failure @ Failure::Withheld { .. }) => fail(
-            ctx,
-            COMMAND,
-            format!("{}; offsets unchanged", togi_render::error_chain(&failure)),
-        ),
-        Err(failure @ Failure::NotZero { .. }) => {
-            fail(ctx, COMMAND, togi_render::error_chain(&failure))
-        }
+    for readback in &zeroed.readbacks {
+        say(ctx.err, readback_line(readback));
     }
+    if !zeroed.is_clean() {
+        let unconfirmed = Unconfirmed {
+            missing: cores
+                - zeroed
+                    .readbacks
+                    .iter()
+                    .filter(|readback| readback.is_zero())
+                    .count(),
+            cores,
+            zero: zeroed.zero.err().map(ZeroFailed),
+        };
+        return fail(ctx, COMMAND, togi_render::error_chain(&unconfirmed));
+    }
+    let assurance = if success == Exit::ZeroedWithoutExclusion {
+        "; exclusion from another writer was not proven"
+    } else {
+        ""
+    };
+    exit_with(
+        ctx,
+        COMMAND,
+        format!("every core read back 0 ({cores} cores){assurance}"),
+        success,
+    )
 }

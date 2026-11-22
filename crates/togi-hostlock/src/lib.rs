@@ -17,11 +17,11 @@ use std::io;
 use std::os::fd::OwnedFd;
 use std::path::{Component, Path, PathBuf};
 
-use rustix::fs::{CWD, FileType, Mode, OFlags, fchmod, fstat, openat};
+use rustix::fs::{AtFlags, CWD, FileType, Mode, OFlags, Stat, fchmod, fstat, openat, statat};
 use rustix::io::Errno;
 use rustix::process::geteuid;
 
-pub use error::{DirectoryProblem, Error, LockProblem, Operation};
+pub use error::{DirectoryProblem, Error, LockProblem, Operation, RefusedEntry};
 use policy::{Access, LockFacts, Mend, Place, directory_problem, lock_verdict};
 
 #[cfg(target_os = "linux")]
@@ -154,11 +154,24 @@ fn open_lock(
     let base = OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
     let open = |flags: OFlags| openat(directory, name, base | flags, Mode::empty());
     let open_error = |errno| match errno {
-        Errno::ISDIR | Errno::LOOP => Error::UnsafeLock {
-            path: path.to_owned(),
-            problem: LockProblem::NotRegularFile,
-        },
-        errno => io_error(path, Operation::Open, errno),
+        Errno::ISDIR | Errno::LOOP => Error::unsafe_lock(path, policy, LockProblem::NotRegularFile),
+        errno => {
+            // Some entries, such as sockets, cannot be opened for fstat. Inspect the entry
+            // without following it. This check can only refuse, never authorize a lock.
+            if policy == Policy::Host
+                && let Ok(stat) = statat(directory, name, AtFlags::SYMLINK_NOFOLLOW)
+                && let Err(problem @ (LockProblem::NotRegularFile | LockProblem::ForeignOwner)) =
+                    lock_verdict(
+                        lock_facts(stat),
+                        geteuid().as_raw(),
+                        policy,
+                        Access::ReadOnly,
+                    )
+            {
+                return Error::unsafe_lock(path, policy, problem);
+            }
+            io_error(path, Operation::Open, errno)
+        }
     };
     let read_write = match open(OFlags::RDWR) {
         Err(Errno::NOENT) => {
@@ -191,20 +204,20 @@ fn open_lock(
 
 fn secure_lock(file: &File, path: &Path, policy: Policy, access: Access) -> Result<(), Error> {
     let stat = fstat(file).map_err(|errno| io_error(path, Operation::Stat, errno))?;
-    let facts = LockFacts {
+    match lock_verdict(lock_facts(stat), geteuid().as_raw(), policy, access) {
+        Ok(Mend::Keep) => Ok(()),
+        Ok(Mend::Restrict) => fchmod(file, Mode::RUSR | Mode::WUSR)
+            .map_err(|errno| io_error(path, Operation::Chmod, errno)),
+        Err(problem) => Err(Error::unsafe_lock(path, policy, problem)),
+    }
+}
+
+fn lock_facts(stat: Stat) -> LockFacts {
+    LockFacts {
         file_type: FileType::from_raw_mode(stat.st_mode),
         single_link: stat.st_nlink == 1,
         owner: stat.st_uid,
         mode: Mode::from_raw_mode(stat.st_mode),
-    };
-    match lock_verdict(facts, geteuid().as_raw(), policy, access) {
-        Ok(Mend::Keep) => Ok(()),
-        Ok(Mend::Restrict) => fchmod(file, Mode::RUSR | Mode::WUSR)
-            .map_err(|errno| io_error(path, Operation::Chmod, errno)),
-        Err(problem) => Err(Error::UnsafeLock {
-            path: path.to_owned(),
-            problem,
-        }),
     }
 }
 

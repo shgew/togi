@@ -12,7 +12,8 @@ use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::fs::{self, Permissions};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-use std::path::PathBuf;
+use std::os::unix::net::UnixListener;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use support::{Host, Ran};
@@ -162,6 +163,16 @@ impl Rig {
         Self::build(false, false)
     }
 
+    fn real_lock(policy: Policy) -> Self {
+        let mut rig = Self::new();
+        let mut host = Host::real();
+        host.lock_policy = policy;
+        *host.machine.borrow_mut() = rig.host.machine.borrow_mut().take();
+        rig.state = host.lock.with_file_name("state");
+        rig.host = host;
+        rig
+    }
+
     fn build(sweep_fails: bool, no_cores: bool) -> Self {
         let host = Host::new();
         let sim = simulator();
@@ -239,13 +250,23 @@ impl Rig {
         );
     }
 
-    fn assert_swept_and_zeroed(&self, ran: &Ran) {
-        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    fn assert_swept_and_zeroed(&self, ran: &Ran, refusal: Option<&str>) {
+        let (exit, prefix, suffix) = match refusal {
+            Some(refusal) => (
+                Exit::ZeroedWithoutExclusion,
+                format!(
+                    "togi emergency-stop: {refusal}; attempting zero-only recovery without the lock\n"
+                ),
+                "; exclusion from another writer was not proven",
+            ),
+            None => (Exit::Ok, String::new(), ""),
+        };
+        assert_eq!(ran.exit, exit, "{}", ran.err);
         assert_eq!(ran.out, "");
         assert_eq!(
             ran.err,
             format!(
-                "togi emergency-stop: trial scopes: simulated machine has no leftover trial scopes\n{}togi emergency-stop: every core read back 0 (16 cores)\n",
+                "{prefix}togi emergency-stop: trial scopes: simulated machine has no leftover trial scopes\n{}togi emergency-stop: every core read back 0 (16 cores){suffix}\n",
                 readbacks(|number| format!("core {number:02} read back 0")),
             )
         );
@@ -271,18 +292,71 @@ fn readbacks(text: impl Fn(u8) -> String) -> String {
 #[test]
 fn a_stop_sweeps_then_zeroes_every_core_and_reads_each_back() {
     let rig = Rig::new();
-    rig.assert_swept_and_zeroed(&rig.run());
+    rig.assert_swept_and_zeroed(&rig.run(), None);
+}
+
+#[derive(Clone, Copy)]
+enum Refused {
+    ForeignFile,
+    Symlink,
+    Socket,
+}
+
+impl Refused {
+    fn install(self, path: &Path) -> &'static str {
+        match self {
+            Self::ForeignFile => {
+                fs::write(path, "unchanged").unwrap();
+                fs::set_permissions(path, Permissions::from_mode(0o600)).unwrap();
+                if rustix::process::geteuid().is_root() {
+                    rustix::fs::chown(path, Some(rustix::process::Uid::from_raw(65534)), None)
+                        .unwrap();
+                }
+                "is owned by another user"
+            }
+            Self::Symlink => {
+                std::os::unix::fs::symlink("absent", path).unwrap();
+                "is not a regular file"
+            }
+            Self::Socket => {
+                let _listener = UnixListener::bind(path).unwrap();
+                "is not a regular file"
+            }
+        }
+    }
+}
+
+#[test_case::test_case(Refused::ForeignFile; "foreign owner")]
+#[test_case::test_case(Refused::Symlink; "symlink")]
+#[test_case::test_case(Refused::Socket; "special file")]
+fn real_fs_only_emergency_stop_zeroes_and_reads_back_when_the_lock_entry_is_refused(
+    refused: Refused,
+) {
+    let rig = Rig::real_lock(Policy::Host);
+    let path = &rig.host.lock;
+    let problem = refused.install(path);
+    let before = fs::symlink_metadata(path).unwrap();
+
+    let reset = rig.host.run(&rig.state, &["reset", "--all"]);
+    assert_eq!(reset.exit, Exit::Error, "{}", reset.err);
+    let refusal = format!("host lock {} {problem}", path.display());
+    assert_eq!(reset.err, format!("togi reset: {refusal}\n"));
+    assert!(rig.unopened());
+    assert_eq!(rig.ops(), Vec::<String>::new());
+    assert!(!rig.host.exists(&rig.state));
+
+    rig.assert_swept_and_zeroed(&rig.run(), Some(&refusal));
+    let after = fs::symlink_metadata(path).unwrap();
+    assert_eq!(
+        (after.dev(), after.ino(), after.mode(), after.uid()),
+        (before.dev(), before.ino(), before.mode(), before.uid())
+    );
 }
 
 #[test_case::test_case(None; "missing lock")]
 #[test_case::test_case(Some(0o644); "legacy lock")]
 fn real_fs_emergency_stop_recovers_missing_or_legacy_host_locks_as_root(mode: Option<u32>) {
-    let mut rig = Rig::new();
-    let mut host = Host::real();
-    host.lock_policy = Policy::Host;
-    *host.machine.borrow_mut() = rig.host.machine.borrow_mut().take();
-    rig.state = host.lock.with_file_name("state");
-    rig.host = host;
+    let rig = Rig::real_lock(Policy::Host);
     let path = &rig.host.lock;
     fs::set_permissions(path.parent().unwrap(), Permissions::from_mode(0o700)).unwrap();
     let before = mode.map(|mode| {
@@ -295,7 +369,7 @@ fn real_fs_emergency_stop_recovers_missing_or_legacy_host_locks_as_root(mode: Op
     let ran = rig.run();
     assert_eq!(rig.host.lock_acquisitions.get(), 1);
     if rustix::process::geteuid().is_root() {
-        rig.assert_swept_and_zeroed(&ran);
+        rig.assert_swept_and_zeroed(&ran, None);
         let meta = fs::symlink_metadata(path).unwrap();
         assert!(meta.is_file());
         assert_eq!(meta.uid(), 0);
@@ -305,25 +379,28 @@ fn real_fs_emergency_stop_recovers_missing_or_legacy_host_locks_as_root(mode: Op
             assert_eq!((meta.dev(), meta.ino()), identity);
             assert_eq!(fs::read_to_string(path).unwrap(), "retained");
         }
+    } else if let Some(mode) = mode {
+        // Simulating the command's root check does not change the kernel's file owner.
+        // This is a foreign entry, not a root-owned file that the policy can tighten.
+        let meta = fs::symlink_metadata(path).unwrap();
+        assert_eq!(Some((meta.dev(), meta.ino())), before);
+        assert_eq!(meta.mode() & 0o7777, mode);
+        assert_eq!(fs::read_to_string(path).unwrap(), "retained");
+        rig.assert_swept_and_zeroed(
+            &ran,
+            Some(&format!(
+                "host lock {} is owned by another user",
+                path.display()
+            )),
+        );
     } else {
-        // This test's simulated root does not grant the process filesystem privileges.
-        // The installed binary's success at this acquisition is also covered in the VM.
         assert_eq!(ran.exit, Exit::Error);
         assert_eq!(ran.out, "");
-        let problem = if let Some(mode) = mode {
-            let meta = fs::symlink_metadata(path).unwrap();
-            assert_eq!(Some((meta.dev(), meta.ino())), before);
-            assert_eq!(meta.mode() & 0o7777, mode);
-            assert_eq!(fs::read_to_string(path).unwrap(), "retained");
-            "is owned by another user"
-        } else {
-            assert!(!path.exists());
-            "does not exist and only root may create it"
-        };
+        assert!(!path.exists());
         assert_eq!(
             ran.err,
             format!(
-                "togi emergency-stop: host lock {} {problem}; offsets unchanged\n",
+                "togi emergency-stop: host lock {} does not exist and only root may create it; offsets unchanged\n",
                 path.display()
             )
         );
@@ -455,11 +532,7 @@ fn a_host_lock_that_cannot_be_opened_exits_1_with_its_cause_before_the_machine_i
 
 #[test]
 fn real_fs_an_unsafe_host_lock_exits_1_before_the_machine_is_opened() {
-    let mut rig = Rig::new();
-    let host = Host::real();
-    *host.machine.borrow_mut() = rig.host.machine.borrow_mut().take();
-    rig.state = host.lock.with_file_name("state");
-    rig.host = host;
+    let rig = Rig::real_lock(Policy::Host);
     let directory = rig.host.lock.parent().unwrap();
     fs::set_permissions(directory, Permissions::from_mode(0o777)).unwrap();
     let resolved = fs::canonicalize(directory).unwrap();
@@ -476,6 +549,28 @@ fn real_fs_an_unsafe_host_lock_exits_1_before_the_machine_is_opened() {
         )
     );
     assert!(!rig.host.lock.exists(), "the lock was taken");
+    assert!(rig.unopened());
+    assert_eq!(rig.ops(), Vec::<String>::new());
+    rig.assert_untouched();
+}
+
+#[test]
+fn real_fs_a_multiply_linked_lock_does_not_authorize_zeroing_without_exclusion() {
+    let rig = Rig::real_lock(Policy::Host);
+    let target = rig.host.lock.with_file_name("target");
+    fs::write(&target, "unchanged").unwrap();
+    fs::hard_link(&target, &rig.host.lock).unwrap();
+
+    let ran = rig.run();
+    assert_eq!(ran.exit, Exit::Error);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi emergency-stop: host lock {} has more than one link; offsets unchanged\n",
+            rig.host.lock.display()
+        )
+    );
     assert!(rig.unopened());
     assert_eq!(rig.ops(), Vec::<String>::new());
     rig.assert_untouched();

@@ -19,6 +19,8 @@ pub enum Exit {
     Usage,
     /// The host lock or the journal is held by another writer.
     Locked,
+    /// Emergency stop read back 0 on every core, but could not prove exclusion.
+    ZeroedWithoutExclusion,
     /// Dead end `failure_at_zero`.
     FailureAtZero,
     /// Dead end `smu`.
@@ -51,6 +53,7 @@ impl Exit {
             Self::Error => 1,
             Self::Usage => 2,
             Self::Locked => 3,
+            Self::ZeroedWithoutExclusion => 4,
             Self::FailureAtZero => 10,
             Self::Smu => 11,
             Self::NoEvidence => 12,

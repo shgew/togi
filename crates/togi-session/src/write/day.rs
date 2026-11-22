@@ -13,11 +13,10 @@ use togi_journal::{
 };
 use togi_machine::{
     CcdProfileError, Clock, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore, Smu, SmuValidated,
-    Stopped, TargetOffset,
+    Stopped, TargetOffset, Zeroed, zero_and_read_back,
 };
 
 use super::{Hardware, Ledger, ProfileFailure, WriteFailure, apply, failed};
-use crate::emergency::{Zeroed, zero_and_read_back};
 use crate::error::{AppendFailure, JournalFailure};
 
 /// The profile a day wrote and read back.

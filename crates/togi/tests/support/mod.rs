@@ -568,6 +568,24 @@ impl System for Host {
             .expect("only run and emergency-stop open the machine, once, and the test stages it")
     }
 
+    fn recover_without_exclusion(
+        &self,
+        refused: &togi_hostlock::RefusedEntry,
+        _: &Path,
+        swept: &mut dyn FnMut(&str),
+    ) -> Result<togi_hardware::emergency::Recovery, togi_hardware::emergency::Failure> {
+        assert_eq!(refused.path(), self.lock);
+        self.steps
+            .borrow_mut()
+            .push("open zero-only emergency".into());
+        let mut machine = self
+            .machine
+            .borrow_mut()
+            .take()
+            .expect("the test stages the machine")?;
+        togi_hardware::emergency::stop_locked(&mut machine, swept)
+    }
+
     fn interactive(&self) -> bool {
         false
     }

@@ -356,6 +356,15 @@ impl System for Night {
         self.host.open_machine(config, state, lock)
     }
 
+    fn recover_without_exclusion(
+        &self,
+        refused: &togi_hostlock::RefusedEntry,
+        state: &Path,
+        swept: &mut dyn FnMut(&str),
+    ) -> Result<togi_hardware::emergency::Recovery, togi_hardware::emergency::Failure> {
+        self.host.recover_without_exclusion(refused, state, swept)
+    }
+
     fn interactive(&self) -> bool {
         self.host.interactive()
     }

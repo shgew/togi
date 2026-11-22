@@ -1,8 +1,10 @@
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rustix::fs::Mode;
+
+use crate::Policy;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -24,12 +26,51 @@ pub enum Error {
     },
     #[error("host lock {} {problem}", path.display())]
     UnsafeLock { path: PathBuf, problem: LockProblem },
+    #[error(transparent)]
+    RefusedEntry(RefusedEntry),
     #[error("{operation} host lock {}", path.display())]
     Io {
         path: PathBuf,
         operation: Operation,
         source: io::Error,
     },
+}
+
+impl Error {
+    pub(crate) fn unsafe_lock(path: &Path, policy: Policy, problem: LockProblem) -> Self {
+        let path = path.to_owned();
+        match (policy, problem) {
+            (Policy::Host, LockProblem::ForeignOwner | LockProblem::NotRegularFile) => {
+                Self::RefusedEntry(RefusedEntry { path, problem })
+            }
+            (
+                Policy::Host,
+                LockProblem::MultipleLinks
+                | LockProblem::LegacyModeNotOwner
+                | LockProblem::ReadOnly,
+            )
+            | (Policy::Private, _) => Self::UnsafeLock { path, problem },
+        }
+    }
+}
+
+/// The Linux host-lock policy refused its final entry as foreign-owned or nonregular.
+/// It proves a refusal, not that another writer is absent.
+#[derive(Debug, thiserror::Error)]
+#[error("host lock {} {problem}", path.display())]
+pub struct RefusedEntry {
+    path: PathBuf,
+    problem: LockProblem,
+}
+
+impl RefusedEntry {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub const fn problem(&self) -> LockProblem {
+        self.problem
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
