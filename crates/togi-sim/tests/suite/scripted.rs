@@ -292,13 +292,15 @@ fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
 
 #[test]
 fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
-    let mut rig = rig(ScriptedTopology::FourCores, |_, _| TrialOutcome::CorrectedMce {
-        mce: ScriptedMce {
-            core: core(0),
-            bank: 2,
-            bank_type: BankType::L2Cache,
-        },
-        at: AFTER,
+    let mut rig = rig(ScriptedTopology::FourCores, |_, _| {
+        TrialOutcome::CorrectedMce {
+            mce: ScriptedMce {
+                core: core(0),
+                bank: 2,
+                bank_type: BankType::L2Cache,
+            },
+            at: AFTER,
+        }
     });
     let boot = rig.boot();
     let before = rig.sim.monotonic();
@@ -318,15 +320,17 @@ fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
 
 #[test]
 fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
-    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| TrialOutcome::ResetWithMce {
-        mce: ScriptedMce {
-            core: core(15),
-            bank: 6,
-            bank_type: BankType::L3Cache,
-        },
-        stalled: Some(core(0)),
-        kind: ResetKind::Watchdog,
-        at: AFTER,
+    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| {
+        TrialOutcome::ResetWithMce {
+            mce: ScriptedMce {
+                core: core(15),
+                bank: 6,
+                bank_type: BankType::L3Cache,
+            },
+            stalled: Some(core(0)),
+            kind: ResetKind::Watchdog,
+            at: AFTER,
+        }
     });
     let before = rig.boot();
     let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
@@ -381,8 +385,14 @@ fn voltage_samples_keep_the_written_lanes_after_snapshot_restoration() {
     let restored = Simulator::restore(rig.sim.source(), rig.sim.persisted()).unwrap();
     let mut machine = restored.seams();
     let sample = machine.trials.samples("0001").next().unwrap().unwrap();
-    assert_eq!(sample.pm_table.unwrap().voltage_request_v, SAMPLES.requests_v);
-    assert_eq!(sample.core_mhz.iter().collect::<Vec<_>>(), [(core(8), 5_200)]);
+    assert_eq!(
+        sample.pm_table.unwrap().voltage_request_v,
+        SAMPLES.requests_v
+    );
+    assert_eq!(
+        sample.core_mhz.iter().collect::<Vec<_>>(),
+        [(core(8), 5_200)]
+    );
     let lanes = machine
         .host
         .preflight()

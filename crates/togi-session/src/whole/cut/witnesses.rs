@@ -2,8 +2,8 @@
 
 use test_case::test_case;
 use togi_machine::{BankType, ControllerMode, Purpose};
-use togi_sim::{ScriptedMce, TrialOutcome};
 use togi_sim::faults::{HookPhase, SmuOp};
+use togi_sim::{ScriptedMce, TrialOutcome};
 
 use super::*;
 use crate::testing::scripted_machine;

@@ -409,9 +409,8 @@ fn every_backend_inconclusive_through_every_retry_ends_the_night_without_evidenc
 
 #[test]
 fn a_baseline_that_is_not_all_zero_is_refused_before_anything_is_written() {
-    let bench = Bench::scripted(
-        passing_machine(2).with_boot_offsets(|core| target([-5, 0][core.index()])),
-    );
+    let bench =
+        Bench::scripted(passing_machine(2).with_boot_offsets(|core| target([-5, 0][core.index()])));
     let ended = crate::run(bench.input());
 
     assert!(

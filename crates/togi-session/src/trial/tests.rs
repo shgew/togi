@@ -18,8 +18,8 @@ use togi_sim::{ReportedFailure, TrialOutcome};
 
 use super::{FrequencySink, Journaled};
 use crate::error::{AppendFailure, JournalCause};
-use crate::testing::{Bench, Rig, core, scripted_machine};
 use crate::run;
+use crate::testing::{Bench, Rig, core, scripted_machine};
 
 fn trial() -> TrialId {
     TrialId::from("0042".to_owned())

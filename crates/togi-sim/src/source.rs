@@ -3,7 +3,9 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use togi_machine::{BankType, BiosContext, CoreId, CoreSet, ResetKind, Signal, TargetOffset, TrialSpec};
+use togi_machine::{
+    BankType, BiosContext, CoreId, CoreSet, ResetKind, Signal, TargetOffset, TrialSpec,
+};
 
 use crate::Model;
 use crate::definition::{
