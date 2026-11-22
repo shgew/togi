@@ -41,7 +41,7 @@ Not yet:
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi doctor --day                 # check day prerequisites and a current, verified stock readback recorded in this boot
-sudo togi run                          # tune tonight; needs the current stock attestation from `togi night` (exit 12 otherwise); Ctrl-C ends the night, the next run opens the next
+sudo togi run                          # foreground tuning with event lines; needs current stock attestation from `togi night`
 sudo togi night                        # GRUB: confirm stock stability, remember the day's selection and reboot into tuning
 sudo togi day                          # apply permitted D and observe; needs verified CO 0 and PID 1's counting watchdog
 togi day answer <boot> frozen          # answer what an unclean end was: frozen, graphics, power-off or unsure
@@ -52,15 +52,15 @@ togi day resume                        # end the pause and verify the still-perm
 togi day freeze                        # stop promotions; use unfreeze to lift it, safety retreats still run
 togi status                            # activity, each CCD's D, S and U, night queues, day policy and observations
 togi status --evidence                 # cap reasons, hours, coverage gaps and profile/stock evidence; no verdict
-togi watch                             # full-width dashboard: current trial, every core
+togi watch                             # Linux live dashboard: current trial, every core
 togi --state-dir <dir> status          # inspect a copied journal
-togi --state-dir <dir> events --core 3 # everything that happened to core 3
+togi --state-dir <dir> watch > frame.txt # render one frame from a copied journal
 source <(togi completion bash)         # shell completions; the Nix package installs bash, zsh, fish and nushell ones
 ```
 
 `doctor` and `run` read JSON configuration from `/etc/togi/config.json`; `--config FILE` selects another file. The NixOS module generates it from `services.togi.settings`. See [Configuration](docs/spec/runtime.md#configuration) for keys, defaults and a hand-written example.
 
-The dashboard adapts to wide and compact terminals. It shows the stage line, one table per CCD with its D, S and U, and the night and day panels beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
+`watch` is the dashboard; `run` only logs events and final diagnostics. The dashboard adapts to wide and compact terminals. It shows the stage line, one table per CCD with its D, S and U, and the night and day panels beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
 
 `status --evidence` explains the current [ceiling and qualification rules](docs/spec/tuner-ruleset14.md#2-night-edge-and-hard-ceiling), including why a profile remains at zero. Recorded hours and incomplete coverage are evidence, not a promise of another step or a completion estimate. On the first observed day boot after a night, `status` and `togi day notify` report the night's recorded trial ends and observed task time per queue, and state that the day service applies the permitted committed profile; the report does not verify the current hardware readback or establish stability ([morning report](docs/spec/runtime.md#day-observation)).
 
@@ -70,7 +70,7 @@ With the day service running and your user in `services.togi.day.users`, pause/r
 
 The NixOS tuning specialisation requires GRUB. `sudo togi night` selects it persistently, so crash reboots stay in the night; F10 on its dashboard or the power button restores the previous boot selection. See [Night and day](docs/spec/runtime.md#night-and-day) for saved defaults and menu-started nights.
 
-[docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
+[docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists operator-facing commands, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 
 ## Documentation
 
@@ -121,4 +121,4 @@ or run `cachix use togi` as a user listed in `trusted-users`. After changing the
 
 Hardware tests run as root and share the [host lock](docs/spec/runtime.md#host-lock) with `run` and `reset`. See [host-lock provisioning](docs/howto.md#host-lock) when upgrading from a public-readable lock.
 
-togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS, the dev shell, the tests, `just sim`, every flake check except the VM tests and the trial scope tests, and `status`, `events` and `reset` against a copied state directory work; CI runs only on Linux and builds nothing on macOS ([CI policy](docs/development.md#ci-and-release-gates)), and `togi run` exits with an error.
+togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS you can build, test, simulate, replay recordings, and read a copied journal with `status` or a redirected `watch`. Hardware runs and live watching require Linux. [CI runs only on Linux](docs/development.md#ci-and-release-gates).

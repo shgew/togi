@@ -15,7 +15,6 @@ module completions {
   export extern "togi run" [
     --config: path            # JSON configuration file [default: /etc/togi/config.json]
     --tuning-boot: path       # Run as the tuning boot service: use the GRUB environment to persist a leave reason before restoring the day's boot selection, and reboot after a boot loop
-    --no-tui                  # Print one line per event instead of the dashboard on a terminal
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]
@@ -144,30 +143,8 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
-  def "nu-complete togi events kind" [] {
-    [ "backend" "backend.retry" "boot" "boot.leave_reason" "boot.saved_entry" "campaign" "campaign.charge" "campaign.reclassified" "campaign.start" "ccd" "ccd.cap" "ccd.edge" "checking" "checking.chain" "checking.cycle" "checking.step" "climb" "climb.decision" "combination" "command" "command.reset" "config" "config.loaded" "core" "core.phase" "crash" "crash.detected" "day" "day.answer" "day.applied" "day.boot_start" "day.checkpoint" "day.clean_stop" "day.event" "day.fault" "day.freeze" "day.hold" "day.imported" "day.interval" "day.offsets_changed" "day.pause" "day.record" "day.step" "day.unclean_end" "day.veto" "deadend" "deepening" "deepening.round" "defect" "defect.answered" "defect.found" "exposure" "exposure.observed" "failure" "failure.carried" "firmware" "firmware.restoration" "frequency" "frequency.discarded" "frequency.intent" "frequency.readback" "host" "host.ranking" "hunt" "hunt.end" "hunt.group" "hunt.skipped" "hunt.start" "journal" "journal.torn" "mce" "night" "night.plan" "night.qualification" "night.reproduction" "preflight" "preflight.check" "profile" "profile.applied" "profile.change" "profile.restored" "session" "session.archived" "session.baseline" "session.carried" "session.context" "session.imported" "session.notice" "session.start" "session.warning" "shutdown" "smu" "smu.error" "smu.intent" "smu.readback" "smu.write" "state" "state.rebuilt" "stock" "stock.attested" "successor" "successor.imported" "task" "task.start" "trial" "trial.carried" "trial.end" "trial.intent" "trial.progress" "trial.sample" "trial.signal" "trial.start" "tuner" "tuner.decision" "tuner.warning" "unit" "unit.edge" "unit.mapping" "unit.stop" ]
-  }
-
-  # Print the journal, one readable line per event
-  export extern "togi events" [
-    --core: string            # Only events naming core N, and the outcomes of trials that load it
-    --kind: string@"nu-complete togi events kind" # Only these comma-separated known kinds, or groups such as trial for every trial.* kind
-    --trial: string           # Only events of trial ID
-    --since: string           # Only events at or after this RFC 3339 time
-    --until: string           # Only events before this RFC 3339 time
-    --json                    # Print raw, uncolored JSON events
-    --state-dir: directory    # State directory
-    --help(-h)                # Print help (see more with '--help')
-  ]
-
   # Reboot into the tuning boot for the night
   export extern "togi night" [
-    --state-dir: directory    # State directory
-    --help(-h)                # Print help (see more with '--help')
-  ]
-
-  # Restore the day's boot selection
-  export extern "togi night-end" [
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
   ]
@@ -260,16 +237,8 @@ module completions {
   export extern "togi help doctor" [
   ]
 
-  # Print the journal, one readable line per event
-  export extern "togi help events" [
-  ]
-
   # Reboot into the tuning boot for the night
   export extern "togi help night" [
-  ]
-
-  # Restore the day's boot selection
-  export extern "togi help night-end" [
   ]
 
   # Archive the whole session

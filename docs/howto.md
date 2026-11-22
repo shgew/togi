@@ -102,11 +102,10 @@ Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially 
 sudo togi run
 ```
 
-It shows the session as the `togi watch` dashboard, redrawn whenever the journal changes: what togi is doing and why, the running trial and what each outcome would lead to, the stages and a table of offsets per CCD. `togi watch` in another terminal shows the same screen and takes keys: `?` explains it. Watch a few trials, then press Ctrl-C: togi restores offsets and exits 0, and the next run resumes ([Exit codes](spec/runtime.md#exit-codes)). `sudo togi run --no-tui` prints one line per event instead.
+`run` prints one line per journal event to stderr. To see the dashboard, run `togi watch` in another terminal; it follows the journal independently, shows the running trial and offsets, and `?` explains the screen. Press Ctrl-C in the **run** terminal to stop the session, restore offsets and exit 0 ([Exit codes](spec/runtime.md#exit-codes)). Quitting `watch` does not stop the run.
 
 ```sh
 togi status
-togi events --kind trial
 ```
 
 An in-session run requires an armed, counting hardware watchdog, just like the tuning boot; `sudo togi run` checks once at startup and refuses if it is unarmed. Sampling countdown progress can take up to four seconds per candidate device; manual startup does not retry for readiness or arm a watchdog. It checks again before each nonzero profile application and each workload start; loss detected there stops new work and restores verified stock, and a stop signal interrupts sampling and takes ordinary cleanup ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows a failed `watchdog` result. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
@@ -347,10 +346,7 @@ offsets or stability.
 
 `doctor --day` checks the day prerequisites rather than stress-workload availability. Its baseline row requires a current, complete, verified CO-0 readback recorded in this boot, using the day service's own stock-verification rule. The day service's start records that proof. An earlier-boot receipt, a receipt superseded by a write or failed/partial/nonzero readback, applied D alone or a live zero diagnostic reading cannot replace it. Missing proof refuses rather than being silently filled in. Like ordinary `doctor`, it writes no journal event and changes no offset; root hardware checks still require the host lock, so stop a competing hardware process first. See [day diagnostics](spec/runtime.md#day-diagnostics) for the exact checks.
 
-A night has no end time: `sudo togi run` tunes until you end it with Ctrl-C,
-F10 in the dashboard or a reboot (the power button included), and restores
-every core to CO 0 when it stops. A crash reboot into the tuning boot continues
-the same night; the next run after you end it opens a new one. A direct run
+A night has no end time. Stop a foreground `sudo togi run` with Ctrl-C in its terminal, or end the tuning boot with F10 in its dashboard or a reboot (the power button included). A clean stop restores every core to CO 0. A crash reboot into the tuning boot continues the same night; the next run after you end it opens a new one. A direct run
 or menu-started tuning boot without the current stock attestation stops at
 stock with `stock_unattested` (exit 12): give it through the normal-boot
 `togi night` confirmation first ([Night and day](spec/runtime.md#night-and-day)).

@@ -17,6 +17,7 @@ use crate::{
     watch,
 };
 
+const NAME: &str = "togi";
 static VERSION: LazyLock<String> = LazyLock::new(togi_version::string);
 
 /// The example `togi --help` and `togi run --help` both show for tuning a night.
@@ -35,7 +36,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.
 #[derive(Debug, Parser)]
 #[command(
-    name = "togi",
+    name = NAME,
     version = VERSION.as_str(),
     after_help = EXAMPLES.as_str(),
     arg_required_else_help = true,
@@ -56,8 +57,10 @@ pub enum Command {
     Day(crate::day::Args),
     Completion(completion::Args),
     Doctor(doctor::Args),
+    #[command(hide = true)]
     Events(events::Args),
     Night(night::Args),
+    #[command(hide = true)]
     NightEnd(night_end::Args),
     Reset(reset::Args),
     RestartLimit(restart_limit::Args),
@@ -305,6 +308,24 @@ fn report(error: &clap::Error, out: &mut dyn Write, err: &mut dyn Write) -> Exit
 #[must_use]
 pub fn command() -> clap::Command {
     Cli::command()
+}
+
+/// Builds the command tree advertised by shell completion.
+pub(crate) fn completion_command() -> clap::Command {
+    let cli = command();
+    // Static completion generators do not all honor clap's hidden setting.
+    let mut public = clap::Command::new(NAME)
+        .version(VERSION.as_str())
+        .args(cli.get_arguments().cloned())
+        .subcommands(
+            cli.get_subcommands()
+                .filter(|subcommand| !subcommand.is_hide_set())
+                .cloned(),
+        );
+    if let Some(about) = cli.get_about() {
+        public = public.about(about.clone());
+    }
+    public
 }
 
 /// Renders an `Examples:` block, every description starting in one column.

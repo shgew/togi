@@ -6,15 +6,10 @@
 //! are taken, in that order, as `reset` does; the journal is judged again under them. Only then is the boot id
 //! read, the hardware opened, the carry prepared and the session run. Once the host lock is held and the
 //! hardware set up, the session owns the cleanup of every exit; a panic in it comes back with that cleanup
-//! done and its outcome reported, and is resumed after the dashboard, the journal and the host lock are put
-//! away, in that order.
+//! done and its outcome reported, and is resumed after the journal and the host lock are put away.
 
-use std::cell::{Cell, RefCell};
-use std::io::{self, Write};
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::LazyLock;
-use std::sync::{Arc, Mutex, PoisonError};
 
 use clap::{Args as ClapArgs, ValueHint};
 use togi_defect::KNOWN_DEFECTS;
@@ -32,22 +27,14 @@ use crate::report::{current_build, exit_with, refusal_message, unknown_event_mes
 
 mod outcome;
 
-static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
-    examples(&[
-        crate::cli::RUN_EXAMPLE,
-        (
-            "sudo togi run --no-tui",
-            "Print one line per event instead of the dashboard",
-        ),
-    ])
-});
+static EXAMPLES: LazyLock<String> = LazyLock::new(|| examples(&[crate::cli::RUN_EXAMPLE]));
 
 /// Start or resume the night's tuning session in the foreground
 ///
 /// Runs the night of the per-CCD tuning policy: controls, coverage mapping, qualification and reproduction, then
 /// cap tests and re-qualification while nothing else is due. The night has no deadline: it runs until you stop it
-/// (a signal, F10 in the dashboard, or a reboot), a conclusive failure at CO 0, no configured backend giving
-/// evidence any more, or a runtime safety dead end. A restart after a crash continues the night; a restart after a
+/// (a signal or a reboot), a conclusive failure at CO 0, no configured backend giving evidence any more,
+/// or a runtime safety dead end. A restart after a crash continues the night; a restart after a
 /// stop or a normal boot opens the next one. After a crash the next run attributes it from the journal and
 /// continues. On resume, known defects affecting past decisions are recorded with their cores; a too-aggressive
 /// one stops the run until reset --all starts a fresh session. It needs root.
@@ -65,9 +52,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// Only one day observer, run or reset can own this machine, even with different state directories.
 /// Stop the day service before tuning. A busy /run/lock/togi.lock stops the command before any hardware access or event.
 ///
-/// When stdin and stderr are terminals, run shows the session as the watch dashboard instead of one line per
-/// event, and prints the outcome when it stops: the restored offsets and why it stopped, or the dead end or
-/// error; events.jsonl still records every event. --no-tui prints the lines instead.
+/// Prints one line per journal event and any final diagnostics to stderr, even on a terminal.
+/// Use `togi watch` in a separate terminal to see the dashboard.
 ///
 /// --tuning-boot runs the unattended service with an armed hardware watchdog. The first durable journal
 /// append resets its consecutive restart-limit count and records a pending leave reason once. Dead ends and
@@ -82,10 +68,6 @@ pub struct Args {
     /// restoring the day's boot selection, and reboot after a boot loop
     #[arg(long, value_name = "file", value_hint = ValueHint::FilePath)]
     pub tuning_boot: Option<PathBuf>,
-
-    /// Print one line per event instead of the dashboard on a terminal
-    #[arg(long)]
-    pub no_tui: bool,
 }
 
 /// Runs the command.
@@ -200,21 +182,6 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     let journal = prepared.journal;
 
-    let interactive = ctx.system.interactive();
-    let dashboard = (interactive && !args.no_tui).then(|| {
-        let since = journal.events().last().map_or(0, |event| event.seq.get());
-        Rc::new(ctx.system.dashboard(ctx.state_dir, since))
-    });
-    let hidden = Hidden::default();
-    let suppressed = Rc::new(Cell::new(false));
-    let hidden_closing: Rc<RefCell<outcome::HiddenClosing>> = Rc::default();
-    let (log, report): (Box<dyn Write>, Box<dyn Write>) = match &dashboard {
-        Some(dashboard) => (
-            dashboard.gate_with_status(ctx.system.stderr(), Rc::clone(&suppressed)),
-            Box::new(hidden.clone()),
-        ),
-        None => (ctx.system.stderr(), ctx.system.stderr()),
-    };
     let zone = ctx.system.zone();
     let input = RunInput {
         config,
@@ -227,49 +194,20 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         defects: KNOWN_DEFECTS,
         resume: None,
         import: prepared.import,
-        log: Some(log),
-        on_append: dashboard.as_ref().map(|_| {
-            let hidden_closing = Rc::clone(&hidden_closing);
-            Box::new(move |event: &togi_journal::Event| {
-                // The log line of this event was just written: `suppressed` is what the gate decided for it.
-                hidden_closing
-                    .borrow_mut()
-                    .appended(event.kind(), event.seq, suppressed.get());
-            }) as togi_session::AppendHook
-        }),
+        log: Some(ctx.system.stderr()),
+        on_append: None,
         renderer,
         zone: zone.clone(),
         cancel,
-        report,
+        report: ctx.system.stderr(),
     };
-    if let Some(dashboard) = &dashboard {
-        dashboard.show();
-    }
     let mut ended = togi_session::run(input);
-    if let Some(dashboard) = &dashboard {
-        dashboard.hide();
-        let _ = ctx.err.write_all(&hidden.take());
-    }
-    // A panic is reported by the process's entry point once everything here is put away. What the session's
-    // cleanup left (a dead end, errors of its own) is reported here, as on any other exit, after the dashboard
-    // let go of the screen and before the panic resumes.
+    // The process's entry point reports the panic once cleanup and any cleanup diagnostics are done.
     let panic = ended.panic.take();
     if panic.is_some() {
         ended
             .errors
             .retain(|error| !matches!(error, SessionError::Panicked(_)));
-    }
-    let clean = panic.is_none()
-        && ended.errors.is_empty()
-        && !matches!(ended.stop, Some(togi_session::Stop::DeadEnd { .. }));
-    if clean {
-        outcome::print_hidden(
-            ctx.err,
-            renderer,
-            &zone,
-            ended.journal.events(),
-            hidden_closing.borrow().seqs(),
-        );
     }
     let result = outcome::conclude(
         ctx.err,
@@ -424,30 +362,6 @@ const INCOMPATIBLE: &str = "journal incompatible";
 struct Refused {
     message: String,
     leave_reason: &'static str,
-}
-
-/// What the session wrote to its report while the dashboard was up, kept for after it.
-#[derive(Clone, Default)]
-struct Hidden(Arc<Mutex<Vec<u8>>>);
-
-impl Hidden {
-    fn take(&self) -> Vec<u8> {
-        std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-}
-
-impl Write for Hidden {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]

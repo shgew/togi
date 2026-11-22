@@ -49,9 +49,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// The screen's words are explained by `?` on the screen itself; the rules behind them are in
 /// docs/spec/tuner.md.
 ///
-/// On a terminal it fills the screen until interrupted; otherwise it prints one frame of --width
-/// by --height and exits. An unreadable or incompatible journal appears in the frame and on
-/// stderr, and one-frame watch exits 1; live watch keeps showing the problem and retries when the
+/// On a Linux terminal it fills the screen until interrupted; on other platforms a terminal watch is refused.
+/// With stdout redirected it prints one frame of --width by --height and exits. An unreadable or incompatible
+/// journal appears in the frame and on stderr, and one-frame watch exits 1; live watch keeps showing the problem and retries when the
 /// journal changes. A journal another build wrote, whose first line is not a togi journal header,
 /// is refused before any frame: exit 1 with the cutover step on stderr, live or not. A missing
 /// journal (no session yet) is not an error. An event of a kind this build does not know is

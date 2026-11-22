@@ -132,9 +132,6 @@ pub struct Log<'a> {
 pub enum Journal<'a> {
     /// There is no journal.
     Missing,
-    /// A journal a session is about to append to, before it has recorded anything: nothing in it describes this
-    /// run.
-    Starting,
     /// The journal cannot be read or folded.
     Problem(&'a (dyn std::error::Error + 'a)),
     /// The journal, folded.

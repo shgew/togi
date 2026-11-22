@@ -183,8 +183,8 @@ fn moved(args: &[&str]) -> Vec<String> {
     "doctor"
 )]
 #[test_case(
-    &["togi", "--config=c", "run", "--no-tui"],
-    &["togi", "run", "--config=c", "--no-tui"] ;
+    &["togi", "--config=c", "run", "--tuning-boot", "selection"],
+    &["togi", "run", "--config=c", "--tuning-boot", "selection"] ;
     "attached value"
 )]
 #[test_case(
