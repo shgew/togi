@@ -31,7 +31,9 @@ pub const DEFAULT_PATH: &str = "/tmp/togi.lock";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Policy {
+    /// Linux host lock: root may create it or tighten its mode; ownership is never changed.
     Host,
+    /// Private lock: the caller may create it, and 0660 is also accepted.
     Private,
 }
 
@@ -160,7 +162,11 @@ fn open_lock(
     };
     let read_write = match open(OFlags::RDWR) {
         Err(Errno::NOENT) => {
-            if policy == Policy::Host && !geteuid().is_root() {
+            let may_create = match policy {
+                Policy::Host => geteuid().is_root(),
+                Policy::Private => true,
+            };
+            if !may_create {
                 return Err(Error::NotProvisioned {
                     path: path.to_owned(),
                 });

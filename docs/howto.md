@@ -59,21 +59,9 @@ mprime and y-cruncher come from the host's `nixpkgs`. Updating one of them, for 
 
 ### Host lock
 
-`run`, `reset` and hardware tests share one [host lock](spec/runtime.md#host-lock); a busy lock exits 3. Do not delete `/run/lock/togi.lock` to unblock it: replacing an inode while another process holds it would allow two owners.
+The NixOS module creates one root-only [host lock](spec/runtime.md#host-lock), `/run/lock/togi.lock`, before the tuning and day services start. `run`, `reset` and the root-only [hardware tests](development.md#rust-test-execution) share it. A busy lock exits 3. Never delete the lock to unblock it: another process can still hold the old inode, allowing two owners.
 
-The module provisions the lock during boot, before user logins. On an upgrade from the public-readable lock, stop all tuning and hardware-test processes and close their lock descriptors, or rebuild and reboot, to complete the security migration: changing permissions cannot revoke descriptors opened earlier. A refused lock (foreign-owned, symlink, special or multiply linked) is not deleted or repaired blindly; on Linux, rebooting into the rebuilt normal system recreates `/run` and provisions the trusted lock before users can create one. [Host lock](spec/runtime.md#host-lock) states the rules.
-
-Hardware tests run as root on Linux; see [Rust test execution](development.md#rust-test-execution). An existing `services.togi.hardwareTestGroup` setting only delegates access to the host lock, not hardware or scope management. Do not give that access to the unprivileged backend account.
-
-For a manual Linux install, protect the lock's parent from unprivileged writes, or provision it during trusted early boot before users can precreate its name in a sticky shared directory. After quiescing all lock users, the descriptor-based program [`nix/provision-lock.py`](../nix/provision-lock.py) provisions or migrates a single root-owned regular inode without following a lock symlink. The example requires an existing `togi-hardware` group; replace the final argument with `-` for root-only mode 0600. An existing foreign or multiply linked inode is refused without changing it, and a held lock makes the program fail rather than replacing it.
-
-The program creates the lock only under a parent that [Host lock](spec/runtime.md#host-lock) accepts. Run it from a checkout of the togi revision you install:
-
-```sh
-nix-shell -p python3 --run 'sudo "$(command -v python3)" nix/provision-lock.py /run/lock/togi.lock togi-hardware'
-```
-
-On Darwin, only copied-journal `reset` uses a private lock; [Host lock](spec/runtime.md#host-lock) says who may reuse it. A different operator cannot rely on the old public-readable file; use the owning operator or explicitly provision root-owned group access after quiescing all old descriptors. Hardware tuning remains Linux-only.
+Use `sudo` to reset on Linux. On macOS, `reset` of a copied journal can run without root using its [separate private lock](spec/runtime.md#host-lock); hardware tuning remains Linux-only.
 
 ## 2. Rebuild, then boot fresh
 

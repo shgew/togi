@@ -50,7 +50,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| examples(&[crate::cli::RUN_
 /// Loss detected at a later boundary stops the run and restores CO 0.
 ///
 /// Only one day observer, run or reset can own this machine, even with different state directories.
-/// Stop the day service before tuning. A busy /run/lock/togi.lock stops the command before any hardware access or event.
+/// Stop the day service before tuning. The NixOS module creates /run/lock/togi.lock at boot;
+/// run can create it if it is missing.
+/// If the lock cannot be taken, no hardware is accessed and no event is written.
 ///
 /// Prints one line per journal event and any final diagnostics to stderr, even on a terminal.
 /// Use `togi watch` in a separate terminal to see the dashboard.

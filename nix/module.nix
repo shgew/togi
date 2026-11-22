@@ -25,12 +25,6 @@ in
       defaultText = lib.literalExpression "inputs.togi.packages.\${pkgs.stdenv.hostPlatform.system}.default";
       description = "The togi package to install and run in the tuning boot.";
     };
-    hardwareTestGroup = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      example = "togi-hardware";
-      description = "An explicitly authorized existing group whose members may acquire the root-owned host lock for delegated hardware tests. The default permits root only. This does not grant access to hardware or a delegated cpuset controller.";
-    };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     day.enable = lib.mkEnableOption "the togi permitted day-profile application and observer in the normal boot, including PID 1's 60s hardware watchdog and its suspend/resume hooks. It loads sp5100_tco, releases the watchdog before sleep, reloads the driver after resume and re-arms PID 1's watchdog even if the reload fails, without adding lockup panics or changing the tuning boot's 30s watchdog. It requires a CO 0 baseline and an armed, counting watchdog, applies the committed profile with all-core readback, and reapplies without promotion after restart or resume. Pause, stop and emergency recovery still zero offsets. It holds the host lock and journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops. It refuses to start without a session, never exists in the tuning boot, and keeps the journal on disk with a 5s sync interval";
     day.users = lib.mkOption {
@@ -65,11 +59,7 @@ in
           group = "togi-trial";
         };
         services.togi.settings.backend_user = lib.mkDefault "togi-trial";
-        systemd.tmpfiles.rules = [
-          "f /run/lock/togi.lock :${if cfg.hardwareTestGroup == null then "0600" else "0660"} :root :${
-            if cfg.hardwareTestGroup == null then "root" else cfg.hardwareTestGroup
-          } - -"
-        ];
+        systemd.tmpfiles.rules = [ "f /run/lock/togi.lock :0600 :root :root - -" ];
         services.togi.settings.backends = {
           mprime = lib.mkIf cfg.backends.mprime.enable (lib.mkDefault "${pkgs.mprime}");
           ycruncher = lib.mkIf cfg.backends.ycruncher.enable (lib.mkDefault "${pkgs.y-cruncher}");
@@ -118,6 +108,7 @@ in
           wantedBy = [ "multi-user.target" ];
           after = [
             "systemd-modules-load.service"
+            "systemd-tmpfiles-setup.service"
             "local-fs.target"
           ];
           serviceConfig = {
@@ -130,7 +121,8 @@ in
             StateDirectory = "togi";
           };
           # A killed process cannot run its journaled stop transaction. This hook has only zero
-          # authority and does not need the journal; lock/identity/topology refusals still stand.
+          # authority and does not need the journal. It can recover a missing or legacy lock
+          # under the usual host-lock rule; a busy or unsafe lock still prevents any write.
           postStop = ''
             [ "''${SERVICE_RESULT:-}" != success ] || exit 0
             exec ${lib.getExe cfg.package} emergency-stop
@@ -260,6 +252,7 @@ in
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"
+              "systemd-tmpfiles-setup.service"
               "local-fs.target"
             ];
             path = bootTools ++ [ pkgs.util-linux ];
@@ -273,8 +266,8 @@ in
               StateDirectory = "togi";
             };
             # An abnormal exit, whatever its status, may leave workloads and offsets applied through RestartSec, so
-            # only a success skips the hook. `togi emergency-stop` takes the host lock and validates the SMU before
-            # it writes, so a contended lock or an unsupported host exits with offsets untouched.
+            # only a success skips the hook. `togi emergency-stop` uses the same host-lock rule (including repair)
+            # and validates the SMU before it writes; a busy or unsafe lock or an unsupported host prevents any write.
             postStop = ''
               [ "''${SERVICE_RESULT:-}" != success ] || exit 0
               exec ${lib.getExe cfg.package} emergency-stop

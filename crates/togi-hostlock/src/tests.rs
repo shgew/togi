@@ -106,7 +106,7 @@ fn real_fs_legacy_read_only_holder_stays_exclusive_through_migration() {
 }
 
 #[test]
-fn real_fs_provisioned_group_lock_keeps_its_mode() {
+fn real_fs_private_policy_retains_an_existing_group_lock() {
     let dir = private_dir();
     let path = legacy_lock(&dir, "", 0o660);
     drop(acquire(&path).unwrap());
@@ -339,15 +339,32 @@ fn real_fs_unopenable_lock_is_refused_untouched() {
 }
 
 #[test]
-fn real_fs_host_policy_leaves_provisioning_to_root() {
+fn real_fs_host_policy_creates_only_as_root() {
+    let dir = private_dir();
+    let path = lock_in(&dir);
+    let outcome = HostLock::acquire(&path, Policy::Host);
+    if geteuid().is_root() {
+        let lock = outcome.unwrap();
+        assert_eq!(lock.path(), path);
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        assert!(metadata.is_file());
+        assert_eq!(metadata.nlink(), 1);
+        assert_eq!(metadata.uid(), 0);
+        assert_eq!(mode_of(&path), 0o600);
+    } else {
+        let refused = outcome.unwrap_err();
+        assert!(matches!(refused, Error::NotProvisioned { .. }), "{refused}");
+        assert!(!path.exists());
+    }
+}
+
+#[test]
+fn real_fs_host_policy_refuses_a_nonroot_owner() {
     if geteuid().is_root() {
         return;
     }
     let dir = private_dir();
     let path = lock_in(&dir);
-    let refused = HostLock::acquire(&path, Policy::Host).unwrap_err();
-    assert!(matches!(refused, Error::NotProvisioned { .. }), "{refused}");
-    assert!(!path.exists());
 
     drop(acquire(&path).unwrap());
     let refused = HostLock::acquire(&path, Policy::Host).unwrap_err();

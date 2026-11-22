@@ -33,7 +33,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// --all archives a journal of any ruleset, schema or evidence epoch, but on a journal of the same
 /// schema refuses an unknown event kind or field; install the build that wrote them. Only one run
 /// or reset can own this machine, even with different state directories. A busy host lock stops
-/// reset before it changes the session.
+/// reset before it changes the session. On Linux, reset needs root to take the host lock.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -55,6 +55,13 @@ const JOURNAL: &str = "events.jsonl";
 /// Resets under the host lock and the state directory's writer lock.
 pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
+    if !system.privileged() && system.check_platform().is_ok() {
+        return fail(
+            ctx,
+            COMMAND,
+            "needs root to take the host lock; session unchanged",
+        );
+    }
     let (path, _) = system.host_lock();
     let _host = match system.acquire_host_lock() {
         Ok(lock) => lock,
