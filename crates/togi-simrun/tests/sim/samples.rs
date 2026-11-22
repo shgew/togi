@@ -2,7 +2,7 @@ use togi_journal::{Event, EventKind, MemFs, Payload, SessionId, TrialEnd};
 use togi_machine::TrialConditions;
 use togi_simrun::{Observer, Persistence, events, simulate};
 
-use crate::common::{crash_at_nth, hunt_machine, input, simulator, until_kind};
+use crate::common::{crash_at_nth, four_core_simulator, input, until_kind};
 
 fn trial_end<'a>(events: &'a [Event], trial: &str) -> Option<&'a TrialEnd> {
     events.iter().find_map(|event| {
@@ -38,7 +38,7 @@ fn a_new_session_after_an_earlier_one(
     write_samples: bool,
     observer: Option<Observer>,
 ) -> (Vec<Event>, Vec<Event>, Vec<TrialConditions>) {
-    let mut sim = simulator(&hunt_machine(4), 1);
+    let mut sim = four_core_simulator(1);
     let run = |sim: &togi_sim::Simulator, observer: Option<Observer>, newer_ruleset: bool| {
         let mut input = input(sim.clone(), persistence.clone());
         input.write_samples = write_samples;

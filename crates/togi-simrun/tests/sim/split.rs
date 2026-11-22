@@ -2,10 +2,16 @@ use std::path::{Path, PathBuf};
 
 use togi_journal::MemFs;
 use togi_journal::fs::{Fault, Fs, Op};
-use togi_sim::{MachineDefinition, MachineSource, Model};
+use togi_machine::{ResetKind, TargetOffset};
+use togi_sim::{
+    MachineSource, RestoreError, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome,
+};
 use togi_simrun::{Persistence, ResumeError, SimError, SimOutcome, resume_simulator, simulate};
 
-use crate::common::{Bench, STATE, finish, hunt_machine, input, nz, simulator, until_kind};
+use crate::common::{
+    Bench, STATE, finish, four_core_simulator, input, nz, passing, reset_schedule,
+    scripted_simulator, until_kind, watchdog_resets,
+};
 
 const MACHINE: &str = "machine.json";
 
@@ -41,19 +47,14 @@ impl Store for MemFs {
     }
 }
 
-fn resumed(definition: &MachineDefinition, seed: u64, store: &impl Store) -> togi_sim::Simulator {
-    resume_simulator(
-        &store.persistence(),
-        MachineSource::fitted(Model::new(definition, seed).unwrap(), None),
-        seed,
-    )
-    .unwrap()
+fn resumed(script: ScriptedMachine, seed: u64, store: &impl Store) -> Simulator {
+    resume_simulator(&store.persistence(), MachineSource::Scripted(script), seed).unwrap()
 }
 
 /// The whole night's input: the stop time is the first process's start plus the night, so a continuation that
 /// resumes at a later clock stops at the same instant as an uninterrupted run.
 fn night_input(sim: togi_sim::Simulator, persistence: Persistence) -> togi_simrun::SimInput {
-    let end = simulator(&hunt_machine(2), 1).now() + crate::common::NIGHT;
+    let end = four_core_simulator(1).now() + crate::common::NIGHT;
     let mut run = input(sim, persistence);
     run.stop_at = Some(end);
     run
@@ -71,17 +72,12 @@ fn to_the_end(sim: togi_sim::Simulator, store: &impl Store) {
     );
 }
 
-fn capped(
-    definition: &MachineDefinition,
-    seed: u64,
-    store: &impl Store,
-    boots: u32,
-) -> serde_json::Value {
-    let mut first = night_input(simulator(definition, seed), store.persistence());
+fn capped(script: ScriptedMachine, seed: u64, store: &impl Store, boots: u32) -> serde_json::Value {
+    let mut first = night_input(scripted_simulator(script, seed), store.persistence());
     first.max_boots = nz(boots);
     let outcome = simulate(first).unwrap();
     assert!(
-        matches!(outcome, SimOutcome::Capped { .. }),
+        matches!(outcome, SimOutcome::Capped { boots: actual } if actual.get() == boots),
         "stopped within {boots} boots"
     );
     serde_json::from_slice(&store.bytes(MACHINE).unwrap()).unwrap()
@@ -89,8 +85,7 @@ fn capped(
 
 #[test]
 fn journal_only_resume_refuses_a_timestamp_without_room_for_reboot() {
-    let definition = hunt_machine(2);
-    let bench = Bench::new(&definition, 1);
+    let bench = Bench::four_cores(1);
     let mut run = bench.input();
     run.observer = Some(until_kind(togi_journal::EventKind::SessionStart));
     finish(run);
@@ -106,13 +101,9 @@ fn journal_only_resume_refuses_a_timestamp_without_room_for_reboot() {
         journal.push(b'\n');
     }
     bench.fs.put(bench.fs.path("events.jsonl"), journal.clone());
-    let error = resume_simulator(
-        &bench.fs.persistence(),
-        MachineSource::fitted(Model::new(&definition, 1).unwrap(), None),
-        1,
-    )
-    .err()
-    .expect("the next boot timestamp cannot be represented");
+    let error = resume_simulator(&bench.fs.persistence(), bench.sim.source(), 1)
+        .err()
+        .expect("the next boot timestamp cannot be represented");
     assert!(matches!(
         error,
         ResumeError::Construct(togi_sim::ArithmeticError::ResumeTime(_))
@@ -123,16 +114,16 @@ fn journal_only_resume_refuses_a_timestamp_without_room_for_reboot() {
 
 fn split_matches_whole<S: Store>(
     new: impl Fn() -> S,
-    definition: &MachineDefinition,
+    script: ScriptedMachine,
     seed: u64,
     boots: u32,
 ) -> serde_json::Value {
     let whole = new();
-    to_the_end(simulator(definition, seed), &whole);
+    to_the_end(scripted_simulator(script, seed), &whole);
 
     let split = new();
-    let saved = capped(definition, seed, &split, boots);
-    to_the_end(resumed(definition, seed, &split), &split);
+    let saved = capped(script, seed, &split, boots);
+    to_the_end(resumed(script, seed, &split), &split);
 
     let events = whole.text("events.jsonl");
     assert!(
@@ -153,9 +144,9 @@ fn split_matches_whole<S: Store>(
     assert_eq!(events, split.text("events.jsonl"));
 
     let forgotten = new();
-    capped(definition, seed, &forgotten, boots);
+    capped(script, seed, &forgotten, boots);
     forgotten.remove(MACHINE);
-    to_the_end(resumed(definition, seed, &forgotten), &forgotten);
+    to_the_end(resumed(script, seed, &forgotten), &forgotten);
     assert_ne!(
         events,
         forgotten.text("events.jsonl"),
@@ -164,10 +155,20 @@ fn split_matches_whole<S: Store>(
     saved
 }
 
-fn mce_machine() -> MachineDefinition {
-    let mut definition = hunt_machine(4);
-    definition.model.crash_mce = 1.0;
-    definition
+fn watchdog_resets_with_kernel_evidence() -> ScriptedMachine {
+    ScriptedMachine::new(
+        ScriptedTopology::FourCores,
+        TargetOffset::ZERO,
+        |spec, _| match reset_schedule(spec) {
+            Some((at, mce)) => TrialOutcome::ResetWithMce {
+                mce,
+                stalled: None,
+                kind: ResetKind::Watchdog,
+                at,
+            },
+            None => TrialOutcome::Pass,
+        },
+    )
 }
 
 fn keeps_pending_machine_checks(saved: &serde_json::Value) {
@@ -183,46 +184,55 @@ fn keeps_pending_machine_checks(saved: &serde_json::Value) {
 
 #[test]
 fn a_capped_simulation_continues_in_another_process_as_if_uninterrupted() {
-    let saved = split_matches_whole(MemFs::new, &hunt_machine(2), 1, 3);
+    let saved = split_matches_whole(MemFs::new, watchdog_resets(), 1, 3);
     let last = saved["boots"].as_array().unwrap().last().unwrap();
     assert!(last["reason"]["kind"].is_string(), "{saved}");
 }
 
 #[test]
 fn a_capped_simulation_keeps_its_pending_machine_checks_for_the_next_process() {
-    keeps_pending_machine_checks(&split_matches_whole(MemFs::new, &mce_machine(), 1, 4));
+    keeps_pending_machine_checks(&split_matches_whole(
+        MemFs::new,
+        watchdog_resets_with_kernel_evidence(),
+        1,
+        4,
+    ));
 }
 
 #[test]
 fn a_continuation_on_another_machine_is_refused_and_keeps_the_saved_machine() {
-    let definition = hunt_machine(2);
+    let script = watchdog_resets();
     let whole = MemFs::new();
-    to_the_end(simulator(&definition, 1), &whole);
+    to_the_end(scripted_simulator(script, 1), &whole);
 
     let split = MemFs::new();
-    let saved = capped(&definition, 1, &split, 3);
+    let saved = capped(script, 1, &split, 3);
     let journaled = split.text("events.jsonl");
     // Four cores is the least a Ruleset 13 night runs on, and the simulator itself refuses a machine with another
     // core count before the session sees a changed topology.
-    let Err(ResumeError::Restore(_)) = resume_simulator(
+    let Err(ResumeError::Restore(RestoreError::Cores {
+        persisted: 4,
+        model: 8,
+    })) = resume_simulator(
         &split.persistence(),
-        MachineSource::fitted(Model::new(&hunt_machine(6), 1).unwrap(), None),
+        MachineSource::Scripted(passing(ScriptedTopology::EightCores)),
         1,
-    ) else {
+    )
+    else {
         panic!("a machine with other cores was resumed");
     };
     let kept: serde_json::Value = serde_json::from_slice(&split.bytes(MACHINE).unwrap()).unwrap();
     assert_eq!(kept, saved);
     assert_eq!(split.text("events.jsonl"), journaled);
 
-    to_the_end(resumed(&definition, 1, &split), &split);
+    to_the_end(resumed(script, 1, &split), &split);
     assert_eq!(whole.text("events.jsonl"), split.text("events.jsonl"));
 }
 
 fn unreadable_machine(store: &impl Store) {
     let Err(ResumeError::Read { path, .. }) = resume_simulator(
         &store.persistence(),
-        MachineSource::fitted(Model::new(&hunt_machine(2), 1).unwrap(), None),
+        MachineSource::Scripted(watchdog_resets()),
         1,
     ) else {
         panic!("an unreadable machine was not a read failure");
@@ -233,7 +243,7 @@ fn unreadable_machine(store: &impl Store) {
 #[test]
 fn a_machine_that_cannot_be_read_stops_the_continuation() {
     let store = MemFs::new();
-    capped(&hunt_machine(2), 1, &store, 3);
+    capped(watchdog_resets(), 1, &store, 3);
     let saved = store.bytes(MACHINE).unwrap();
     store.inject(Fault::before(Op::Read, 1).named(MACHINE));
     unreadable_machine(&store);
@@ -251,12 +261,12 @@ fn a_machine_path_that_is_a_directory_stops_the_continuation() {
 
 #[test]
 fn a_continuation_that_cannot_remove_the_superseded_machine_fails() {
-    let definition = hunt_machine(2);
+    let script = watchdog_resets();
     let store = MemFs::new();
-    capped(&definition, 1, &store, 3);
+    capped(script, 1, &store, 3);
     let saved = store.bytes(MACHINE).unwrap();
     let journaled = store.text("events.jsonl").lines().count();
-    let sim = resumed(&definition, 1, &store);
+    let sim = resumed(script, 1, &store);
     store.inject(Fault::before(Op::Remove, 1).named(MACHINE));
 
     let Err(SimError::Machine { path, .. }) = simulate(night_input(sim, store.persistence()))
@@ -273,20 +283,20 @@ fn a_continuation_that_cannot_remove_the_superseded_machine_fails() {
 
 #[test]
 fn a_continuation_that_fails_after_a_warm_crash_still_closes_the_journal() {
-    let definition = hunt_machine(2);
+    let script = watchdog_resets();
     let store = MemFs::new();
-    capped(&definition, 1, &store, 3);
+    capped(script, 1, &store, 3);
     let before = store.bytes("events.jsonl");
     let reference = MemFs::new();
-    capped(&definition, 1, &reference, 3);
-    let mut one_boot = night_input(resumed(&definition, 1, &reference), reference.persistence());
+    capped(script, 1, &reference, 3);
+    let mut one_boot = night_input(resumed(script, 1, &reference), reference.persistence());
     one_boot.max_boots = nz(1);
     assert!(matches!(
         simulate(one_boot).unwrap(),
         SimOutcome::Capped { .. }
     ));
 
-    let sim = resumed(&definition, 1, &store);
+    let sim = resumed(script, 1, &store);
     store.inject(Fault::before(Op::Remove, 1).named(MACHINE));
     assert!(matches!(
         simulate(night_input(sim, store.persistence())),

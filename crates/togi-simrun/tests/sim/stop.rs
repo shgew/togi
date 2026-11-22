@@ -2,11 +2,11 @@ use jiff::SignedDuration;
 use togi_journal::{EventKind, Payload, ShutdownReason};
 use togi_session::Stop;
 
-use crate::common::{Bench, finish, hunt_machine, until_kind};
+use crate::common::{Bench, finish, until_kind};
 
 #[test]
 fn an_observer_stops_the_run_after_the_first_matching_append() {
-    let bench = Bench::new(&hunt_machine(4), 1);
+    let bench = Bench::four_cores(1);
     let mut input = bench.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     let finished = finish(input);
@@ -26,7 +26,7 @@ fn an_observer_stops_the_run_after_the_first_matching_append() {
 
 #[test]
 fn the_operator_ends_the_night_at_the_first_event_at_or_after_stop_at() {
-    let bench = Bench::new(&hunt_machine(4), 1);
+    let bench = Bench::four_cores(1);
     let stop_at = bench.sim.now() + SignedDuration::from_mins(30);
     let mut input = bench.input();
     input.stop_at = Some(stop_at);
@@ -53,7 +53,7 @@ fn the_operator_ends_the_night_at_the_first_event_at_or_after_stop_at() {
 
 #[test]
 fn a_stop_time_already_past_ends_the_night_at_its_first_event() {
-    let bench = Bench::new(&hunt_machine(4), 1);
+    let bench = Bench::four_cores(1);
     let mut input = bench.input();
     input.stop_at = Some(bench.sim.now());
     let finished = finish(input);

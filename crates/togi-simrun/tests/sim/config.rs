@@ -2,7 +2,7 @@ use togi_config::Config;
 use togi_journal::{Event, EventKind, Payload, TrialIntent};
 use togi_simrun::{Observe, SimOutcome, simulate};
 
-use crate::common::{Bench, crash_at_nth, finish, hunt_machine, nz};
+use crate::common::{Bench, crash_at_nth, finish, nz};
 
 fn recorded() -> Config {
     Config::parse(
@@ -53,23 +53,22 @@ fn run_until(bench: &Bench, config: Config, observer: togi_simrun::Observer) {
 
 #[test]
 fn a_journal_without_a_recorded_configuration_gives_the_fresh_one() {
-    let bench = Bench::new(&hunt_machine(2), 1);
+    let bench = Bench::four_cores(1);
     let fresh = Config::parse(r#"{"dead_ends": {"inconclusive_in_a_row": 5}}"#).unwrap();
     assert_eq!(bench.recorded_config(fresh.clone()), fresh);
 }
 
 #[test]
 fn a_resume_under_the_recorded_configuration_repeats_the_recorded_trials() {
-    let definition = hunt_machine(2);
     let recorded = recorded();
 
-    let reference = Bench::new(&definition, 1);
+    let reference = Bench::four_cores(1);
     run_until(&reference, recorded.clone(), nth(3, EventKind::TrialIntent));
     let reference_events = reference.events();
     let want = intents(&reference_events)[2].clone();
 
     // A crash, not an operator stop: a stop ends the night, and the restart would open another one.
-    let stopped = Bench::new(&definition, 1);
+    let stopped = Bench::four_cores(1);
     let mut input = stopped.input();
     input.config = recorded.clone();
     input.max_boots = nz(1);
@@ -86,7 +85,7 @@ fn a_resume_under_the_recorded_configuration_repeats_the_recorded_trials() {
     assert_eq!(got, recorded);
 
     let next = |config: Config| {
-        let fork = stopped.fork(&definition, 1);
+        let fork = stopped.fork(1);
         run_until(&fork, config, nth(1, EventKind::TrialIntent));
         let events = fork.events();
         intents(&events)[done].clone()

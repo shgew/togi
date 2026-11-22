@@ -3,10 +3,10 @@
 use std::path::Path;
 
 use togi_journal::{EventKind, MemFs, Payload};
-use togi_sim::MachineDefinition;
+use togi_sim::{MachineSource, ScriptedTopology, Simulator};
 use togi_simrun::{Persistence, Replay, SimOutcome, events, simulate};
 
-use crate::common::{crash_first, hunt_machine, input, machine_file, nz, simulator, until_kind};
+use crate::common::{crash_first, input, nz, passing, scripted_simulator, until_kind};
 
 /// Crashes at every trial end, so every boot of a capped simulation crashes.
 const EVERY: usize = usize::MAX;
@@ -22,17 +22,11 @@ fn named(path: &Path, name: &str) -> bool {
 }
 
 /// Runs a simulation whose machine crashes at each of the first `crashes` trial ends, so every boot up to then crashes.
-fn simulated(
-    definition: &MachineDefinition,
-    seed: u64,
-    replay: Replay,
-    boots: u32,
-    crashes: usize,
-) -> Simulated {
+fn simulated(replay: Replay, boots: u32, crashes: usize) -> Simulated {
     let fs = MemFs::new();
     fs.record_history();
     let persistence = Persistence::Memory(fs.clone());
-    let machine = simulator(definition, seed);
+    let machine = scripted_simulator(passing(ScriptedTopology::SixteenCores), 102);
     let mut sim = input(machine.clone(), persistence.clone());
     sim.observer = Some(crash_first(&machine, EventKind::TrialEnd, crashes));
     sim.replay = replay;
@@ -57,9 +51,8 @@ fn simulated(
 
 #[test]
 fn a_warm_simulation_reads_the_journal_once_however_many_boots_it_runs() {
-    let machine = machine_file("flat-hazard");
-    let short = simulated(&machine, 102, Replay::Warm, 8, EVERY);
-    let long = simulated(&machine, 102, Replay::Warm, 24, EVERY);
+    let short = simulated(Replay::Warm, 8, EVERY);
+    let long = simulated(Replay::Warm, 24, EVERY);
     assert_eq!((short.boots, long.boots), (8, 24));
     assert!(short.capped && long.capped);
     assert!(short.journal_reads > 0, "the first boot reads the journal");
@@ -71,9 +64,10 @@ fn a_warm_simulation_reads_the_journal_once_however_many_boots_it_runs() {
 
 #[test]
 fn a_cold_simulation_reads_the_journal_at_every_boot() {
-    let machine = machine_file("flat-hazard");
-    let short = simulated(&machine, 102, Replay::Cold, 8, EVERY);
-    let long = simulated(&machine, 102, Replay::Cold, 24, EVERY);
+    let short = simulated(Replay::Cold, 8, EVERY);
+    let long = simulated(Replay::Cold, 24, EVERY);
+    assert_eq!((short.boots, long.boots), (8, 24));
+    assert!(short.capped && long.capped);
     assert!(
         long.journal_reads >= short.journal_reads + 16,
         "{} reads in 8 boots, {} in 24",
@@ -86,7 +80,7 @@ fn a_cold_simulation_reads_the_journal_at_every_boot() {
 fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
     let fs = MemFs::new();
     let mut sim = input(
-        simulator(&hunt_machine(2), 1),
+        scripted_simulator(passing(ScriptedTopology::FourCores), 1),
         Persistence::Memory(fs.clone()),
     );
     sim.observer = Some(until_kind(EventKind::SessionStart));
@@ -103,15 +97,11 @@ fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
 #[test_case::test_case(Replay::Warm, 1; "boot cap")]
 fn boot_exhaustion_reaches_the_runner_and_keeps_the_journal(replay: Replay, max_boots: u32) {
     let persistence = Persistence::Memory(MemFs::new());
-    let definition = MachineDefinition::default();
-    let sim = togi_sim::Simulator::new(
-        togi_sim::Model::new(&definition, 1).unwrap(),
-        togi_sim::RunSettings {
-            seed: 1,
-            history: togi_sim::History {
-                boots: u32::MAX - 1,
-                ..Default::default()
-            },
+    let sim = Simulator::start(
+        MachineSource::Scripted(passing(ScriptedTopology::SixteenCores)),
+        1,
+        togi_sim::History {
+            boots: u32::MAX - 1,
             ..Default::default()
         },
     )

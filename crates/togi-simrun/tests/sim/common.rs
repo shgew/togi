@@ -1,25 +1,27 @@
-use std::collections::BTreeMap;
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::fs::FileKind;
 use togi_journal::{Build, Event, EventKind, FixStamp, MemFs, SCHEMA, StateDir};
-use togi_machine::{CancellationToken, Signal};
+use togi_machine::{
+    BankType, CancellationToken, ControllerMode, CoreId, ResetKind, TargetOffset, TrialSpec,
+};
 use togi_render::Renderer;
 use togi_session::ConfigSource;
-use togi_sim::definition::{CoreDef, ModelDef, Weights};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{
+    History, MachineSource, ScriptedMachine, ScriptedMce, ScriptedTopology, ScriptedVoltageSamples,
+    Simulator, TrialOutcome,
+};
 use togi_simrun::{
     Finished, Observe, Observer, Persistence, Replay, SimInput, SimOutcome, events, simulate,
 };
 
 pub(crate) const STATE: &str = "/state";
 
-/// How long the simulated operator lets a night run before ending it: long enough for mapping and the first crash
-/// on the default machine.
+/// How long the simulated operator lets a fixture run before ending its night.
 pub(crate) const NIGHT: SignedDuration = SignedDuration::from_hours(24);
 
 pub(crate) fn build() -> Build {
@@ -33,57 +35,72 @@ pub(crate) fn build() -> Build {
     }
 }
 
-struct Machines;
-
-impl togi_sim::file::Source for Machines {
-    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
-        let text = match path.file_name().and_then(|name| name.to_str()) {
-            Some("shared-voltage.json") => {
-                include_str!("../../../../tools/bench/machines/shared-voltage.json")
-            }
-            Some("target-fit-0.json") => {
-                include_str!("../../../../tools/bench/machines/target-fit-0.json")
-            }
-            Some("flat-hazard.json") => {
-                include_str!("../../../../tools/bench/machines/flat-hazard.json")
-            }
-            Some("target-shared-voltage.json") => {
-                include_str!("../../../../tools/bench/machines/target-shared-voltage.json")
-            }
-            Some("target-r7-request-gap.json") => {
-                include_str!("../../../../tools/bench/machines/target-r7-request-gap.json")
-            }
-            Some("misleading-mce.json") => {
-                include_str!("../../../../tools/bench/machines/misleading-mce.json")
-            }
-            Some("late-onset.json") => {
-                include_str!("../../../../tools/bench/machines/late-onset.json")
-            }
-            _ => return Err(std::io::ErrorKind::NotFound.into()),
-        };
-        Ok(text.to_owned())
-    }
-
-    fn canonicalize(&self, path: &Path) -> std::io::Result<PathBuf> {
-        Ok(path.to_owned())
-    }
+pub(crate) fn core(id: i64) -> CoreId {
+    CoreId::new(id).unwrap()
 }
 
-pub(crate) fn machine_file(name: &str) -> MachineDefinition {
-    togi_sim::file::load_from(format!("/machines/{name}.json"), &Machines)
-        .unwrap()
-        .0
+pub(crate) fn voltage_samples(
+    outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+) -> ScriptedMachine {
+    static SAMPLES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: [
+            1.07, 1.08, 1.09, 1.10, 1.11, 1.12, 1.13, 1.14, 1.15, 1.16, 1.17, 1.18, 1.19, 1.20,
+            1.21, 1.22,
+        ],
+        ccd_mhz: [4_400, 4_300],
+    };
+    ScriptedMachine::sixteen_with_voltage_samples(TargetOffset::ZERO, outcome, &SAMPLES)
 }
 
-pub(crate) fn simulator(definition: &MachineDefinition, seed: u64) -> Simulator {
-    Simulator::new(
-        Model::new(definition, seed).unwrap(),
-        RunSettings {
-            seed,
-            ..RunSettings::default()
+pub(crate) fn passing(topology: ScriptedTopology) -> ScriptedMachine {
+    ScriptedMachine::new(topology, TargetOffset::ZERO, |_, _| TrialOutcome::Pass)
+}
+
+pub(crate) fn scripted_simulator(script: ScriptedMachine, seed: u64) -> Simulator {
+    Simulator::start(MachineSource::Scripted(script), seed, History::default()).unwrap()
+}
+
+pub(crate) fn four_core_simulator(seed: u64) -> Simulator {
+    scripted_simulator(passing(ScriptedTopology::FourCores), seed)
+}
+
+/// The four in-flight watchdog resets used by the boot cap and cross-process witnesses.
+pub(crate) fn reset_schedule(spec: &TrialSpec) -> Option<(Duration, ScriptedMce)> {
+    let ControllerMode::Managed { rotation, .. } = spec.controller;
+    let (nanos, id, bank, bank_type) = match rotation {
+        65 => (4_695_930, 0, 2, BankType::L2Cache),
+        133 => (205_424, 2, 2, BankType::L2Cache),
+        134 => (433_244_441, 0, 6, BankType::L3Cache),
+        202 => (1_424_415_247, 2, 3, BankType::DecodeUnit),
+        _ => return None,
+    };
+    Some((
+        Duration::from_nanos(nanos),
+        ScriptedMce {
+            core: core(id),
+            bank,
+            bank_type,
+        },
+    ))
+}
+
+pub(crate) fn watchdog_resets() -> ScriptedMachine {
+    ScriptedMachine::new(
+        ScriptedTopology::FourCores,
+        TargetOffset::ZERO,
+        |spec, _| match reset_schedule(spec) {
+            Some((at, _)) => TrialOutcome::Reset {
+                stalled: None,
+                kind: ResetKind::Watchdog,
+                at,
+            },
+            None => TrialOutcome::Pass,
         },
     )
-    .unwrap()
+}
+
+pub(crate) fn rebooting_simulator() -> Simulator {
+    scripted_simulator(watchdog_resets(), 1)
 }
 
 pub(crate) fn nz(n: u32) -> NonZeroU32 {
@@ -121,9 +138,17 @@ pub(crate) struct Bench {
 }
 
 impl Bench {
-    pub(crate) fn new(definition: &MachineDefinition, seed: u64) -> Self {
+    pub(crate) fn scripted(script: ScriptedMachine, seed: u64) -> Self {
+        Self::with_simulator(scripted_simulator(script, seed))
+    }
+
+    pub(crate) fn four_cores(seed: u64) -> Self {
+        Self::with_simulator(four_core_simulator(seed))
+    }
+
+    fn with_simulator(sim: Simulator) -> Self {
         Self {
-            sim: simulator(definition, seed),
+            sim,
             fs: MemFs::new(),
         }
     }
@@ -136,19 +161,11 @@ impl Bench {
         input(self.sim.clone(), self.persistence())
     }
 
-    /// The same state directory on a machine built for `definition`, continuing after what the journals recorded.
-    pub(crate) fn resumed(&self, definition: &MachineDefinition, seed: u64) -> Self {
+    /// A fresh simulated process on the same machine, starting from the journal's recorded history.
+    pub(crate) fn from_history(&self, seed: u64) -> Self {
         let history = togi_simrun::history_in(&self.dir()).unwrap();
         Self {
-            sim: Simulator::new(
-                Model::new(definition, seed).unwrap(),
-                RunSettings {
-                    seed,
-                    history,
-                    replay: None,
-                },
-            )
-            .unwrap(),
+            sim: Simulator::start(self.sim.source(), seed, history).unwrap(),
             fs: self.fs.clone(),
         }
     }
@@ -170,7 +187,7 @@ impl Bench {
     }
 
     /// A copy of the state directory with its own filesystem, for resuming the same history twice.
-    pub(crate) fn fork(&self, definition: &MachineDefinition, seed: u64) -> Self {
+    pub(crate) fn fork(&self, seed: u64) -> Self {
         let copy = MemFs::new();
         for (path, kind) in self.fs.entries() {
             if kind == FileKind::File {
@@ -181,7 +198,7 @@ impl Bench {
             sim: self.sim.clone(),
             fs: copy,
         }
-        .resumed(definition, seed)
+        .from_history(seed)
     }
 }
 
@@ -230,31 +247,4 @@ pub(crate) fn crash_first(sim: &Simulator, kind: EventKind, count: usize) -> Obs
         }
         Observe::Continue
     })
-}
-
-/// Every core alone and together at -10, nothing else failing but past-limit crashes at rate 1. The machine's cores
-/// split in halves into two CCDs, and a Ruleset 13 night needs a neighbour on every CCD, so it has at least four.
-pub(crate) fn hunt_machine(cores: i64) -> MachineDefinition {
-    let cores = cores.max(4);
-    let limits = (0..cores)
-        .map(|id| CoreDef {
-            id,
-            alone: [-10; 5],
-            together: [-10, -10, -10, -10, -10, -10, -50],
-            flat: 0.0,
-            idle: None,
-            workload: BTreeMap::new(),
-        })
-        .collect();
-    MachineDefinition {
-        cores,
-        core: limits,
-        model: ModelDef {
-            past_limit_rate: 1.0,
-            signals: Weights::from([(Signal::Crash, 1.0)]),
-            crash_mce: 0.0,
-            ..ModelDef::default()
-        },
-        ..MachineDefinition::default()
-    }
 }
