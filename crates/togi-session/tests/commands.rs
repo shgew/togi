@@ -2026,12 +2026,23 @@ fn a_stop_after_a_failed_first_mapping_trial_is_not_a_failure_at_zero_dead_end()
     let ended = run(input);
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     let events = ended.journal.events();
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(&event.payload, Payload::TrialEnd(_))),
-        "{:?}",
-        kinds(&ended.journal)
+    let first_end = events
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("no trial end: {:?}", kinds(&ended.journal)));
+    assert_eq!(
+        (first_end.outcome, first_end.signal, first_end.core),
+        (
+            togi_journal::Outcome::Failure,
+            Some(togi_machine::Signal::ComputationError),
+            Some(core(0))
+        )
     );
     assert!(
         events.iter().all(|event| {
