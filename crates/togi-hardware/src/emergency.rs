@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use togi_hostlock::{DEFAULT_PATH, RefusedEntry};
+use togi_machine::emergency::{Zeroed, zero_and_read_back};
 use togi_machine::{
-    CancellationToken, CoreInfo, CoreSet, Error as MachineError, Machine, Smu, SmuValidated,
-    Trials, Zeroed, zero_and_read_back,
+    CancellationToken, CoreInfo, CoreSet, Error as MachineError, Machine, Smu, SmuValidated, Trials,
 };
 use togi_smu::Driver;
 use togi_trial::{Backends, Options, Runner};
@@ -128,6 +128,10 @@ fn core_set(topology: &[CoreInfo]) -> Result<CoreSet, Failure> {
     Ok(topology.iter().map(|info| info.core).collect())
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "emergency-stop's zero-only write, after a validated SMU and a confirmed sweep"
+)]
 fn sweep_and_zero(
     smu: &mut dyn Smu,
     trials: &mut dyn Trials,

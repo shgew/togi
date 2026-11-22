@@ -11,9 +11,10 @@ use togi_journal::{
     CcdVector, Journal, Payload, Seq, SmuCommand, SmuIntentReceipt, SmuOp, SmuReadback, SmuWritten,
     Stamp,
 };
+use togi_machine::emergency::{Zeroed, zero_and_read_back};
 use togi_machine::{
     CcdProfileError, Clock, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore, Smu, SmuValidated,
-    Stopped, TargetOffset, Zeroed, zero_and_read_back,
+    Stopped, TargetOffset,
 };
 
 use super::{Hardware, Ledger, ProfileFailure, WriteFailure, apply, failed};
@@ -371,6 +372,10 @@ fn confirm(
 /// Puts every core back at 0 after `failure`. A crash allows no SMU access. A failed journal allows only the
 /// emergency zeroing; any other failure is answered with the ordinary zeroing transaction, which may in turn find
 /// the journal failed.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the day write's journal-failure emergency zeroing, after its validated SMU and confirmed stop"
+)]
 fn recover(
     failure: &ProfileFailure,
     ledger: &mut DayLedger<'_>,

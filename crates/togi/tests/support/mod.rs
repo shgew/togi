@@ -568,6 +568,10 @@ impl System for Host {
             .expect("only run and emergency-stop open the machine, once, and the test stages it")
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fake stands in for the zero-only recovery on the staged simulated machine"
+    )]
     fn recover_without_exclusion(
         &self,
         refused: &togi_hostlock::RefusedEntry,

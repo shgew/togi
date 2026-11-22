@@ -11,7 +11,8 @@
 
 use std::io::{self, Write};
 
-use togi_machine::{CoreSet, Smu, SmuValidated, Stopped, Swept, Zeroed, zero_and_read_back};
+use togi_machine::emergency::{Zeroed, zero_and_read_back};
+use togi_machine::{CoreSet, Smu, SmuValidated, Stopped, Swept};
 
 use crate::error::JournalFailure;
 use crate::session::{Fault, Lifecycle};
@@ -85,6 +86,10 @@ pub struct Outcome {
 /// Answers a failed journal append. Zeroes every core of `cores` without an intent when the gate allows it, reads
 /// each back, and writes the original error and what the emergency did to `report`. Appends nothing. A crash ends
 /// every SMU access at once.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the journal-failure emergency, only behind its sweep, validation and teardown gate"
+)]
 pub(crate) fn respond(
     original: &JournalFailure,
     gate: Result<Access<'_>, Withheld>,

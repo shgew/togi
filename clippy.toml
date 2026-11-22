@@ -26,6 +26,8 @@ disallowed-methods = [
     { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
     { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },
     { path = "togi_machine::Smu::emergency_zero", reason = "Only the shared zero-only transaction calls this seam, after hardware validation and confirmed teardown" },
+    { path = "togi_machine::emergency::zero_and_read_back", reason = "Only the journal-failure emergency in a session, the day write's journal-failure recovery and togi emergency-stop zero every core without an intent" },
+    { path = "togi_hardware::emergency::stop_locked", reason = "Only togi emergency-stop zeroes every core without an intent under the host lock" },
     { path = "togi_hardware::emergency::UnexcludedStop::open", reason = "Only togi emergency-stop may recover from a refused lock entry without exclusion" },
     { path = "togi_machine::SmuValidated::checked", reason = "Only a host implementation that validated the SMU interface mints its proof" },
     { path = "togi_machine::Stopped::confirmed", reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },

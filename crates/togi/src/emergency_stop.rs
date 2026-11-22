@@ -85,6 +85,10 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     }
     let (recovery, success) = match system.acquire_host_lock() {
         Ok(lock) => {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "emergency-stop is the one zero-only recovery under the host lock"
+            )]
             let result = system
                 .open_machine(&Config::default(), ctx.state_dir, &lock)
                 .map_err(Failure::from)

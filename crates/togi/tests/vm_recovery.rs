@@ -836,6 +836,10 @@ mod vm_recovery {
             Self::machine(state_dir)
         }
 
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the VM fake stands in for the zero-only recovery on its simulated machine"
+        )]
         fn recover_without_exclusion(
             &self,
             refused: &togi_hostlock::RefusedEntry,
