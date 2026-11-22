@@ -15,20 +15,24 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - The three scheduled test shapes are build, game and idle; they represent the target desktop's use without the compulsory nine-shape matrix.
 - A pass requires verified results from every loaded core; CPU-time progress alone is not correctness evidence.
 - The first night runs a known-bad profile through each shape for up to 10 minutes and at least one shape must fail; tests that miss the known failure cannot justify deeper tuning.
+- A first night needs a recorded known-bad profile for matching hardware; only the two-CCD target has one, so other machines are refused before any offset is written, because a projected or skipped self-check proves nothing.
 - Short calibrated probes find edges and one whole-profile soak tests them together; isolated results alone do not qualify a profile.
+- The night search starts with steps of 5 for all cores together and 2 per unit, probes of twice the self-check's time to failure and a soak of twice the probe; these are starting values without evidence, to be corrected from the first real night.
 - The firmware stays at stock and offsets are applied after boot; a reset must start from stock.
 - Offsets remain in [-50, 0], with durable intent before each normal write and readback after; loss of control returns the CPU to stock.
 - Tuning and nonzero day profiles require an armed hardware watchdog; an advisory warning cannot protect an unattended machine.
 - A refused start that finds inherited nonzero offsets restores stock itself; no tuning or nonzero write is allowed without the watchdog. On 2026-11-22 the owner rejected “no SMU write of any kind without a watchdog”: a fault during zeroing could need a manual reset, but leaving the machine at inherited offsets prolongs the same unprotected risk. `run` implements the [same-boot stock-only reconciliation](spec/runtime.md#same-boot-resume). A hand-started `day` still leaves a refused nonzero baseline untouched pending [#1632](https://github.com/shgew/togi/issues/1632); the installed day service attempts stock restoration through its post-stop emergency zero.
 - Narrowing writes immediately and crash back-off widens at the next boot; clean-time evidence should yield benefit without an extra reboot.
-- Only the owner starts a night with `togi night`; one first-use risk confirmation is enough and subsequent nights reboot at once.
+- Only the owner starts a night with `togi night`; one risk confirmation per journal is enough and subsequent nights reboot at once, because a separate consent file could outlive the evidence it authorizes.
 - A night has no fixed time cap and ends when its work is done or the owner ends it; useful work should not be cut off by a schedule.
 - Every night end returns to stock and boots the desktop; its own checks decide whether a day profile can be applied.
 - Pause holds the profile with the most clean time, stock if none, and stops moves and counting; resume continues the saved loop.
 - Notifications report profile moves only; status explains the current stage, evidence, last move and next action without question-driven progress.
 - Power, temperature and clock measurements at stock and the current profile show gain; offsets alone do not show the benefit.
+- The stock baseline runs the three shapes at stock as a measurement, never as tuning evidence, and a wrong result at stock ends the night; idle observation cannot measure build or game.
+- The first version tunes at night only: the desktop stays at stock with no resident day service until day application lands together with its back-off rule; without that rule a crashing profile would be reapplied at every boot, and a privileged writer with nothing to apply does not belong on a desktop that is promised stock.
 - The journal is authoritative and readers reconstruct state without a persisted cache; a second state representation adds invalidation without a measured benefit.
-- The new loop starts a fresh journal, neither reads nor imports older generations, and reset archives then starts over; a clean break avoids carrying old policy obligations.
+- The new loop starts a fresh journal and neither reads nor imports older generations; the first `togi night` after the cutover moves the old journal aside unread, and reset archives then starts over. A clean break avoids carrying old policy obligations and needs no extra operator step.
 - Runtime support is NixOS with GRUB and one or two full eight-core CCDs; tuning nights no longer support systemd-boot because the target uses GRUB and keeping a second restoration path adds safety work.
 - macOS supports development, reading and replay, not hardware operation or live watching; the runtime target is Linux.
 - Hardware tests run as root and NixOS provisions the host lock; alternate delegation and manual provisioning add unused paths.
