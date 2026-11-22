@@ -29,7 +29,7 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - Pause holds the profile with the most clean time, stock if none, and stops moves and counting; resume continues the saved loop.
 - Notifications report profile moves only; status explains the current stage, evidence, last move and next action without question-driven progress.
 - Power, temperature and clock measurements at stock and the current profile show gain; offsets alone do not show the benefit.
-- The stock baseline runs the three shapes at stock as a measurement, never as tuning evidence, and a wrong result at stock ends the night; idle observation cannot measure build or game.
+- The stock baseline runs the three shapes at stock as a measurement, never as tuning evidence, and a shape that fails at stock ends the night; idle observation cannot measure build or game.
 - The first version tunes at night only: the desktop stays at stock with no resident day service until day application lands together with its back-off rule; without that rule a crashing profile would be reapplied at every boot, and a privileged writer with nothing to apply does not belong on a desktop that is promised stock.
 - The journal is authoritative and readers reconstruct state without a persisted cache; a second state representation adds invalidation without a measured benefit.
 - The new loop starts a fresh journal and neither reads nor imports older generations; the first `togi night` after the cutover moves the old journal aside unread, and reset archives then starts over. A clean break avoids carrying old policy obligations and needs no extra operator step.
