@@ -19,6 +19,7 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - The firmware stays at stock and offsets are applied after boot; a reset must start from stock.
 - Offsets remain in [-50, 0], with durable intent before each normal write and readback after; loss of control returns the CPU to stock.
 - Tuning and nonzero day profiles require an armed hardware watchdog; an advisory warning cannot protect an unattended machine.
+- A refused start that finds inherited nonzero offsets restores stock itself; no tuning or nonzero write is allowed without the watchdog. On 2026-11-22 the owner rejected “no SMU write of any kind without a watchdog”: a fault during zeroing could need a manual reset, but leaving the machine at inherited offsets prolongs the same unprotected risk. `run` implements the [same-boot stock-only reconciliation](spec/runtime.md#same-boot-resume). A hand-started `day` still leaves a refused nonzero baseline untouched pending [#1632](https://github.com/shgew/togi/issues/1632); the installed day service attempts stock restoration through its post-stop emergency zero.
 - Narrowing writes immediately and crash back-off widens at the next boot; clean-time evidence should yield benefit without an extra reboot.
 - Only the owner starts a night with `togi night`; one first-use risk confirmation is enough and subsequent nights reboot at once.
 - A night has no fixed time cap and ends when its work is done or the owner ends it; useful work should not be cut off by a schedule.

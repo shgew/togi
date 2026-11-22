@@ -98,6 +98,8 @@ togi status
 
 An in-session run requires an armed, counting hardware watchdog, just like the tuning boot; `sudo togi run` checks once at startup and refuses if it is unarmed. Sampling countdown progress can take up to four seconds per candidate device; manual startup does not retry for readiness or arm a watchdog. It checks again before each nonzero profile application and each workload start; loss detected there stops new work and restores verified stock, and a stop signal interrupts sampling and takes ordinary cleanup ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows a failed `watchdog` result. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
 
+If a previous run left nonzero offsets on the same boot, `run` attempts to restore and verify CO 0 even if the watchdog is unarmed. It still refuses to tune; a failed restoration reports that stock was not verified ([Same-boot resume](spec/runtime.md#same-boot-resume)).
+
 ## Daily observation
 
 After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's hardware watchdog.

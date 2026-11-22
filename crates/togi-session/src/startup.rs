@@ -7,7 +7,7 @@ use togi_journal::{DeadEnd, DeadEndCondition, Payload, PreflightCheck, Seq, Sess
 use togi_machine::{CancellationToken, Error};
 
 use crate::emergency::SweepCleared;
-use crate::error::{SessionError, Step};
+use crate::error::{Flow, SessionError, Step};
 use crate::recover::{self, Recovered, Recovery};
 use crate::recovery::BACKEND_CHECK_PREFIX;
 use crate::session::{Control, Fault, Lifecycle, Outcome, Session, Stop, Visit};
@@ -110,28 +110,15 @@ impl Session<'_> {
                 self.record_check("watchdog", check.detail, true)?;
                 Control::Continue
             } else {
-                Control::Stop(self.refuse_watchdog(check.detail)?)
+                return self
+                    .refuse_startup_watchdog(check.detail)
+                    .map(Control::Stop);
             }
         };
         if control != Control::Continue {
             return Ok(control);
         }
-        self.validated = match self.host.validate_smu() {
-            Ok(validated) => Some(validated),
-            Err(Error::Crashed) => return Err(Error::Crashed.into()),
-            Err(error) => {
-                let warning = SessionWarning {
-                    operation: "validate the SMU interface".into(),
-                    trial: None,
-                    error: format!(
-                        "{error}; a journal failure cannot be answered with an emergency zeroing"
-                    ),
-                };
-                self.appender
-                    .append(Payload::SessionWarning(warning), &[])?;
-                None
-            }
-        };
+        self.validate_smu()?;
         let mut failed = Vec::new();
         let mut names = Vec::new();
         for check in self.host.preflight() {
@@ -198,8 +185,50 @@ impl Session<'_> {
         self.record_watchdog_refusal(check.detail).map(Some)
     }
 
-    fn refuse_watchdog(&mut self, detail: String) -> Result<Stop, SessionError> {
+    /// An unarmed watchdog stops startup. Only stock reconciliation may touch inherited offsets on this path,
+    /// after SMU validation and a successful stale-scope sweep.
+    fn refuse_startup_watchdog(&mut self, detail: String) -> Result<Stop, SessionError> {
         let (dead_end, seq) = self.record_watchdog_refusal(detail)?;
+        if self.unreconciled() {
+            self.validate_smu()?;
+            if self.validated.is_some() {
+                for step in [Self::sweep, Self::recover_same_boot] {
+                    if let Control::Stop(stop) = step(self)? {
+                        return Ok(stop);
+                    }
+                }
+                match self.reconcile_stock() {
+                    Ok(()) => {}
+                    Err(Flow::DeadEnd(DeadEndCondition::Smu)) => {
+                        // Do not retry an SMU failure in close, even if prior crash evidence also stands.
+                        let evidence = self
+                            .appender
+                            .recovery()
+                            .smu_evidence()
+                            .ok_or(SessionError::DeadEndUnrecorded(DeadEndCondition::Smu))?;
+                        let failed = DeadEnd {
+                            condition: DeadEndCondition::Smu,
+                            core: None,
+                            detail: evidence.detail.clone(),
+                            action: None,
+                        };
+                        return self.dead_end(failed, &[seq, evidence.seq]);
+                    }
+                    Err(Flow::Fatal(error)) => return Err(error),
+                    Err(Flow::DeadEnd(condition)) => {
+                        return Err(SessionError::DeadEndUnrecorded(condition));
+                    }
+                }
+                // A shutdown here would finish the older dead end without carrying out its pending action.
+                if self.appender.recovery().pending_dead_end().is_some() {
+                    return Ok(Stop::DeadEnd {
+                        dead_end,
+                        causes: vec![seq],
+                        reboot: false,
+                    });
+                }
+            }
+        }
         self.dead_end(dead_end, &[seq])
     }
 
@@ -245,7 +274,7 @@ impl Session<'_> {
                     self.record_check("watchdog", detail, true)?;
                     return Ok(Control::Continue);
                 }
-                return self.refuse_watchdog(detail).map(Control::Stop);
+                return self.refuse_startup_watchdog(detail).map(Control::Stop);
             }
             let step = WATCHDOG_STEP.min(WATCHDOG_WAIT.saturating_sub(waited));
             match self.appender.clock().sleep(cancel, step) {
@@ -254,6 +283,26 @@ impl Session<'_> {
                 Err(error) => return Err(error.into()),
             }
         }
+    }
+
+    fn validate_smu(&mut self) -> Result<(), SessionError> {
+        self.validated = match self.host.validate_smu() {
+            Ok(validated) => Some(validated),
+            Err(Error::Crashed) => return Err(Error::Crashed.into()),
+            Err(error) => {
+                let warning = SessionWarning {
+                    operation: "validate the SMU interface".into(),
+                    trial: None,
+                    error: format!(
+                        "{error}; a journal failure cannot be answered with an emergency zeroing"
+                    ),
+                };
+                self.appender
+                    .append(Payload::SessionWarning(warning), &[])?;
+                None
+            }
+        };
+        Ok(())
     }
 
     /// Clears the trial scopes a stale run may have left, which is what makes the SMU safe to touch. The sweep is
@@ -301,17 +350,17 @@ impl Session<'_> {
         if !self.unreconciled() {
             return Ok(Control::Continue);
         }
-        let step = self.read_back_and_restore().map(|()| Control::Continue);
-        let control = self.settle(step)?;
-        if control == Control::Continue {
-            self.visit = Visit::Same { reconciled: true };
-        }
-        Ok(control)
+        let step = self.reconcile_stock().map(|()| Control::Continue);
+        self.settle(step)
     }
 
-    fn read_back_and_restore(&mut self) -> Step<()> {
+    fn reconcile_stock(&mut self) -> Step<()> {
         write::read_all(&mut self.appender, &mut *self.smu, &mut self.hardware)?;
-        self.restore().map(drop)
+        if !self.restore()?.is_complete() {
+            return Err(SessionError::Unproven.into());
+        }
+        self.visit = Visit::Same { reconciled: true };
+        Ok(())
     }
 
     /// What the journal holds that ends the run before it starts: a dead end pending from before, a defect that needs
