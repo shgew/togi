@@ -489,6 +489,88 @@ fn an_unarmed_same_boot_restart_does_not_touch_the_smu_without_validation() {
     );
 }
 
+/// Trial scopes a stale run left that cannot be confirmed stopped.
+struct SweepFailure(Box<dyn togi_machine::Trials>);
+
+impl togi_machine::Trials for SweepFailure {
+    fn controller_pid(&self) -> u32 {
+        self.0.controller_pid()
+    }
+
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, togi_machine::Error> {
+        self.0.content(workload)
+    }
+
+    fn sweep(&mut self, _: &CancellationToken) -> Result<togi_machine::Swept, togi_machine::Error> {
+        Err(togi_machine::Error::Other(Box::new(io::Error::other(
+            "leftover trial scope still running",
+        ))))
+    }
+
+    fn recover_frequency(
+        &mut self,
+        stopped: &togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        self.0.recover_frequency(stopped, journal)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        self.0.start(cancel, spec, ready, journal)
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.0.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.0.samples(id)
+    }
+}
+
+#[test]
+fn an_unarmed_same_boot_restart_does_not_touch_the_smu_when_the_sweep_fails() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let earlier = interrupted_apply(&sim, &mem, HookPhase::After);
+    sim.interrupt_smu(|_: &SmuOperation| panic!("SMU access before leftover scopes are stopped"));
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(SweepFailure(input.machine.trials));
+
+    let ended = run(input);
+    assert_eq!(refusal(&ended), DeadEndCondition::Containment);
+    let events = &ended.journal.events()[earlier..];
+    let swept = events.iter().find(|event| matches!(
+        &event.payload, Payload::PreflightCheck(check) if check.check == "trial_scopes" && !check.ok
+    )).unwrap();
+    let refused = events.iter().find(|event| matches!(
+        &event.payload, Payload::DeadEnd(end) if end.condition == DeadEndCondition::Containment
+    )).unwrap();
+    assert_eq!(refused.cause, [swept.seq]);
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::SmuIntent(_)
+            | Payload::SmuReadback(_)
+            | Payload::ProfileRestored(_)
+            | Payload::Shutdown(_)
+    )));
+}
+
 #[test]
 fn watchdog_loss_after_preflight_refuses_the_first_nonzero_profile() {
     let sim = simulator();
