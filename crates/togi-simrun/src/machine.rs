@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use togi_journal::StateDir;
 use togi_journal::fs::Fs;
-use togi_sim::{Model, Persisted, RestoreError, RunSettings, Simulator};
+use togi_sim::{MachineSource, Model, Persisted, RestoreError, RunSettings, Simulator};
 
 use crate::input::Persistence;
 use crate::simulate::lock;
@@ -62,7 +62,10 @@ pub fn resume_simulator(
         Some(bytes) => {
             let persisted = serde_json::from_slice(&bytes)
                 .map_err(|source| ResumeError::Decode { path, source })?;
-            Ok(Simulator::restore(model, facts, persisted)?)
+            Ok(Simulator::restore(
+                MachineSource::fitted(model, facts),
+                persisted,
+            )?)
         }
         None => Ok(Simulator::new(
             model,

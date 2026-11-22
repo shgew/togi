@@ -23,24 +23,168 @@ proposed profile: none
 paused-saved profile: none
 allowance: 0 consumed / 2 limit; 2 remaining; 0 provisional; 0 reclassified
 unit: CCD 0, phase coarse, parent none, inherited start 0
-  U: observed -10 [#831]
+  U: observed -10 [#807]
   state: held: hold 0/50 h; exact-profile qualification required
   next proposal: core 0 -3, core 1 -3, core 2 -3, core 3 -3, core 4 -3, core 5
   -3, core 6 -3, core 7 -3, core 8 0, core 9 0, core 10 0, core 11 0, core 12 0,
   core 13 0, core 14 0, core 15 0
-  qualification: in progress; 103 outstanding [#866 #871 #876 #881 #886 #891
-  #896 #901 #906 #911 #916 #921 #926 #931 #936 #941 #946 #951 #956 #961 #966
-  #971 #976 #981 #986 #991 #996 #1001 #1006 #1011 #1016 #1021 #1026 #1031 #1036
-  #1041 #1046 #1051 #1056 #1061 #1066 #1071 #1076 #1081 #1086 #1091 #1096 #1101
-  #1106 #1111 #1116 #1121 #1126 #1131 #1136 #1141 #1146 #1151 #1156 #1161 #1166
-  #1171 #1176 #1181 #1186 #1191 #1196 #1201 #1206 #1211 #1216 #1221 #1226 #1231
-  #1236 #1241 #1246 #1251 #1256 #1261 #1266 #1271 #1276 #1281 #1286 #1291 #1296
-  #1301 #1306 #1311 #1316 #1321 #1326 #1331 #1336 #1341 #1348 #1355 #1362 #1369
-  #1376 #1383 #1390 #1397 #1404 #1411 #1418 #1425 #1432 #1439 #1446 #1453 #1460
-  #1467 #1474 #1481 #1488 #1495 #1502 #1509 #1516 #1523 #1530 #1537 #1544 #1551
-  #1558 #1565 #1572 #1579 #1586 #1593 #1600 #1607 #1614 #1621 #1628 #1635 #1642
-  #1649 #1656 #1663 #1670 #1677 #1684 #1691 #1698 #1705 #1712 #1719 #1726 #1733
-  #1740 #1747 #1754 #1761]
+  qualification: in progress; 259 outstanding []
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 0
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 1
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 2
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 3
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 4
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 5
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 6
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 7
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 8
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 9
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 10
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 11
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 12
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 13
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 14
+    outstanding: R1 mprime-sse-4k-21k 90s exact cores 15
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 0
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 1
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 2
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 3
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 4
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 5
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 6
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 7
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 8
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 9
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 10
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 11
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 12
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 13
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 14
+    outstanding: R1 ycruncher-bkt-sftv4 90s exact cores 15
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 0
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 1
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 2
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 3
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 4
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 5
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 6
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 7
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 8
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 9
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 10
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 11
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 12
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 13
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 14
+    outstanding: R1 ycruncher-snt-svt 90s exact cores 15
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 0
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 1
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 2
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 3
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 4
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 5
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 6
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 7
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 8
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 9
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 10
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 11
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 12
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 13
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 14
+    outstanding: R2 mprime-avx2-36k-248k 90s exact cores 15
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 0
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 1
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 2
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 3
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 4
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 5
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 6
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 7
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 8
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 9
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 10
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 11
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 12
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 13
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 14
+    outstanding: R2 mprime-avx512-36k-248k 90s exact cores 15
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 0
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 1
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 2
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 3
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 4
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 5
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 6
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 7
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 8
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 9
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 10
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 11
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 12
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 13
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 14
+    outstanding: R2 ycruncher-fftv4-n63-vt3 90s exact cores 15
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 0
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 1
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 2
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 3
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 4
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 5
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 6
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 7
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 8
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 9
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 10
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 11
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 12
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 13
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 14
+    outstanding: R3 mprime-sse-4k-21k-steps 120s exact cores 15
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 0
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 1
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 2
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 3
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 4
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 5
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 6
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 7
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 8
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 9
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 10
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 11
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 12
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 13
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 14
+    outstanding: R3 ycruncher-bkt-sftv4-steps 120s exact cores 15
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 0
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 1
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 2
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 3
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 4
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 5
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 6
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 7
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 8
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 9
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 10
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 11
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 12
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 13
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 14
+    outstanding: R3 ycruncher-snt-svt-steps 120s exact cores 15
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 0
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 1
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 2
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 3
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 4
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 5
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 6
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 7
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 8
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 9
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 10
+    outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 11
     outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 12
     outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 13
     outstanding: R4 mprime-sse-4k-21k-duty25 120s exact cores 14
@@ -189,20 +333,25 @@ Daily safety
 freeze: off
 firmware: valid
 
-Last night 00:00–08:01
-elapsed: 3h35m
+Last night 00:00–03:28
+elapsed: 3h28m
 QUEUE            SHARE  USED  TIME
 reproduction     25%    0%    0s
 qualification    75%    0%    0s
-mapping          10%    100%  3h35m
+mapping          10%    100%  3h28m
 requalification  10%    0%    0s
 current task: qualification (task qualification #0)
 mapping CCD 0: next offset -6, bracketing the failure at -10
 mapping CCD 1: next offset -10
-qualification: CCD 0 -3, CCD 1 0 (next step) started, 4.1 h eligible witnessed
+qualification: CCD 0 -3, CCD 1 0 (next step) started, 0 h eligible witnessed
   exposure
-qualifying CCD 0 -3, CCD 1 0: 4.1 h eligible witnessed exposure, 103 outstanding
-  outstanding R4 mprime-sse-4k-21k-duty25 120s exact x4; R4
+qualifying CCD 0 -3, CCD 1 0: 0 h eligible witnessed exposure, 259 outstanding
+  outstanding R1 mprime-sse-4k-21k 90s exact x16; R1 ycruncher-bkt-sftv4 90s
+    exact x16; R1 ycruncher-snt-svt 90s exact x16; R2 mprime-avx2-36k-248k 90s
+    exact x16; R2 mprime-avx512-36k-248k 90s exact x16; R2
+    ycruncher-fftv4-n63-vt3 90s exact x16; R3 mprime-sse-4k-21k-steps 120s exact
+    x16; R3 ycruncher-bkt-sftv4-steps 120s exact x16; R3 ycruncher-snt-svt-steps
+    120s exact x16; R4 mprime-sse-4k-21k-duty25 120s exact x16; R4
     ycruncher-bkt-sftv4-duty50 120s exact x16; R4 ycruncher-snt-svt-duty75 120s
     exact x16; R5 mprime-sse-4k-21k-smt 120s exact x16; R6
     mprime-sse-4k-21k-idle 900s exact; R7 mprime-avx2-36k-248k-allcore 120s

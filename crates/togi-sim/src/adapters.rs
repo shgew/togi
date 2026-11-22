@@ -231,7 +231,7 @@ impl Host for SimHost {
     fn topology(&mut self) -> Result<Vec<CoreInfo>, Error> {
         let runtime = self.0.borrow();
         runtime.alive()?;
-        let cores = runtime.model.cores();
+        let cores = runtime.source.cores();
         let topology =
             |error: &dyn std::fmt::Display| other(format!("simulated topology: {error}"));
         ids(cores)
@@ -240,7 +240,7 @@ impl Host for SimHost {
                 let cpu = |index: usize| CpuId::try_from(index).map_err(|error| topology(&error));
                 Ok(CoreInfo {
                     core,
-                    ccd: CcdId::try_from(runtime.model.ccd_of(core))
+                    ccd: CcdId::try_from(runtime.source.ccd_of(core))
                         .map_err(|error| topology(&error))?,
                     cpus: vec![cpu(index)?, cpu(index + cores)?],
                 })
@@ -272,7 +272,7 @@ impl Host for SimHost {
         };
         runtime.alive().map_err(fail)?;
         let ranking = runtime
-            .model
+            .source
             .ranking()
             .ok_or_else(|| fail(other("simulated preferred-core ranking unavailable")))?;
         Ok(ids(ranking.len())
@@ -289,7 +289,7 @@ impl Host for SimHost {
             .collect();
         checks.push(Check {
             name: "pm_table".to_owned(),
-            detail: if runtime.model.voltage().is_some() {
+            detail: if runtime.source.has_voltage_lanes() {
                 "simulated shared-voltage model supplies per-core voltage requests and loaded-core clocks"
             } else {
                 "pm_table version unavailable: simulator reports no per-core lanes"
