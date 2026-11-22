@@ -114,9 +114,11 @@ that marker as unclean, with its checkpoint, offsets, reset reason and available
 unavailable evidence stays unknown.
 
 Unlike `run`, a `sudo togi day` started by hand that refuses a nonzero baseline does not restore
-stock: it exits and leaves those offsets applied until you run `sudo togi emergency-stop` or reboot
-([#1632](https://github.com/shgew/togi/issues/1632)). The installed day service attempts zero-only
-recovery through its post-stop step after such a refusal.
+stock: it exits and leaves those offsets applied ([#1632](https://github.com/shgew/togi/issues/1632)).
+Reboot, or run `sudo togi emergency-stop` with no other togi process running; only a successful
+exit means every core was zeroed and read back at 0, and a reported failure leaves stock unverified.
+The installed day service attempts the same zero-only recovery through its post-stop step after
+such a refusal.
 
 `togi status` shows the Day summary; `togi events --kind day` shows the raw records. Hours are checkpointed lower bounds, not a stability guarantee. An interval whose two readbacks differ cannot identify when offsets changed, so it remains in boot hours but earns no hours for either profile.
 
