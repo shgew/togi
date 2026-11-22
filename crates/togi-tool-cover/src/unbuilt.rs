@@ -22,10 +22,10 @@ pub struct Built {
     pub tested: HashSet<String>,
 }
 
-/// The sources the dep-info files under a build profile directory name. Crates and their tests
-/// write dep-info into `deps`, build scripts into `build/<package>-<hash>`. Each source also has a
-/// line of its own ending in a colon, which is what is read, the crate root first; rustc escapes a
-/// space in its path as a backslash and a space. A dep-info whose crate root is
+/// The sources the dep-info files under a build profile directory name. Cargo writes the dep-info
+/// of every unit, crates, their tests and build scripts alike, into `build/<package>/<hash>/out`.
+/// Each source also has a line of its own ending in a colon, which is what is read, the crate root
+/// first; rustc escapes a space in its path as a backslash and a space. A dep-info whose crate root is
 /// `<package>/tests/<name>.rs` or `<package>/tests/<name>/main.rs` is an integration test's.
 pub fn built_sources(tree: &dyn Tree, build_dir: &Path, root: &Path) -> Result<Built, Error> {
     let dep_infos = |dir: &Path| {
@@ -37,9 +37,12 @@ pub fn built_sources(tree: &dyn Tree, build_dir: &Path, root: &Path) -> Result<B
             .collect::<Vec<_>>()
     };
     let build = build_dir.join("build");
-    let mut infos = dep_infos(&build_dir.join("deps"));
+    let mut infos = Vec::new();
     for package in tree.list(&build).unwrap_or_default() {
-        infos.extend(dep_infos(&build.join(package)));
+        let package = build.join(package);
+        for unit in tree.list(&package).unwrap_or_default() {
+            infos.extend(dep_infos(&package.join(unit).join("out")));
+        }
     }
     if infos.is_empty() {
         return Err(Error::NoDepInfo(build_dir.to_owned()));

@@ -8,7 +8,7 @@ pub const USAGE: &str = "\
 Usage: cover --lcov TRACE --build-dir DIR --base REV
 
   --lcov TRACE      lcov trace written by cargo llvm-cov
-  --build-dir DIR   profile directory of the coverage build, whose deps and build subdirectories hold its dep-info files
+  --build-dir DIR   profile directory of the coverage build, whose build/<package>/<hash>/out directories hold its dep-info files
   --base REV        revision whose merge base with HEAD the working tree is compared against
 ";
 
