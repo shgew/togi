@@ -61,7 +61,7 @@ If the desktop still crashes with every core back at its CCD value, the CCD marg
 ## Always
 
 - Offsets stay in [-50, 0].
-- Every normal write is journaled before and read back after. Emergency recovery can only write zero and read it back, even if a foreign-owned or nonregular lock entry blocks proof of exclusion.
+- Every write is journaled before and read back after.
 - The firmware stays at stock; togi applies offsets after boot, so a reset always starts at stock.
 - The CPU returns to stock whenever togi loses control: lost watchdog, failed journal, failed readback.
 - No tuning and no nonzero day profile without an armed hardware watchdog.
