@@ -15,9 +15,9 @@ These decisions govern the design being built in [model.md](model.md), not a cla
 - The three scheduled test shapes are build, game and idle; they represent the target desktop's use without the compulsory nine-shape matrix.
 - A pass requires verified results from every loaded core; CPU-time progress alone is not correctness evidence.
 - The first night runs a known-bad profile through each shape for up to 10 minutes and at least one shape must fail; tests that miss the known failure cannot justify deeper tuning.
-- A first night needs a recorded known-bad profile for matching hardware; only the two-CCD target has one, so other machines are refused before any offset is written, because a projected or skipped self-check proves nothing.
+- A first night needs a known-bad profile recorded for matching hardware; only the two-CCD target has one, so a single-CCD machine is refused before any offset is written, because a projected or skipped self-check proves nothing.
 - Short calibrated probes find edges and one whole-profile soak tests them together; isolated results alone do not qualify a profile.
-- The night search starts with steps of 5 for all cores together and 2 per unit, probes of twice the self-check's time to failure and a soak of twice the probe; these are starting values without evidence, to be corrected from the first real night.
+- The night search starts with steps of 5 for all cores together and 2 per unit, probes of twice the self-check's time to failure and a soak of twice the probe, because a larger multiple let one late detection outlast a complete miss and a long soak was the first night's largest avoidable cost; these are starting values without evidence, to be corrected from the first real night.
 - The firmware stays at stock and offsets are applied after boot; a reset must start from stock.
 - Offsets remain in [-50, 0], with durable intent before each normal write and readback after; loss of control returns the CPU to stock.
 - Tuning and nonzero day profiles require an armed hardware watchdog; an advisory warning cannot protect an unattended machine.
