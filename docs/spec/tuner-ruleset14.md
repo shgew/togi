@@ -229,7 +229,7 @@ Write `successor.imported` and `campaign.start {origin, history}` with source pr
 
 A permanent reset boundary ends raw tuning carry, but campaign ledger records cross that boundary: reset never renews allowance. Restart, reset, firmware change, new session and reboot do not replenish the two-event allowance.
 
-**Crashes before the first enrollment:** a daily event whose crash happened before the machine's first campaign enrollment or start is a whole-profile veto and nothing else. It consumes no allowance, stops no unit and needs no applied-step ancestry, so a history made only of such events stays complete with the full allowance. This includes a manual record appended after the transition whose `Unobserved.at`, or whose named crashed boot's own timeline, precedes that start.
+**Crashes before the first enrollment:** a daily event whose crash happened before the machine's first campaign enrollment or start is a whole-profile veto and nothing else. It consumes no allowance, stops no unit and needs no applied-step ancestry, so a history made only of such events stays complete with the full allowance. An existing manual record is classified by its `Unobserved.at` or the named crashed boot's own timeline, even if the record was appended later.
 
 If a late record makes the current applied D forbidden, retreat to a non-forbidden profile, using stock while the exact target is unqualified. Units shallowed only by that pre-enrollment veto, including its qualification fallback, do not stop; independently required in-campaign or adverse-evidence stops remain unchanged.
 

@@ -21,10 +21,10 @@ pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
 pub use day::{
-    CrashedBoot, DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayCrashes,
-    DayFault, DayIntervalBoot, DayIntervalCredit, DayIntervals, DayOffsetsChanged, DayPause,
-    DayQuestions, DayRecord, DayUncleanEnd, EndClass, LiveFault, LoadMix, OffsetSource,
-    OffsetsError, PauseSource, PauseState, RecordableEnd, RecordedOffsets, Running, Trap,
+    CrashedBoot, DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayFault,
+    DayIntervalBoot, DayIntervalCredit, DayIntervals, DayOffsetsChanged, DayPause, DayQuestions,
+    DayRecord, DayUncleanEnd, EndClass, LiveFault, LoadMix, OffsetSource, OffsetsError,
+    PauseSource, PauseState, RecordedOffsets, Running, Trap,
 };
 pub use domain::{
     Activity, Attribution, Certainty, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition,

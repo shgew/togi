@@ -293,10 +293,6 @@ impl System for Night {
         Ok(self.answers.borrow_mut().pop_front().flatten())
     }
 
-    fn prompt_line(&self) -> io::Result<Option<String>> {
-        self.host.prompt_line()
-    }
-
     fn day_observer<'lock>(
         &self,
         lock: &'lock HostLock,

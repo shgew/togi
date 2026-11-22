@@ -251,7 +251,7 @@ pub(super) struct LiveMce {
     pub(super) fault: DayFault,
 }
 
-/// A crash the user recorded with `togi day record`.
+/// A historical manual crash record (`day.record`), live or imported.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ManualRecord {
     pub(super) seq: Seq,

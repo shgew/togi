@@ -80,20 +80,6 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
-(record)
-_arguments "${_arguments_options[@]}" : \
-'(--unobserved-at)--boot=[The crashed boot\: the ID of a boot with a recorded unclean end]:BOOT:_default' \
-'--unobserved-at=[When a crash happened that has no recorded unclean end]:TIME:_default' \
-'*--offset=[An offset the crashed boot ran\: all=N, ccdI=N or coreI=N; repeat for more]:SPEC:_default' \
-'--entered-at=[When the offsets given with --offset were entered in firmware setup]:TIME:_default' \
-'--running=[What was running\: idle, desktop, build, game, other or unknown]:CATEGORY:_default' \
-'--note=[Free text about what was running]:TEXT:_default' \
-'--state-dir=[State directory]:path:_files -/' \
-'--yes[Append without asking first at a terminal]' \
-'-h[Print help (see more with '\''--help'\'')]' \
-'--help[Print help (see more with '\''--help'\'')]' \
-&& ret=0
-;;
 (pause)
 _arguments "${_arguments_options[@]}" : \
 '--until=[Pause until the next occurrence of this local time (HH\:MM)]:HH:MM:_default' \
@@ -145,10 +131,6 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (reapply)
-_arguments "${_arguments_options[@]}" : \
-&& ret=0
-;;
-(record)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -285,10 +267,6 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
-(record)
-_arguments "${_arguments_options[@]}" : \
-&& ret=0
-;;
 (pause)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -382,7 +360,6 @@ _togi__subcmd__day_commands() {
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
 'reapply:Reapply the committed profile after system resume; used by the system sleep hook' \
-'record:Record a crash togi did not observe' \
 'pause:Keep every core at stock until the next cold boot or a deadline' \
 'resume:End the pause early and verify committed-profile reapplication' \
 'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
@@ -407,7 +384,6 @@ _togi__subcmd__day__subcmd__help_commands() {
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
 'reapply:Reapply the committed profile after system resume; used by the system sleep hook' \
-'record:Record a crash togi did not observe' \
 'pause:Keep every core at stock until the next cold boot or a deadline' \
 'resume:End the pause early and verify committed-profile reapplication' \
 'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
@@ -446,11 +422,6 @@ _togi__subcmd__day__subcmd__help__subcmd__reapply_commands() {
     local commands; commands=()
     _describe -t commands 'togi day help reapply commands' commands "$@"
 }
-(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__record_commands] )) ||
-_togi__subcmd__day__subcmd__help__subcmd__record_commands() {
-    local commands; commands=()
-    _describe -t commands 'togi day help record commands' commands "$@"
-}
 (( $+functions[_togi__subcmd__day__subcmd__help__subcmd__resume_commands] )) ||
 _togi__subcmd__day__subcmd__help__subcmd__resume_commands() {
     local commands; commands=()
@@ -475,11 +446,6 @@ _togi__subcmd__day__subcmd__pause_commands() {
 _togi__subcmd__day__subcmd__reapply_commands() {
     local commands; commands=()
     _describe -t commands 'togi day reapply commands' commands "$@"
-}
-(( $+functions[_togi__subcmd__day__subcmd__record_commands] )) ||
-_togi__subcmd__day__subcmd__record_commands() {
-    local commands; commands=()
-    _describe -t commands 'togi day record commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__day__subcmd__resume_commands] )) ||
 _togi__subcmd__day__subcmd__resume_commands() {
@@ -529,7 +495,6 @@ _togi__subcmd__help__subcmd__day_commands() {
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions and the morning evidence report to this graphical session' \
 'reapply:Reapply the committed profile after system resume; used by the system sleep hook' \
-'record:Record a crash togi did not observe' \
 'pause:Keep every core at stock until the next cold boot or a deadline' \
 'resume:End the pause early and verify committed-profile reapplication' \
 'freeze:Keep the committed profile and prevent promotions, never safety retreats' \
@@ -561,11 +526,6 @@ _togi__subcmd__help__subcmd__day__subcmd__pause_commands() {
 _togi__subcmd__help__subcmd__day__subcmd__reapply_commands() {
     local commands; commands=()
     _describe -t commands 'togi help day reapply commands' commands "$@"
-}
-(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__record_commands] )) ||
-_togi__subcmd__help__subcmd__day__subcmd__record_commands() {
-    local commands; commands=()
-    _describe -t commands 'togi help day record commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__help__subcmd__day__subcmd__resume_commands] )) ||
 _togi__subcmd__help__subcmd__day__subcmd__resume_commands() {

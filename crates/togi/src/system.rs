@@ -225,9 +225,6 @@ pub trait System {
     /// Whether stdin and stderr are both terminals.
     fn interactive(&self) -> bool;
 
-    /// The next line typed on standard input with its newline, or `None` when the input ended.
-    fn prompt_line(&self) -> io::Result<Option<String>>;
-
     /// A handle on standard error that outlives the command's borrowed streams: the event lines of
     /// a run and the report of its emergency.
     fn stderr(&self) -> Box<dyn Write>;
@@ -414,11 +411,6 @@ impl System for Real {
 
     fn interactive(&self) -> bool {
         both_terminals(&io::stdin(), &io::stderr())
-    }
-
-    fn prompt_line(&self) -> io::Result<Option<String>> {
-        let mut line = String::new();
-        Ok((io::stdin().read_line(&mut line)? > 0).then_some(line))
     }
 
     fn stderr(&self) -> Box<dyn Write> {

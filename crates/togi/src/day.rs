@@ -25,7 +25,6 @@ mod control_cli;
 mod faults;
 mod notify;
 mod pause;
-mod record;
 pub mod socket;
 
 use faults::Faults;
@@ -54,10 +53,6 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
             "togi day answer <boot> frozen",
             "Answer a pending question without root",
         ),
-        (
-            "sudo togi day record",
-            "Record a crash togi did not observe",
-        ),
     ])
 });
 
@@ -73,8 +68,6 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 ///
 /// Answer, notify, pause/resume and freeze/unfreeze use the credential-checked day socket without
 /// root or journal access. Pauses zero and verify; ending them reapplies the committed profile without promotion.
-/// Record requires root and hands the record to the live writer, opening the writer itself only
-/// when no day service runs.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -98,7 +91,6 @@ pub enum Command {
     /// Reapply the committed profile after system resume; used by the system sleep hook.
     #[command(hide = true)]
     Reapply,
-    Record(record::Args),
     /// Keep every core at stock until the next cold boot or a deadline.
     Pause(control_cli::Args),
     /// End the pause early and verify committed-profile reapplication.
@@ -122,7 +114,6 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         return match command {
             Command::Answer { boot, answer } => answer_end(boot, *answer, ctx),
             Command::Notify => notify::run(ctx),
-            Command::Record(record) => record::run(record, ctx),
             Command::Reapply => reapply(ctx),
             Command::Pause(args) => control_cli::pause(args, ctx),
             Command::Resume => control_cli::resume(ctx),
@@ -226,7 +217,6 @@ fn answer_end(boot: &str, answer: togi_journal::DayAnswerKind, ctx: &mut Context
         }
         Ok(
             socket::Reply::Questions { .. }
-            | socket::Reply::Recorded { .. }
             | socket::Reply::Reapplied
             | socket::Reply::State { .. }
             | socket::Reply::Controlled { .. }
@@ -252,7 +242,6 @@ fn reapply(ctx: &mut Context<'_>) -> Exit {
         Ok(
             socket::Reply::Questions { .. }
             | socket::Reply::Answered
-            | socket::Reply::Recorded { .. }
             | socket::Reply::State { .. }
             | socket::Reply::Controlled { .. }
             | socket::Reply::Refused { .. },

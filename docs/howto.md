@@ -158,35 +158,13 @@ togi day answer <boot> frozen
 
 `<boot>` is the boot id `status` prints. Answering needs no root shell, but it needs the day service running and your user allowed on its socket: name your user in `services.togi.day.users` (below). Run the same command again to change an answer; the last one counts. The answer is journaled against the crashed boot and its offset profile. Ruleset 13 consumes the answers and recorded evidence under [Daily events](spec/tuner.md#daily-events), including provisional CPU-suspect classification while an end remains unanswered. A later answer can reclassify that event; it does not enable nonzero hardware application.
 
+`togi day notify` sends a desktop notification for each pending question using the installed `notify-send` (from libnotify; togi adds no notification library). On KDE Plasma (`XDG_CURRENT_DESKTOP` containing `KDE`) the notification has the four answers as buttons and waits up to two minutes for one. On other desktops it is a plain notification naming the command, because togi does not query what a notification server supports; answer with `togi day answer`. Dismissing a notification answers nothing, and the question stays in `status` and `watch`. The module's `togi-day-notify` user service runs it for each user in `services.togi.day.users`; elsewhere run `togi day notify` in your graphical session yourself.
+
 ### Recording a crash togi did not observe
 
-A freeze from before the day service existed has no unclean end to answer. `sudo togi day record` journals it, so Ruleset 13 can treat the offsets it ran as a whole-profile veto; the [journal spec](spec/journal.md#day-observation) has the rules, and the command prints what the record will do before it appends. Leave the day service running: the command sends your confirmed record to its credential-checked socket, and the live writer validates and appends it. The service refuses a record drafted from a session other than the one it observes, such as one a `--state-dir` naming another directory selects. Only when no service runs does the command take the writer lock itself; a refused or failed socket request never falls back to a second writer.
+When the day service starts, it records an unclean end for each earlier boot in which its last start was not followed by a clean stop. A crash in daily use in a boot where the day service never started, or where its last start had already ended in a clean stop, is not recorded and is not tuning evidence; there is no manual entry to add it. Existing manual records remain readable and still count as [tuning evidence](spec/tuner.md#manual-crash-records).
 
-For a boot the observer saw end uncleanly, name it with `--boot <boot>`; the offsets are the ones the observer read back, unless you pass `--offset` for the ones you remember entering:
-
-```sh
-sudo togi day record --boot <boot> --running game
-```
-
-For a crash with no recorded end, give when it happened with `--unobserved-at` and the offsets with `--offset`, plus when you entered them in firmware setup with `--entered-at`. Each `--offset` is `all=N`, `ccdI=N` or `coreI=N`; a more specific one overrides a less specific one, and every core needs a value. To record the 2026-10-19 freezes:
-
-```sh
-# the freeze at -25 and -30 by CCD (check which CCD took which value)
-sudo togi day record --unobserved-at "<crash time>" --offset ccd0=-25 --offset ccd1=-30 \
-  --entered-at "<time you entered the offsets>" --running build
-
-# the freeze at a profile that differs per core: one --offset coreI=N per core, N from your profile
-sudo togi day record --unobserved-at "<crash time>" --offset core0=N --offset core1=N --offset core2=N \
-  --entered-at "<time you entered the offsets>" --running desktop  # ...and so on for every core
-
-# the freeze at a uniform -20
-sudo togi day record --unobserved-at "<crash time>" --offset all=-20 \
-  --entered-at "<time you entered the offsets>" --running build
-```
-
-Times are RFC 3339 or local (`2026-10-19 14:30`). `--running` is `idle`, `desktop`, `build`, `game`, `other` or `unknown` (the default). At a terminal, `togi day record` asks for whatever the options leave out, with defaults: the newest unclean end without a record, and its read-back offsets. The prompts take the same `all=N` form as the options and journal the same record; `--yes` skips the final confirmation.
-
-`togi day notify` sends a desktop notification for each pending question using the installed `notify-send` (from libnotify; togi adds no notification library). On KDE Plasma (`XDG_CURRENT_DESKTOP` containing `KDE`) the notification has the four answers as buttons and waits up to two minutes for one. On other desktops it is a plain notification naming the command, because togi does not query what a notification server supports; answer with `togi day answer`. Dismissing a notification answers nothing, and the question stays in `status` and `watch`. The module's `togi-day-notify` user service runs it for each user in `services.togi.day.users`; elsewhere run `togi day notify` in your graphical session yourself.
+### Running the day service
 
 Daily observation requires an existing compatible session journal. It refuses to create a session or transition one written by another ruleset, exits 16 and, unlike other failures, is not restarted by the module's unit. Start a session with `sudo togi night` and the tuning boot first. Stop daily observation before `togi run` or `togi reset` in a normal boot: they share the host and writer locks. `togi status`, `togi events` and `togi watch` remain lock-free while observation runs.
 
@@ -366,7 +344,7 @@ Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmw
 
 1. Reboot and answer the question about the unclean end (`togi day answer`, [Answering what happened](#answering-what-happened)). A CPU-suspect event vetoes that whole profile and every later day profile at or deeper than it on every CCD. It schedules a step back at the next cold boot and one reproduction night; [daily-event escalation](spec/tuner.md#whole-profile-veto-and-escalation) determines which steps retreat. A clean reproduction does not clear the veto; only evidence that reclassifies the event does.
 2. Check the filesystem with the checks appropriate to that filesystem, using rescue media or an unmounted filesystem where required. Check the Nix package store's contents with `sudo nix-store --verify --check-contents`, and address any reported damage before returning to heavy or write-intensive work.
-3. If togi was not running when the machine froze, [record the crash](#recording-a-crash-togi-did-not-observe) with the offsets that were applied.
+3. If the day service never started in that boot, or its last start there had already ended in a clean stop when the machine froze, togi has no record of the crash and does not count it ([Recording a crash togi did not observe](#recording-a-crash-togi-did-not-observe)); include the offsets that were applied when you report it.
 4. [Report the crash](https://github.com/shgew/togi/issues) with what was running and when; keep the togi session and available system logs as evidence, and remove personal and machine-identifying details from anything you publish.
 
 ## 6. Dead ends

@@ -40,7 +40,7 @@ safety decisions may require a shallower result and firmware changes apply CO 0.
 owns stop/error zeroing and readback; no pure policy function obtains a hardware capability. Ending a
 pause is a same-boot reapplication, never a second cold-boot promotion opportunity.
 
-**Daily evidence.** Raw boot ends, live faults, manual records and revised answers feed [daily-event classification and escalation](tuner.md#daily-events). An answered question and a resolved event are separate states. Daily-only boots remain excluded from tuning crash recovery, even though their observations now affect day decisions. The day service never starts test workloads.
+**Daily evidence.** Raw boot ends, live faults, historical manual records and revised answers feed [daily-event classification and escalation](tuner.md#daily-events). An answered question and a resolved event are separate states. Daily-only boots remain excluded from tuning crash recovery, even though their observations now affect day decisions. The day service never starts test workloads.
 
 **Transition.** Archive Ruleset 13 unchanged and start the durably identified successor at verified stock. Import original-identity raw daily observations, compatible `exposure.observed`, CPU-suspect event, stop and veto records needed for campaign reconstruction. Write `successor.imported` and `campaign.start {origin, history}`; unreconstructible history blocks nonzero exploration. A permanent reset boundary ends raw tuning carry but not campaign-ledger carry. Restart, reset, firmware change, new session and reboot never renew the two-event allowance. [Ruleset 14 §10](tuner-ruleset14.md#10-journal-schema-and-architectural-record) owns eligibility; journal transactions own durability. `SCHEMA` stays 1.
 
@@ -130,12 +130,11 @@ peers whose primary group is the socket's group, and explicit members of that gr
 account files on each connection of such a peer, so membership changes take effect without
 restarting the service. Each request and reply is one JSON line. Questions and answers retain
 `"questions"`, `{"answer":{"boot":"<boot>","answer":"<kind>"}}`, `{"questions":{"pending":[...]}}` and
-`"answered"`; refusals are `{"refused":{"reason":"..."}}`. Root alone may send
-`{"record":{"record":<existing day.record payload>}}`, acknowledged as `{"recorded":{"seq":N}}`, or
-`"reapply"`, acknowledged as `"reapplied"` only after verified readback of the still-permitted
-committed D, or stock while paused. These are socket extensions, not new journal fields or event
-kinds. The service serves one client per second, bounds requests at 16 KiB and bounds an exchange at
-one second. Without a day service there is no answer socket; answer clients never write the journal.
+`"answered"`; refusals are `{"refused":{"reason":"..."}}`. The sleep hook's root-only `"reapply"`
+request is acknowledged as `"reapplied"` only after verified readback of the still-permitted
+committed D, or stock while paused. The service serves one client per second, bounds requests at
+16 KiB and bounds an exchange at one second. Without a day service there is no answer socket;
+answer clients never write the journal.
 
 In a request, `answer` is the journal's wire name (`frozen`, `graphics`, `power_off`, `unsure`); the command line spells the third `power-off`.
 
@@ -154,13 +153,13 @@ reasons, hours and coverage gaps.
 
 The Day section of `status` appears when observations exist. It reports distinct boots observed, boots with clean and unclean ends, whether PID 1's hardware watchdog was armed at the newest observer check (`not recorded` when the newest start predates checking), checkpointed hours per exact read-back profile, and the last unclean end with its reset reason. Hours are a lower bound, truncated to three decimal places for display, and make no stability claim. A Day questions section follows when unclean ends exist: a pending question lists what togi saw, its reading, and the four choices with their commands; an answered one gives its current answer and the command that changes it. `watch` narrates the oldest pending question when no trial is in flight, and its footer counts pending questions on every view.
 
-Day observation takes the nonblocking host lock, then the session writer lock, and holds both throughout its lifetime. Its hardware capability borrows the host lock. This intentionally excludes `run`, `reset`, another day service and other hardware-lock users, even in the same normal boot: stop the day service before tuning or resetting. Contention exits 3 before hardware access. `status`, `events` and `watch` continue reading without either lock. `togi day record` drafts from a read-only view of the state directory it is given and hands the confirmed record, with that journal's `session.start` session id, to the running service over its credential-checked socket; the service refuses a record whose session is not its live journal's, then validates it against the live journal before appending. Only an absent service (no socket at the path, or nothing listening at it) permits direct writer access; authorization, session, protocol and validation failures never trigger that fallback. The direct write takes the writer lock and refuses, appending nothing, when the journal it opens no longer holds the drafted session, as after a reset and a new session while the command waited.
+Day observation takes the nonblocking host lock, then the session writer lock, and holds both throughout its lifetime. Its hardware capability borrows the host lock. This intentionally excludes `run`, `reset`, another day service and other hardware-lock users, even in the same normal boot: stop the day service before tuning or resetting. Contention exits 3 before hardware access. `status`, `events` and `watch` continue reading without either lock.
 
-`togi night` uses the same root-authorized live-writer route for stock
-attestation, naming the drafted session. The day service reads its current
-firmware context and acknowledges only after the attestation is durable;
-it does not stop observation, reapply D or write offsets. Only an absent
-service permits the command's direct host-lock then writer-lock path.
+`togi night` sends stock attestation to the live writer over the credential-checked day socket,
+naming the drafted session. The service requires root and the same live session. It reads its
+current firmware context and acknowledges only after the attestation is durable; it does not stop
+observation, reapply D or write offsets. Only an absent service permits the command's direct
+host-lock then writer-lock path.
 
 `services.togi.day.enable` defaults to false. Enabled, `togi-day.service` runs `togi day --state-dir /var/lib/togi` as root in normal boots after local filesystems and kernel modules are ready, restarting after a failure with a 60-second delay except after exit 16, an incompatible journal that a restart cannot change: the unit stays failed until `togi run` has transitioned the journal and the operator starts it again (`systemctl restart togi-day`, or the next boot). Exits 1 and 3 keep restarting because they can clear on their own, such as a missing session that `togi run` later creates or a lock another writer releases. Its abnormal-exit hook runs `togi emergency-stop`, which has only zero authority and needs no working journal. `togi-day-resume.service` requests verified reapplication of the still-permitted committed D from the active service after systemd-managed sleep; reverse stop ordering restores the watchdog before that request. The internal `togi day reapply` socket command accepts root only and acknowledges only verified success. The tuning specialisation explicitly disables the day option and has no day service. Normal-boot journald defaults to `Storage=persistent` and `SyncIntervalSec=5s`; the tuning boot retains its existing one-second sync policy. Shutdown uses ordinary systemd stop ordering, so final zero/readback and journal records precede filesystem unmount.
 
@@ -194,7 +193,7 @@ The modes a machine offers are in `/sys/power/state` and `/sys/power/mem_sleep` 
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `togi day` | yes | Apply the tuner's permitted committed day profile D (stock when the day decision permits only stock or the boot starts paused) through durable intent, write and all-core readback under the [day decision](#ruleset-13-policy-boundary), and observe normal boots: checkpointed active hours, live faults, clean stops and unclean ends. Requires an existing compatible session, verified all-core CO 0 and PID 1's armed, counting watchdog; a start refused for these at preflight writes no offset itself, while a watchdog read unarmed after preflight applies nothing and ends through the zero-only emergency path ([Day watchdog](#day-watchdog)); see [Day observation](#day-observation). Stop zeroes and verifies before the clean marker. `togi day answer <boot> <answer>` and `togi day notify` need no root; root `togi day record` uses the live writer when running. |
+| `togi day` | yes | Apply the tuner's permitted committed day profile D (stock when the day decision permits only stock or the boot starts paused) through durable intent, write and all-core readback under the [day decision](#ruleset-13-policy-boundary), and observe normal boots: checkpointed active hours, live faults, clean stops and unclean ends. Requires an existing compatible session, verified all-core CO 0 and PID 1's armed, counting watchdog; a start refused for these at preflight writes no offset itself, while a watchdog read unarmed after preflight applies nothing and ends through the zero-only emergency path ([Day watchdog](#day-watchdog)); see [Day observation](#day-observation). Stop zeroes and verifies before the clean marker. `togi day answer <boot> <answer>` and `togi day notify` need no root. |
 | `togi run [--tuning-boot <grubenv>]` | yes | Start or resume the operator-ended night in the foreground under [night declaration](#night-declaration) and [scheduler results](tuner.md#night-query-results). It has no time-, cycle- or first-result stopping option. Every run requires an armed hardware watchdog before tuning. `--tuning-boot` takes the GRUB environment file; event lines and final diagnostics go to stderr even on a terminal. `watch` owns the dashboard. |
 | `togi night` | yes | Select the tuning boot after showing the plan and confirming stock stability with BIOS at stock, then reboot under [Night and day](#night-and-day). Journal the attestation once per firmware context before changing the boot selection. No morning time or deadline is selected. |
 | `togi night-end` | no | Internal tuning-boot shutdown command. Restore the previous normal boot selection under [Night and day](#night-and-day). The standalone command does not stop the run or reboot; [night declaration](#night-declaration) still owns journal-night closure. F10 combines stopping the run, restoring this selection and rebooting. |
