@@ -673,7 +673,7 @@ fn a_failed_comparison_renders_its_cause_once() {
 }
 
 struct Cached {
-    _dir: MemoryDir,
+    dir: MemoryDir,
     caches: [DigestCache; 2],
     costs: Costs,
 }
@@ -682,11 +682,7 @@ fn cached() -> Cached {
     let dir = MemoryDir::new();
     let caches = ["base", "head"].map(|key| DigestCache::with_fs(dir.path(), key, dir.fs.clone()));
     let costs = Costs::with_fs(dir.path().join("costs.json"), dir.fs.clone());
-    Cached {
-        _dir: dir,
-        caches,
-        costs,
-    }
+    Cached { dir, caches, costs }
 }
 
 impl Cached {
@@ -719,6 +715,33 @@ fn both_sides_are_cached_and_a_fresh_run_ignores_the_cache() {
     fresh.fresh = true;
     compare::run(&pairs, &fresh, &fake).unwrap();
     assert_eq!(fake.launches().len(), 12);
+}
+
+#[test]
+fn a_failed_digest_cache_write_warns_without_losing_the_comparison() {
+    let cache = cached();
+    let blocked = cache.dir.path().join("same/head");
+    cache
+        .dir
+        .fs
+        .create_dir(&cache.dir.path().join("same"))
+        .unwrap();
+    cache.dir.fs.create_dir(&blocked).unwrap();
+    cache
+        .dir
+        .fs
+        .create_dir(&blocked.join("mapping-stop.tmp"))
+        .unwrap();
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
+    let outcome = compare::run(&[MappingStop], &cache.config(&fleet), &fake).unwrap();
+    assert!(!outcome.different());
+    assert_eq!(outcome.scheduled, [1, 1]);
+    assert_eq!(outcome.warnings.len(), 1);
+    assert!(outcome.warnings[0].starts_with("cache head mapping-stop:"));
+    assert_eq!(cache.caches[1].get(MappingStop), None);
+    assert!(cache.caches[0].get(MappingStop).is_some());
 }
 
 #[test]
@@ -980,12 +1003,54 @@ fn only_the_slowest_sessions_are_listed_and_the_rest_counted() {
 #[test]
 fn real_fs_a_digest_cache_keeps_the_most_recent_trees_only() {
     let dir = tempfile::tempdir().unwrap();
-    for key in (0..10).map(|n| format!("key-{n}")) {
-        DigestCache::open(dir.path(), &key).unwrap();
+    let parent = dir.path().join("same");
+    for index in 0..10 {
+        let path = parent.join(format!("key-{index}"));
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::File::open(path)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(index))
+            .unwrap();
     }
-    let kept = std::fs::read_dir(dir.path().join("same")).unwrap().count();
-    assert_eq!(kept, 8);
-    assert!(dir.path().join("same/key-9").is_dir());
+    DigestCache::open(dir.path(), "key-0").unwrap();
+    let mut kept: Vec<_> = std::fs::read_dir(&parent)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    kept.sort_unstable();
+    assert_eq!(
+        kept,
+        [
+            "key-0", "key-3", "key-4", "key-5", "key-6", "key-7", "key-8", "key-9"
+        ]
+    );
+    assert_ne!(
+        std::fs::metadata(parent.join("key-0"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        std::time::UNIX_EPOCH
+    );
+}
+
+#[test]
+fn real_fs_replacing_a_digest_keeps_only_the_published_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = DigestCache::open(dir.path(), "k").unwrap();
+    let mut record = super::digests::SideRecord {
+        digest: "before".to_owned(),
+        exit: 0,
+        wall_s: 1.0,
+    };
+    cache.put(MappingStop, &record).unwrap();
+    record.digest = "after".to_owned();
+    cache.put(MappingStop, &record).unwrap();
+    assert_eq!(cache.get(MappingStop), Some(record));
+    let files: Vec<_> = std::fs::read_dir(dir.path().join("same/k"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(files, ["mapping-stop.json"]);
 }
 
 #[test]

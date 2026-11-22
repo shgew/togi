@@ -1,12 +1,10 @@
-use std::collections::BTreeSet;
-use std::io::Read;
+use std::collections::{BTreeSet, HashSet};
 
-use flate2::read::MultiGzDecoder;
-use togi_facts::Decisive;
 use togi_journal::Seq;
 use togi_machine::{BiosContext, Condition, Regime};
 use togi_sim::replay::Replay;
-use togi_tool_trialfacts::{Class, Phase, ProfileClassKey, decode, encode, replay_facts};
+use togi_tool_trialfacts::{Class, Decisive, Phase, decode, replay_facts};
+use togi_tool_trialfacts::{Extracts, ExtractsError, ReadError};
 
 use crate::builders::bios;
 
@@ -97,33 +95,11 @@ fn the_committed_extract_reads_unchanged() {
     assert!(facts.iter().all(|f| f.seq >= Seq::new(1).unwrap()));
     let sessions: BTreeSet<_> = facts.iter().map(|f| f.session).collect();
     assert_eq!(sessions.len(), 9);
-    let classes: BTreeSet<_> = facts
+    let classes: HashSet<_> = facts
         .iter()
-        .map(|f| format!("{:?}", ProfileClassKey::from(f)))
+        .map(|fact| (fact.class, fact.profile))
         .collect();
     assert!(classes.len() > 100);
-}
-
-#[test]
-fn every_committed_record_writes_back_to_the_same_json() {
-    let mut text = String::new();
-    MultiGzDecoder::new(COMMITTED)
-        .read_to_string(&mut text)
-        .unwrap();
-    let facts = decode(COMMITTED).unwrap();
-    assert_eq!(text.lines().count(), facts.len());
-    for (line, fact) in text.lines().zip(&facts) {
-        let original: serde_json::Value = serde_json::from_str(line).unwrap();
-        assert_eq!(serde_json::to_value(fact).unwrap(), original, "{line}");
-    }
-}
-
-#[test]
-fn the_committed_extract_survives_a_rewrite() {
-    let facts = decode(COMMITTED).unwrap();
-    let mut bytes = Vec::new();
-    encode(&mut bytes, &facts).unwrap();
-    assert_eq!(decode(bytes.as_slice()).unwrap(), facts);
 }
 
 #[test]
@@ -133,4 +109,27 @@ fn the_committed_extract_builds_a_replay_oracle() {
     assert_eq!(replayed.len(), facts.len());
     let replay = Replay::new(replayed).unwrap();
     assert_eq!(replay.len(), 3889);
+}
+
+#[test]
+fn real_fs_the_oracle_loads_the_frozen_extract_and_names_a_missing_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let machine_path = dir.path().join("machine.json");
+    let extract = dir.path().join("trialfacts.jsonl.gz");
+    let machine = togi_sim::MachineDefinition {
+        facts: Some("trialfacts.jsonl.gz".into()),
+        bios_context: Some(togi_sim::definition::BiosContextDef::default()),
+        ..togi_sim::MachineDefinition::default()
+    };
+    let mut extracts = Extracts::new();
+    let error = extracts.replay(&machine_path, &machine).unwrap_err();
+    assert!(
+        matches!(error, ExtractsError::Read(ReadError::Open { path, source })
+        if path == extract && source.kind() == std::io::ErrorKind::NotFound)
+    );
+    std::fs::write(&extract, COMMITTED).unwrap();
+    assert_eq!(
+        extracts.replay(&machine_path, &machine).unwrap().len(),
+        3889
+    );
 }

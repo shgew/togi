@@ -3,13 +3,13 @@ use args.nu selection
 
 const product = [togi togi-tuner]
 const metadata = {
-    workspace_members: [product tuner release cover facts],
+    workspace_members: [product tuner release cover statecopy],
     packages: [
         {id: product, name: togi}
         {id: tuner, name: togi-tuner}
         {id: release, name: togi-tool-release}
         {id: cover, name: togi-tool-cover}
-        {id: facts, name: togi-facts}
+        {id: statecopy, name: togi-statecopy}
         {id: dependency, name: serde}
     ]
 }
@@ -37,9 +37,8 @@ def test-multiple-tools-do-not-select-whole-concern [] {
 }
 
 def test-tool-only-library-selects-own-tests-not-consumers [] {
-    # Selecting facts runs its tests; compilation of its dependencies is not a
-    # selection of their tests, nor of release/cover's consumer tests.
-    assert equal (selection $product $metadata [togi-facts]) ($product_args | append [-p togi-facts])
+    # Selecting statecopy runs its tests, not its dependencies' or consumers' tests.
+    assert equal (selection $product $metadata [togi-statecopy]) ($product_args | append [-p togi-statecopy])
 }
 
 def assert-rejected [name: string] {

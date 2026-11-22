@@ -8,8 +8,8 @@
 //! journal's decoder, so a journal holding one is unreadable ([`AuditError`]) rather than a violation. Readbacks and
 //! baselines report the hardware, which may hold firmware offsets outside that range, and are not bounded.
 //!
-//! The library is shared: `togi-tool-bench` audits every run it simulates with [`audit_directory`], and the
-//! `togi-tool-audit` command audits the state directories it is given as runs that may be in progress.
+//! The `togi-tool-sim suite` command audits its simulated sessions. The `togi-tool-audit` command audits
+//! the state directories it is given as runs that may be in progress.
 
 mod auditor;
 mod report;

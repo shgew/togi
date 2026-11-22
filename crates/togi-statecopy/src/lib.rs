@@ -1,4 +1,4 @@
-//! Copies of a state directory for facts and replay: the live journal and every archive entry that
+//! Copies of a state directory for inspection and replay: the live journal and every archive entry that
 //! belongs to a session (archived journals and the carry, compatibility and `reset --all` markers).
 //! Trial directories are left out.
 
@@ -33,7 +33,7 @@ pub enum CopyError {
 pub fn copy(src: &Path, dst: &Path) -> Result<(), CopyError> {
     #[expect(
         clippy::disallowed_methods,
-        reason = "a state copy is a scratch input for facts and replay; nothing depends on it surviving a crash"
+        reason = "a state copy is a scratch input for inspection and replay; nothing depends on it surviving a crash"
     )]
     let fs = togi_journal::fs::unsynced_disk_fs();
     copy_in(fs.as_ref(), src, dst)

@@ -1,82 +1,35 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, ErrorKind, Read as _, Seek as _, Write as _};
-use std::num::NonZeroU32;
+use std::io::{self, Read as _, Seek as _, Write as _};
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use togi_journal::{FileError, Payload, ReadError, Recording, ShutdownReason};
 use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase};
 
 use crate::error::{BuildFailure, Error, RunError, ScriptedError, Unrunnable};
 use crate::process::{self, Fleet};
-use crate::suite::RunSpec;
 
-const JOURNAL: &str = "events.jsonl";
 const LOG: &str = "sim.log";
-const DEAD_END_LINE: &str = "sim: dead end ";
 const BINARY: &str = "togi-tool-sim";
 
 /// The simulator command, run once per session as a subprocess with a state directory of its own. The bench
 /// runs a private copy of the file it hashed, so the digest names the code every session ran even when the
 /// original is rebuilt or replaced meanwhile.
-#[derive(Clone, Debug)]
-pub struct Simulator {
+#[derive(Debug)]
+pub(crate) struct Simulator {
     binary: PathBuf,
     digest: String,
-    _private: Arc<tempfile::TempDir>,
-}
-
-/// What one simulator process left behind.
-#[derive(Debug)]
-pub struct Session {
-    pub dir: PathBuf,
-    pub exit: i32,
-    pub wall: Duration,
-    pub events: Vec<togi_journal::Event>,
-    /// Whether the process's log holds the simulator's dead-end line.
-    pub log_dead_end: bool,
-}
-
-impl Session {
-    pub fn journal_dead_end(&self) -> bool {
-        self.events
-            .iter()
-            .any(|event| matches!(event.payload, Payload::DeadEnd(_)))
-    }
-
-    /// Whether a signal ended the session rather than the session itself: the process died of one, or its
-    /// journal holds a shutdown a signal asked for before the simulated operator's own end (the night the
-    /// simulator runs without `--night-hours`, counted from the journal's first event). Its outcome is not
-    /// determined by its inputs.
-    pub fn ended_by_signal(&self) -> bool {
-        let night =
-            jiff::SignedDuration::from_hours(i64::from(togi_tool_sim::DEFAULT_NIGHT_HOURS.get()));
-        let operator_end = self
-            .events
-            .first()
-            .and_then(|first| first.time.checked_add(night).ok());
-        self.exit == -1
-            || self.events.iter().any(|event| {
-                matches!(&event.payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal)
-                    && operator_end.is_none_or(|end| event.time < end)
-            })
-    }
+    _private: tempfile::TempDir,
 }
 
 impl Simulator {
-    /// The simulator at `explicit`, or the `togi-tool-sim` built from this tree, copied for this bench to run.
-    pub fn locate(explicit: Option<&Path>) -> Result<Self, Error> {
-        let original = match explicit {
-            Some(path) => path.to_path_buf(),
-            None => build()?,
-        };
-        let (bytes, mode) = File::open(&original)
+    /// Copy the supplied or freshly built simulator before running it.
+    pub(crate) fn locate(original: &Path) -> Result<Self, Error> {
+        let (bytes, mode) = File::open(original)
             .and_then(|mut file| {
                 let mode = file.metadata()?.permissions().mode();
                 let mut bytes = Vec::new();
@@ -84,11 +37,11 @@ impl Simulator {
                 Ok((bytes, mode))
             })
             .map_err(|source| Error::NoSimulator {
-                path: original.clone(),
+                path: original.to_path_buf(),
                 source,
             })?;
         check_runnable(&bytes, mode, probe).map_err(|reason| Error::Unrunnable {
-            path: original.clone(),
+            path: original.to_path_buf(),
             reason,
         })?;
         let failed = |source| Error::WriteFile {
@@ -109,83 +62,16 @@ impl Simulator {
             .open(&binary)
             .and_then(|mut file| file.write_all(&bytes))
             .map_err(failed)?;
-        let copy = fs::read(&binary).map_err(failed)?;
         Ok(Self {
-            digest: crate::suite::hex(&Sha256::digest(copy)),
+            digest: crate::hex(&Sha256::digest(bytes)),
             binary,
-            _private: Arc::new(private),
+            _private: private,
         })
     }
 
     /// The SHA-256 of the simulator's bytes, in lower-case hex: the code the sessions ran.
-    pub fn digest(&self) -> &str {
+    pub(crate) fn digest(&self) -> &str {
         &self.digest
-    }
-
-    /// Runs `spec` in a state directory below `root`, which this call creates, and reads what the process left:
-    /// its journal, if it wrote one, and its log. A session that failed or stopped at a dead end or the boot cap
-    /// is a result, not an error; a simulator that cannot start or outlives `limit` is an error.
-    pub fn run(
-        &self,
-        fleet: &Fleet,
-        root: &Path,
-        spec: &RunSpec,
-        max_boots: NonZeroU32,
-        limit: Duration,
-    ) -> Result<Session, RunError> {
-        let launched = self.launch(fleet, root, spec, max_boots, limit)?;
-        let events = recorded_events(Recording::read(&launched.dir.join(JOURNAL)))?;
-        Ok(Session {
-            dir: launched.dir,
-            exit: launched.exit,
-            wall: launched.wall,
-            events,
-            log_dead_end: launched.log_dead_end,
-        })
-    }
-
-    /// Runs `spec` in the state directory below `root` that this call creates, as [`run`](Self::run) does, but
-    /// reads no journal: a caller that resumes a copied state directory or digests the files reads them itself.
-    pub(crate) fn launch(
-        &self,
-        fleet: &Fleet,
-        root: &Path,
-        spec: &RunSpec,
-        max_boots: NonZeroU32,
-        limit: Duration,
-    ) -> Result<Launched, RunError> {
-        let dir = root
-            .join(&spec.scenario)
-            .join(format!("{}-{}", spec.split, spec.seed));
-        let mut command = Command::new(&self.binary);
-        command
-            .arg("--seed")
-            .arg(spec.seed.to_string())
-            .arg("--state-dir")
-            .arg(&dir)
-            .arg("--max-boots")
-            .arg(max_boots.to_string());
-        match &spec.machine {
-            Some(machine) => command.arg("--machine").arg(&machine.path),
-            None => command.arg("--default-fitted-machine"),
-        };
-        if spec.replay.is_some() {
-            command.arg("--replay-facts");
-        }
-        let finished = launch_logged(fleet, &mut command, &dir, limit)?;
-        let log_path = dir.join(LOG);
-        let log_dead_end = File::open(&log_path)
-            .and_then(holds_dead_end)
-            .map_err(|source| RunError::Read {
-                what: "log",
-                source,
-            })?;
-        Ok(Launched {
-            dir,
-            exit: finished.exit,
-            wall: finished.wall,
-            log_dead_end,
-        })
     }
 
     /// Probes the private copy, so subsequent cases and the handshake use the same bytes.
@@ -275,36 +161,8 @@ fn launch_logged(
     process::run(fleet, command, limit)
 }
 
-/// What a simulator process left besides its journal.
-#[derive(Debug)]
-pub(crate) struct Launched {
-    pub dir: PathBuf,
-    pub exit: i32,
-    pub wall: Duration,
-    /// Whether the process's log holds the simulator's dead-end line.
-    pub log_dead_end: bool,
-}
-
-/// Builds `togi-tool-sim` in the tree the bench runs in and returns the binary cargo reports.
-/// Cargo's own progress goes to this process's stderr.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the bench builds the simulator it benchmarks with cargo"
-)]
-fn build() -> Result<PathBuf, Error> {
-    let output = cargo_build(None)
-        .stdin(Stdio::null())
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|error| Error::BuildSimulator(BuildFailure::Spawn(error)))?;
-    if !output.status.success() {
-        return Err(Error::BuildSimulator(BuildFailure::Status(output.status)));
-    }
-    built(&output.stdout)
-}
-
-/// Builds `togi-tool-sim` in `tree` as [`build`] does, with `target` as cargo's target directory when given,
-/// in a process group of its own that `fleet` stops when it is cancelled.
+/// Builds `togi-tool-sim` in `tree`, with the given target directory if supplied, in a
+/// process group of its own that `fleet` stops when cancelled.
 pub(crate) fn build_in(
     fleet: &Fleet,
     tree: &Path,
@@ -325,9 +183,6 @@ pub(crate) fn build_in(
             | RunError::Wait(_)
             | RunError::TimedOut { .. }
             | RunError::Read { .. }
-            | RunError::Journal(_)
-            | RunError::Measure(_)
-            | RunError::Model(_)
             | RunError::Interrupted) => BuildFailure::Run(error),
         })
     })?;
@@ -460,131 +315,11 @@ fn host_binary(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x7fELF")
 }
 
-fn recorded_events(
-    recording: Result<Recording, FileError>,
-) -> Result<Vec<togi_journal::Event>, RunError> {
-    match recording {
-        Ok(recording) => Ok(recording.into_events()),
-        Err(FileError {
-            source: ReadError::Io(error),
-            ..
-        }) if error.kind() == ErrorKind::NotFound => Ok(Vec::new()),
-        Err(error) => Err(RunError::Journal(error)),
-    }
-}
-
-/// How many bytes of a log [`holds_dead_end`] reads at a time.
-const SCAN_CHUNK: usize = 64 * 1024;
-
-/// Whether `log` holds [`DEAD_END_LINE`], read through one buffer of [`SCAN_CHUNK`] bytes whatever the log's size
-/// or the length of its lines. The buffer keeps the last bytes of each chunk, too few to hold the marker, ahead of
-/// the next, so a marker split across reads is still found. The bytes are searched as they are: the marker is
-/// ASCII, and invalid UTF-8 around it never absorbs an ASCII byte.
-fn holds_dead_end(mut log: impl io::Read) -> io::Result<bool> {
-    let marker = DEAD_END_LINE.as_bytes();
-    let mut buf = vec![0; SCAN_CHUNK];
-    let mut kept = 0;
-    loop {
-        let read = match log.read(&mut buf[kept..]) {
-            Ok(0) => return Ok(false),
-            Ok(read) => read,
-            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error),
-        };
-        let filled = kept + read;
-        if buf[..filled]
-            .windows(marker.len())
-            .any(|window| window == marker)
-        {
-            return Ok(true);
-        }
-        kept = filled.min(marker.len() - 1);
-        buf.copy_within(filled - kept..filled, 0);
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::io::ErrorKind;
+
     use super::*;
-
-    #[test]
-    fn an_absent_journal_has_no_events_but_a_damaged_journal_is_an_error() {
-        let fs = togi_journal::MemFs::new();
-        let path = Path::new("/runs/events.jsonl");
-        assert!(
-            recorded_events(Recording::read_in(&fs, path))
-                .unwrap()
-                .is_empty()
-        );
-        fs.put(path, b"broken\n".to_vec());
-        let error = recorded_events(Recording::read_in(&fs, path)).unwrap_err();
-        assert!(matches!(error, RunError::Journal(_)));
-        assert_eq!(
-            togi_machine::error_chain(&error),
-            "read the run journal: /runs/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
-        );
-    }
-
-    /// Hands out at most `step` bytes of `inner` per read and remembers the largest buffer it was offered.
-    struct Offered<R> {
-        inner: R,
-        step: usize,
-        largest: usize,
-    }
-
-    impl<R: io::Read> io::Read for Offered<R> {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            self.largest = self.largest.max(buf.len());
-            let len = buf.len().min(self.step);
-            self.inner.read(&mut buf[..len])
-        }
-    }
-
-    fn offered(log: impl io::Read, step: usize) -> (bool, usize) {
-        let mut reader = Offered {
-            inner: log,
-            step,
-            largest: 0,
-        };
-        let found = holds_dead_end(&mut reader).unwrap();
-        (found, reader.largest)
-    }
-
-    /// Scans a single 16 MiB line of `x` followed by `tail`, checking the scanner never offers more than its buffer.
-    fn after_a_large_line(tail: &[u8]) -> bool {
-        let log = io::repeat(b'x').take(16 << 20).chain(tail);
-        let (found, largest) = offered(log, usize::MAX);
-        assert!(largest <= SCAN_CHUNK, "offered {largest} bytes");
-        found
-    }
-
-    #[test]
-    fn a_marker_after_a_log_far_larger_than_the_scan_buffer_is_found() {
-        assert!(after_a_large_line(b"\xff\xfe sim: dead end 3"));
-    }
-
-    #[test]
-    fn a_near_miss_after_a_log_far_larger_than_the_scan_buffer_is_not_found() {
-        assert!(!after_a_large_line(b"\xff\xfe sim: dead en"));
-    }
-
-    #[test]
-    fn a_log_far_larger_than_the_scan_buffer_without_the_marker_is_read_through_it() {
-        assert!(!after_a_large_line(b""));
-    }
-
-    #[test]
-    fn a_marker_split_across_reads_is_found() {
-        let marker = DEAD_END_LINE.as_bytes();
-        for step in 1..=marker.len() + 1 {
-            for lead in 0..step {
-                let mut log = vec![b'x'; lead];
-                log.extend_from_slice(marker);
-                log.extend_from_slice(b"7\n");
-                assert!(offered(log.as_slice(), step).0, "step {step} lead {lead}");
-            }
-        }
-    }
 
     const MACH_O_EXECUTE: [u8; 16] = [
         0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 0x01, 0, 0, 0, 0, 0x02, 0, 0, 0,

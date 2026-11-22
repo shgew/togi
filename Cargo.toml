@@ -37,7 +37,6 @@ togi-command = { path = "crates/togi-command" }
 togi-config = { path = "crates/togi-config" }
 togi-defect = { path = "crates/togi-defect" }
 togi-detect = { path = "crates/togi-detect" }
-togi-facts = { path = "crates/togi-facts" }
 togi-hardware = { path = "crates/togi-hardware" }
 togi-hostlock = { path = "crates/togi-hostlock" }
 togi-journal = { path = "crates/togi-journal" }
@@ -123,7 +122,6 @@ togi-mprime = { opt-level = 0 }
 togi-smu = { opt-level = 0 }
 togi-tool-audit = { opt-level = 0 }
 togi-tool-bench = { opt-level = 0 }
-togi-tool-facts = { opt-level = 0 }
 togi-tool-replay = { opt-level = 0 }
 togi-tool-sim = { opt-level = 0 }
 togi-tool-stats = { opt-level = 0 }

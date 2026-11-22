@@ -80,7 +80,7 @@ The NixOS tuning specialisation requires GRUB. `sudo togi night` selects it pers
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, and writing a run's retro|
-|[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines|
+|[docs/benchmarking.md](docs/benchmarking.md)|Comparing scripted journals and auditing recorded sessions|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, profiles, nights and days, D, S and U|
 |[docs/spec/tuner-ruleset14.md](docs/spec/tuner-ruleset14.md)|The normative Ruleset 14 policy; [Ruleset 13 history and retained contracts](docs/spec/tuner.md)|
@@ -105,7 +105,7 @@ Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General
 
 Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv; recipes that run cargo or `gh` stop with that hint outside it. `just test` is the tight loop. `just gate` checks formatting, lint, the other supported platform through clippy, the NixOS module's evaluation, changelog fragments, local nextest checks, doc tests, cargo-deny's bans, licenses and sources, cargo-shear, and the board, coverage-selection and SQL fixtures. `just push-fix` runs the review-fix checks. These commands and `just check` skip CI-tier checks on every host; `just vm [names]` opts into VM builds on Linux with writable KVM. PR CI gates landing on `main` and the release dispatches every Linux flake check, including the CI tier ([check tiers](docs/development.md#shell-and-checks)). `just check-main` dispatches and follows that full run; `just check` builds every local-tier flake check, including `package` and cargo-deny's advisory audit beyond the gate. Run `just` to list recipes; [Development](docs/development.md#shell-and-checks) owns the check ladder and tiers.
 
-Simulations are on demand, not automatic checks. `just same` and `just smoke` compare exact journals from a bounded set of mechanics scripts; `just sim-suite` and the metric benches run the separate research inputs ([development policy](docs/development.md#simulations-and-research)).
+Simulations are on demand, not automatic checks. `just same` and `just smoke` compare exact journals from a bounded set of mechanics scripts; `just sim-suite` runs the separate research inputs ([development policy](docs/development.md#simulations-and-research)).
 
 The coordination board (`just board`) is Nushell. `just board-test` runs its fixed-fixture assertions without GitHub access; the `quality` flake check runs them in both `just gate` and `just push-fix`.
 

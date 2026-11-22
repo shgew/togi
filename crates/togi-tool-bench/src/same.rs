@@ -372,7 +372,7 @@ fn simulators(
     waiting: Waiting<'_>,
 ) -> Result<[Simulator; 2], SameError> {
     let locate = |side: Side, binary: &Path| {
-        Simulator::locate(Some(binary)).map_err(|source| SameError::Simulator {
+        Simulator::locate(binary).map_err(|source| SameError::Simulator {
             side: side.name(),
             source: Box::new(source),
         })

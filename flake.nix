@@ -50,13 +50,6 @@
             in
             {
               togi-sim = [ (bench + "/machines") ];
-              togi-tool-bench = [
-                (bench + "/machines")
-                (bench + "/facts")
-                (bench + "/suite.json")
-                (bench + "/baseline.jsonl")
-                (bench + "/gates")
-              ];
               togi-tool-sim = [
                 (bench + "/machines")
                 (bench + "/suite.json")
@@ -73,13 +66,11 @@
           ];
           # Unshipped libraries and programs register here; product dependencies are discovered above.
           toolCrates = [
-            "togi-facts"
             "togi-statecopy"
             "togi-tool-audit"
             "togi-tool-bench"
             "togi-tool-trialfacts"
             "togi-tool-copy-state"
-            "togi-tool-facts"
             "togi-tool-replay"
             "togi-tool-sim"
             "togi-tool-stats"

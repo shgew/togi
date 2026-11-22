@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use test_case::test_case;
-use togi_facts::{Decisive, TrialClass};
 use togi_journal::MemFs;
 use togi_journal::fs::Fs;
 use togi_machine::{Regime, Signal, TargetOffset};
@@ -12,10 +11,11 @@ use togi_sim::definition::BiosContextDef;
 use togi_sim::replay::{ReplayFact, ReplayOutcome};
 use togi_sim::{Load, MachineDefinition};
 use togi_tool_trialfacts::{
-    Class, Extracts, ExtractsError, ReadError, TrialFact, decode, encode, replay_facts,
+    Class, Decisive, Extracts, ExtractsError, ReadError, TrialClass, TrialFact, decode,
+    replay_facts,
 };
 
-use crate::builders::{bios, crash, fact, offsets, set, workload};
+use crate::builders::{bios, crash, fact, gz, offsets, row, set, workload};
 
 const FIRST: &str = "20260101T000000Z";
 
@@ -65,9 +65,12 @@ fn extract_in(fs: &MemFs, dir: &Path) -> PathBuf {
 }
 
 fn put_extract(fs: &MemFs, path: &Path, facts: &[TrialFact]) {
-    let mut bytes = Vec::new();
-    encode(&mut bytes, facts).unwrap();
-    fs.put(path, bytes);
+    use std::fmt::Write as _;
+    let mut text = String::new();
+    for fact in facts {
+        writeln!(text, "{}", row(fact)).unwrap();
+    }
+    fs.put(path, gz(&text));
 }
 
 fn read_extract(fs: &MemFs, path: &Path) -> Result<Vec<TrialFact>, ReadError> {
@@ -159,7 +162,7 @@ fn replay_facts_keep_what_the_simulator_matches_and_replays() {
             ReplayFact {
                 context: bios("fixture"),
                 regime: Regime::R2,
-                workload: facts[4].class.workload().unwrap().as_str().into(),
+                workload: workload(Regime::R2, 0).as_str().into(),
                 cores: set(&[0, 1]),
                 duration: Duration::from_secs(120),
                 profile: vec![TargetOffset::new(-45).unwrap(), TargetOffset::ZERO],

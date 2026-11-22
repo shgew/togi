@@ -12,8 +12,6 @@ use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Observer, Persistence, SimInput, events, simulate};
 use togi_watch::model::Model as Watch;
 
-use super::{measure, measure_with};
-
 /// Four cores that crash past -10: a Ruleset 13 night needs a neighbour on every CCD, and this one crashes.
 fn hunting() -> MachineDefinition {
     let core = |id: i64| {
@@ -31,12 +29,7 @@ fn hunting() -> MachineDefinition {
     .unwrap()
 }
 
-fn generated(
-    seed: u64,
-    cores: i64,
-    minutes: i64,
-    crashing: bool,
-) -> (Vec<Event>, MachineDefinition) {
+fn generated(seed: u64, cores: i64, minutes: i64, crashing: bool) -> Vec<Event> {
     let definition = if crashing {
         hunting()
     } else {
@@ -45,17 +38,17 @@ fn generated(
             ..MachineDefinition::default()
         }
     };
-    generated_from(definition, seed, SignedDuration::from_mins(minutes), None)
+    generated_from(&definition, seed, SignedDuration::from_mins(minutes), None)
 }
 
 fn generated_from(
-    definition: MachineDefinition,
+    definition: &MachineDefinition,
     seed: u64,
     duration: SignedDuration,
     observer: Option<Observer>,
-) -> (Vec<Event>, MachineDefinition) {
+) -> Vec<Event> {
     let simulator = Simulator::new(
-        Model::new(&definition, seed).unwrap(),
+        Model::new(definition, seed).unwrap(),
         RunSettings {
             seed,
             ..RunSettings::default()
@@ -92,7 +85,7 @@ fn generated_from(
         adapt_trials: None,
     })
     .unwrap();
-    (events(&persistence).unwrap(), definition)
+    events(&persistence).unwrap()
 }
 
 fn lines(events: &[Event]) -> Vec<u8> {
@@ -114,12 +107,12 @@ proptest! {
         ..ProptestConfig::default()
     })]
     #[test]
-    fn incremental_and_full_replay_agree_on_frames_and_metrics(
+    fn incremental_and_full_replay_agree_on_frames(
         seed in any::<u64>(), cores in prop::sample::select(vec![4_i64, 6]),
         minutes in 15_i64..91, crashing in any::<bool>(),
         cuts in prop::collection::vec(any::<usize>(), 1..5),
     ) {
-        let (events, definition) = generated(seed, cores, minutes, crashing);
+        let events = generated(seed, cores, minutes, crashing);
         let state = ReadState::replay(&events).unwrap();
         prop_assert_eq!(state.facts(), &togi_journal::State::replay(&events).unwrap());
         let mut tuner = togi_tuner::State::new(togi_tuner::Params::SPEC);
@@ -127,8 +120,6 @@ proptest! {
             tuner.fold(event).unwrap();
         }
         prop_assert_eq!(state.tuner(), &tuner);
-        let model = Model::new(&definition, seed).unwrap();
-        let measured = measure(&events, &model, None).unwrap();
         let expected_watch = togi_watch::model::project(&events);
         let fs = MemFs::new();
         fs.put("/state/events.jsonl", lines(&events));
@@ -146,7 +137,6 @@ proptest! {
             prop_assert_eq!(watch.journal_state(), state.facts());
             prop_assert_eq!(watch.tuner_state(), state.tuner());
         }
-        prop_assert_eq!(measure_with(&events, &model, None, Some(state.facts())).unwrap(), measured);
     }
 }
 
@@ -165,7 +155,7 @@ fn incremental_replay_then_config_reload_has_the_same_cleared_trial_end_as_full_
             }
         }) as Observer
     });
-    let (events, _) = generated_from(hunting(), 1, SignedDuration::from_hours(8), observer);
+    let events = generated_from(&hunting(), 1, SignedDuration::from_hours(8), observer);
     let cut = events
         .iter()
         .rposition(|event| {

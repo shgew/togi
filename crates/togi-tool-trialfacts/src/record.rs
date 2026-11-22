@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use togi_facts::{Decisive, TrialClass};
-use togi_journal::{Activity, Build, FixStamp, Seq, SessionId, TrialId};
+use serde::{Deserialize, Deserializer, Serialize};
+use togi_journal::{FixStamp, Seq, SessionId, TrialId};
+use togi_machine::serde_object::Object;
 use togi_machine::{
     BiosContext, CcdId, Condition, CoreId, CoreSet, PER_CORE_MAX, PerCore, Regime, Signal,
     TargetOffset, WorkloadId, object_only,
@@ -21,8 +21,6 @@ pub enum InvalidProfile {
     Empty,
     #[error("a profile has {0} offsets, at most {PER_CORE_MAX} fit")]
     TooLong(usize),
-    #[error("the profile has no offset for core {0} below its highest core")]
-    Sparse(u8),
 }
 
 impl Profile {
@@ -41,44 +39,8 @@ impl Profile {
         })
     }
 
-    /// A journal records the applied offset of the session's cores; the extract has no way to say a core
-    /// below the highest one is missing, so a profile with such a hole is refused.
-    pub fn from_per_core(profile: &PerCore<TargetOffset>) -> Result<Self, InvalidProfile> {
-        let mut offsets = Vec::with_capacity(PER_CORE_MAX);
-        let mut missing = None;
-        for index in 0..PER_CORE_MAX {
-            let core = i64::try_from(index)
-                .ok()
-                .and_then(|index| CoreId::new(index).ok());
-            let Some(core) = core else { break };
-            match profile.get(core) {
-                Some(offset) => {
-                    if let Some(hole) = missing {
-                        return Err(InvalidProfile::Sparse(hole));
-                    }
-                    offsets.push(offset);
-                }
-                None => {
-                    missing.get_or_insert(core.get());
-                }
-            }
-        }
-        Self::new(&offsets)
-    }
-
-    /// The number of offsets, bounded by the profile's checked constructor.
-    pub const fn core_count(&self) -> u8 {
-        self.len
-    }
-
     pub fn as_slice(&self) -> &[TargetOffset] {
         &self.offsets[..usize::from(self.len)]
-    }
-}
-
-impl Serialize for Profile {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.as_slice())
     }
 }
 
@@ -87,6 +49,23 @@ impl<'de> Deserialize<'de> for Profile {
         let offsets = Vec::<TargetOffset>::deserialize(deserializer)?;
         Self::new(&offsets).map_err(serde::de::Error::custom)
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TrialClass {
+    pub workload: WorkloadId,
+    pub loaded: CoreSet,
+    pub duration_s: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Decisive {
+    Pass,
+    Failure {
+        signal: Signal,
+        core: Option<CoreId>,
+        stalled: Option<CoreId>,
+    },
 }
 
 /// What a fact is about: a decisive trial's class, or a failure outside any trial, which loaded the cores
@@ -102,28 +81,6 @@ impl Class {
         match self {
             Self::Trial(class) => class.workload.regime(),
             Self::Idle { .. } => Regime::R6,
-        }
-    }
-
-    pub const fn loaded(&self) -> CoreSet {
-        match self {
-            Self::Trial(class) => class.loaded,
-            Self::Idle { loaded } => *loaded,
-        }
-    }
-
-    pub const fn workload(&self) -> Option<WorkloadId> {
-        match self {
-            Self::Trial(class) => Some(class.workload),
-            Self::Idle { .. } => None,
-        }
-    }
-
-    /// The intended duration in seconds; an idle failure has none.
-    pub const fn duration_s(&self) -> u32 {
-        match self {
-            Self::Trial(class) => class.duration_s,
-            Self::Idle { .. } => 0,
         }
     }
 }
@@ -144,22 +101,6 @@ pub enum Phase {
     Deepening,
 }
 
-impl Phase {
-    /// The phase an activity belongs to; the Ruleset 13 night activities are outside the fact phases.
-    pub fn of(activity: Activity) -> Option<Self> {
-        match activity {
-            Activity::Search => Some(Self::Search),
-            Activity::Checking => Some(Self::Checking),
-            Activity::Hunt => Some(Self::Hunt),
-            Activity::Deepening => Some(Self::Deepening),
-            Activity::Mapping
-            | Activity::Qualification
-            | Activity::Reproduction
-            | Activity::Control => None,
-        }
-    }
-}
-
 object_only! {
     /// The build stamp of the session that recorded a fact. `evidence` is absent from extracts the Go tool wrote.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -178,31 +119,10 @@ object_only! {
     }
 }
 
-#[expect(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "serde passes skipped fields by reference"
-)]
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
-impl From<&Build> for BuildStamp {
-    fn from(build: &Build) -> Self {
-        Self {
-            version: build.version.clone(),
-            rev: build.rev.clone().unwrap_or_default(),
-            ruleset: build.ruleset,
-            schema: build.schema,
-            fixes: build.fixes,
-            evidence: Some(build.evidence),
-        }
-    }
-}
-
 /// One decisive fact of a session, as the privacy-safe extract keeps it. Only these fields survive: no event
 /// time, boot id, host, path, message or machine-check bank.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Wire", into = "Wire")]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(try_from = "Object<Wire>")]
 pub struct TrialFact {
     pub session: SessionId,
     pub build: BuildStamp,
@@ -224,7 +144,7 @@ pub struct TrialFact {
     pub ccd_mhz: BTreeMap<CcdId, u32>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
 enum Kind {
     #[serde(rename = "trial")]
     Trial,
@@ -232,7 +152,7 @@ enum Kind {
     Idle,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
 enum WireOutcome {
     #[serde(rename = "pass")]
     Pass,
@@ -240,93 +160,53 @@ enum WireOutcome {
     Failure,
 }
 
-object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
-    #[serde(deny_unknown_fields)]
-    struct WireClass {
-        regime: Regime,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        workload: Option<WorkloadId>,
-        cores: CoreSet,
-        #[serde(default)]
-        duration_s: u32,
-    }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireClass {
+    regime: Regime,
+    #[serde(default)]
+    workload: Option<WorkloadId>,
+    cores: CoreSet,
+    #[serde(default)]
+    duration_s: u32,
 }
 
-object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
-    #[serde(deny_unknown_fields)]
-    struct WireContext {
-        bios_version: String,
-        board: String,
-        cpu_model: String,
-        microcode: String,
-        boost_limit_mhz: u32,
-    }
-}
-
-impl From<WireContext> for BiosContext {
-    fn from(context: WireContext) -> Self {
-        Self {
-            bios_version: context.bios_version,
-            board: context.board,
-            cpu_model: context.cpu_model,
-            microcode: context.microcode,
-            boost_limit_mhz: context.boost_limit_mhz,
-        }
-    }
-}
-
-impl From<BiosContext> for WireContext {
-    fn from(context: BiosContext) -> Self {
-        Self {
-            bios_version: context.bios_version,
-            board: context.board,
-            cpu_model: context.cpu_model,
-            microcode: context.microcode,
-            boost_limit_mhz: context.boost_limit_mhz,
-        }
-    }
-}
-
-object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
-    #[serde(deny_unknown_fields)]
-    struct Wire {
-        session: SessionId,
-        build: BuildStamp,
-        ruleset: u32,
-        context: Option<WireContext>,
-        seq: Seq,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        trial: Option<TrialId>,
-        kind: Kind,
-        class: WireClass,
-        condition: Condition,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        phase: Option<Phase>,
-        #[serde(default, skip_serializing_if = "is_false")]
-        record_only: bool,
-        profile: Profile,
-        outcome: WireOutcome,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        signal: Option<Signal>,
-        duration_s: u32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        stalled_core: Option<CoreId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        core: Option<CoreId>,
-        #[serde(default, skip_serializing_if = "PerCore::is_empty")]
-        voltage_requests_v: PerCore<f64>,
-        #[serde(default, skip_serializing_if = "CoreSet::is_empty")]
-        top_requesters: CoreSet,
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-        ccd_mhz: BTreeMap<CcdId, u32>,
-    }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Wire {
+    session: SessionId,
+    build: BuildStamp,
+    ruleset: u32,
+    context: Option<BiosContext>,
+    seq: Seq,
+    #[serde(default)]
+    trial: Option<TrialId>,
+    kind: Kind,
+    class: Object<WireClass>,
+    condition: Condition,
+    #[serde(default)]
+    phase: Option<Phase>,
+    #[serde(default)]
+    record_only: bool,
+    profile: Profile,
+    outcome: WireOutcome,
+    #[serde(default)]
+    signal: Option<Signal>,
+    duration_s: u32,
+    #[serde(default)]
+    stalled_core: Option<CoreId>,
+    #[serde(default)]
+    core: Option<CoreId>,
+    #[serde(default)]
+    voltage_requests_v: PerCore<f64>,
+    #[serde(default)]
+    top_requesters: CoreSet,
+    #[serde(default)]
+    ccd_mhz: BTreeMap<CcdId, u32>,
 }
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
-pub enum InvalidFact {
+enum InvalidFact {
     #[error("ruleset {ruleset} differs from the build's ruleset {build}")]
     Ruleset { ruleset: u32, build: u32 },
     #[error("a trial fact names no workload")]
@@ -345,42 +225,34 @@ pub enum InvalidFact {
     IdlePass,
 }
 
-impl TrialFact {
-    /// Refuses a fact its own fields contradict, which the extract could not read back.
-    pub fn check(&self) -> Result<(), InvalidFact> {
-        match (self.class, self.outcome) {
-            (Class::Idle { .. }, Decisive::Pass) => Err(InvalidFact::IdlePass),
-            _ => Ok(()),
-        }
-    }
-}
-
-impl TryFrom<Wire> for TrialFact {
+impl TryFrom<Object<Wire>> for TrialFact {
     type Error = InvalidFact;
 
-    fn try_from(wire: Wire) -> Result<Self, InvalidFact> {
+    fn try_from(Object(wire): Object<Wire>) -> Result<Self, InvalidFact> {
         if wire.ruleset != wire.build.ruleset {
             return Err(InvalidFact::Ruleset {
                 ruleset: wire.ruleset,
                 build: wire.build.ruleset,
             });
         }
-        let class = match (wire.kind, wire.class.workload) {
+        let Object(class) = wire.class;
+        let recorded = class.regime;
+        let class = match (wire.kind, class.workload) {
             (Kind::Trial, Some(workload)) => Class::Trial(TrialClass {
                 workload,
-                loaded: wire.class.cores,
-                duration_s: wire.class.duration_s,
+                loaded: class.cores,
+                duration_s: class.duration_s,
             }),
             (Kind::Trial, None) => return Err(InvalidFact::NoWorkload),
-            (Kind::Idle, None) if wire.class.duration_s == 0 => Class::Idle {
-                loaded: wire.class.cores,
+            (Kind::Idle, None) if class.duration_s == 0 => Class::Idle {
+                loaded: class.cores,
             },
-            (Kind::Idle, None) => return Err(InvalidFact::IdleDuration(wire.class.duration_s)),
+            (Kind::Idle, None) => return Err(InvalidFact::IdleDuration(class.duration_s)),
             (Kind::Idle, Some(_)) => return Err(InvalidFact::IdleWorkload),
         };
-        if wire.class.regime != class.regime() {
+        if recorded != class.regime() {
             return Err(InvalidFact::Regime {
-                recorded: wire.class.regime,
+                recorded,
                 expected: class.regime(),
             });
         }
@@ -396,10 +268,13 @@ impl TryFrom<Wire> for TrialFact {
             },
             (WireOutcome::Failure, None) => return Err(InvalidFact::NoSignal),
         };
-        let fact = Self {
+        if matches!((class, outcome), (Class::Idle { .. }, Decisive::Pass)) {
+            return Err(InvalidFact::IdlePass);
+        }
+        Ok(Self {
             session: wire.session,
             build: wire.build,
-            context: wire.context.map(BiosContext::from),
+            context: wire.context,
             seq: wire.seq,
             trial: wire.trial,
             class,
@@ -412,51 +287,6 @@ impl TryFrom<Wire> for TrialFact {
             voltage_requests_v: wire.voltage_requests_v,
             top_requesters: wire.top_requesters,
             ccd_mhz: wire.ccd_mhz,
-        };
-        fact.check()?;
-        Ok(fact)
-    }
-}
-
-impl From<TrialFact> for Wire {
-    fn from(fact: TrialFact) -> Self {
-        let (outcome, signal, core, stalled_core) = match fact.outcome {
-            Decisive::Pass => (WireOutcome::Pass, None, None, None),
-            Decisive::Failure {
-                signal,
-                core,
-                stalled,
-            } => (WireOutcome::Failure, Some(signal), core, stalled),
-        };
-        Self {
-            session: fact.session,
-            ruleset: fact.build.ruleset,
-            build: fact.build,
-            context: fact.context.map(WireContext::from),
-            seq: fact.seq,
-            trial: fact.trial,
-            kind: match fact.class {
-                Class::Trial(_) => Kind::Trial,
-                Class::Idle { .. } => Kind::Idle,
-            },
-            class: WireClass {
-                regime: fact.class.regime(),
-                workload: fact.class.workload(),
-                cores: fact.class.loaded(),
-                duration_s: fact.class.duration_s(),
-            },
-            condition: fact.condition,
-            phase: fact.phase,
-            record_only: fact.record_only,
-            profile: fact.profile,
-            outcome,
-            signal,
-            duration_s: fact.duration_s,
-            stalled_core,
-            core,
-            voltage_requests_v: fact.voltage_requests_v,
-            top_requesters: fact.top_requesters,
-            ccd_mhz: fact.ccd_mhz,
-        }
+        })
     }
 }

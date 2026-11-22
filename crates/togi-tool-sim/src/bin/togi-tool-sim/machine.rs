@@ -19,30 +19,20 @@ pub(crate) enum LoadError {
     Replay(#[from] ExtractsError),
 }
 
-/// The machine a standalone session simulates.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum SessionMachine<'a> {
-    /// The developer mechanics script.
-    Script,
-    /// The research suite's seeded default fitted machine, which its machine-free scenarios run.
-    DefaultFitted,
-    /// A fitted research machine file.
-    File(&'a Path),
-}
-
 /// The standalone session defaults to a script. Research machines use the suite's fitted loader.
 pub(crate) fn load_session(
-    machine: SessionMachine<'_>,
+    path: Option<&Path>,
     seed: u64,
     replay: bool,
     read: impl FnOnce(&Path) -> Result<MachineDefinition, file::LoadError>,
 ) -> Result<MachineSource, LoadError> {
-    let path = match machine {
-        SessionMachine::Script if replay => return Err(LoadError::ReplayWithoutMachine),
-        SessionMachine::Script => return Ok(MachineSource::Scripted(developer_machine())),
-        SessionMachine::DefaultFitted => None,
-        SessionMachine::File(path) => Some(path),
-    };
+    if path.is_none() {
+        return if replay {
+            Err(LoadError::ReplayWithoutMachine)
+        } else {
+            Ok(MachineSource::Scripted(developer_machine()))
+        };
+    }
     let (model, replay) = load_with(path, seed, replay, &mut Extracts::new(), read)?;
     Ok(MachineSource::fitted(model, replay))
 }
