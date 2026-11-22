@@ -121,6 +121,10 @@ fn first_trial_after(days: u32) -> ((State, Timestamp), usize) {
 }
 
 #[test]
+#[cfg_attr(
+    coverage,
+    ignore = "wall-clock ratio is distorted by coverage instrumentation, #1620"
+)]
 fn a_night_query_after_many_days_costs_what_one_after_a_few_costs() {
     let (early, _) = first_trial_after(10);
     let (late, intervals) = first_trial_after(2_000);
