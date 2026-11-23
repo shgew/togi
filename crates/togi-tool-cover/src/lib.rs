@@ -61,7 +61,7 @@ pub enum Error {
     },
     #[error("rustc -vV names no host")]
     NoHost,
-    #[error("{} holds no dep-info files in deps or build/*", .0.display())]
+    #[error("{} holds no dep-info files in build/*/*/out", .0.display())]
     NoDepInfo(PathBuf),
     #[error("read dep-info {}", path.display())]
     ReadDepInfo {

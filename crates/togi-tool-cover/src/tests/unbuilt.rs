@@ -27,15 +27,15 @@ fn built_sources_are_the_dep_info_lines_ending_in_a_colon() {
         "/repo",
         &[
             (
-                "target/debug/deps/togi_a-1.d",
-                "target/debug/deps/togi_a-1: crates/togi-a/src/lib.rs\n\ncrates/togi-a/src/lib.rs:\n",
+                "target/debug/build/togi-a/1/out/togi_a-1.d",
+                "target/debug/build/togi-a/1/out/togi_a-1: crates/togi-a/src/lib.rs\n\ncrates/togi-a/src/lib.rs:\n",
             ),
             (
-                "target/debug/build/togi-a-2/b.d",
-                "target/debug/build/togi-a-2/b: crates/togi-a/build.rs\n\ncrates/togi-a/build.rs:\n",
+                "target/debug/build/togi-a/2/out/build_script_build.d",
+                "target/debug/build/togi-a/2/out/build_script_build: crates/togi-a/build.rs\n\ncrates/togi-a/build.rs:\n",
             ),
             (
-                "target/debug/deps/togi_b-3.d",
+                "target/debug/build/togi-b/3/out/togi_b-3.d",
                 "crates/with\\ space/src/lib.rs:\n/repo/crates/togi-b/src/lib.rs:\n/elsewhere/dep.rs:\n",
             ),
             (
@@ -43,7 +43,7 @@ fn built_sources_are_the_dep_info_lines_ending_in_a_colon() {
                 "crates/togi-c/src/lib.rs:\n",
             ),
             (
-                "target/debug/deps/togi_a-1.rmeta",
+                "target/debug/build/togi-a/1/out/libtogi_a-1.rmeta",
                 "crates/togi-d/src/lib.rs:\n",
             ),
         ],
@@ -67,7 +67,7 @@ fn a_build_directory_without_dep_info_is_refused() {
         built_sources(&tree, Path::new("/repo/target/debug"), Path::new("/repo")).unwrap_err();
     assert_eq!(
         chain(&error),
-        "/repo/target/debug holds no dep-info files in deps or build/*"
+        "/repo/target/debug holds no dep-info files in build/*/*/out"
     );
 }
 
@@ -78,27 +78,27 @@ fn integration_tests_are_the_sources_their_own_dep_info_names() {
         &[
             ("crates/a/Cargo.toml", ""),
             (
-                "target/debug/deps/day-1.d",
-                "target/debug/deps/day-1: crates/a/tests/day.rs crates/a/tests/support/mod.rs\n\ncrates/a/tests/day.rs:\n\ncrates/a/tests/support/mod.rs:\n",
+                "target/debug/build/a/1/out/day-1.d",
+                "target/debug/build/a/1/out/day-1: crates/a/tests/day.rs crates/a/tests/support/mod.rs\n\ncrates/a/tests/day.rs:\n\ncrates/a/tests/support/mod.rs:\n",
             ),
             (
-                "target/debug/deps/multi-2.d",
+                "target/debug/build/a/2/out/multi-2.d",
                 "crates/a/tests/multi/main.rs:\ncrates/a/tests/multi/util.rs:\n",
             ),
             (
-                "target/debug/deps/a-3.d",
+                "target/debug/build/a/3/out/a-3.d",
                 "crates/a/src/lib.rs:\ncrates/a/tests/shared.rs:\n",
             ),
             (
-                "target/debug/build/a-4/build_script_build-5.d",
+                "target/debug/build/a/4/out/build_script_build-5.d",
                 "crates/a/build.rs:\ncrates/a/tests/helper.rs:\n",
             ),
             (
-                "target/debug/deps/util-6.d",
+                "target/debug/build/a/6/out/util-6.d",
                 "crates/a/tests/multi/util.rs:\ncrates/a/tests/multi/more.rs:\n",
             ),
             (
-                "target/debug/deps/main-7.d",
+                "target/debug/build/a/7/out/main-7.d",
                 "crates/a/tests/main.rs:\ncrates/a/tests/main_support.rs:\n",
             ),
         ],

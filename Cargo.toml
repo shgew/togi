@@ -68,6 +68,8 @@ unicode-width = "0.2"
 [workspace.lints.rust]
 unsafe_code = "deny"
 unreachable_pub = "warn"
+# cargo-llvm-cov compiles the coverage build with `--cfg coverage`.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -2 }

@@ -26,9 +26,9 @@ fn tree() -> MemTree {
         &[
             ("crates/a/src/lib.rs", LIB_HEAD),
             ("crates/a/build.rs", "fn main() {\n    let _ = 2;\n}\n"),
-            ("target/debug/deps/a.d", "crates/a/src/lib.rs:\n"),
+            ("target/debug/build/a/1/out/a-1.d", "crates/a/src/lib.rs:\n"),
             (
-                "target/debug/build/a-1/build_script_build.d",
+                "target/debug/build/a/2/out/build_script_build.d",
                 "crates/a/build.rs:\n",
             ),
         ],
@@ -168,9 +168,9 @@ fn real_process_run_reports_lines_and_files_the_build_leaves_out() {
         &[
             ("crates/a/src/lib.rs", LIB_BASE),
             ("crates/a/build.rs", "fn main() {\n    let _ = 1;\n}\n"),
-            ("target/debug/deps/a.d", "crates/a/src/lib.rs:\n"),
+            ("target/debug/build/a/1/out/a-1.d", "crates/a/src/lib.rs:\n"),
             (
-                "target/debug/build/a-1/build_script_build.d",
+                "target/debug/build/a/2/out/build_script_build.d",
                 "crates/a/build.rs:\n",
             ),
         ],

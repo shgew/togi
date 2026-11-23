@@ -15,6 +15,11 @@ allow-print-in-tests = true
 # separate crate), which fail the lint if an entry stops matching, and the compile_fail doctest
 # in togi-journal's lib.rs. File and directory syncs belong only in production durability
 # adapters; tests inject sync failures or record the ordering without flushing a drive.
+# Clippy resolves a path through a `pub use` re-export only from other crates; inside the
+# defining crate it needs the defining module's path, which other crates cannot see. A
+# re-exported entry is therefore listed under both paths, each with `allow-invalid`. Where the
+# defining crate itself makes an approved call, its `#[expect]` fails the lint if the defining
+# path stops matching; other defining paths have no such control.
 disallowed-methods = [
     { path = "std::fs::File::sync_all", reason = "Only production durability adapters sync files; tests and simulations use memory or unsynced storage" },
     { path = "std::fs::File::sync_data", reason = "Only production durability adapters sync file data; tests and simulations use memory or unsynced storage" },
@@ -22,16 +27,26 @@ disallowed-methods = [
     { path = "rustix::fs::fdatasync", allow-invalid = true, reason = "Only production durability adapters sync descriptor data; unavailable on Apple targets and pinned by a Linux negative control" },
     { path = "togi_trialfiles::compress_unsynced", reason = "Only simulations and kernel filesystem tests skip compressed trial-file durability" },
     { path = "togi_trialfiles::compress_with", reason = "Only tests inject trial-file storage; production uses the durable compression adapter" },
-    { path = "togi_trial::Runner::new_unsynced", reason = "Only kernel and hardware tests skip sample, trial-file and frequency-intent durability" },
-    { path = "togi_tool_trialfacts::write_unsynced", reason = "Only kernel filesystem tests skip facts-output durability" },
-    { path = "togi_machine::Smu::set_offset", reason = "Only the session write transaction writes a core offset through the SMU seam" },
-    { path = "togi_machine::Smu::set_all_offsets", reason = "Only the session write transaction writes every offset through the SMU seam" },
-    { path = "togi_machine::Smu::emergency_zero", reason = "Only the session's emergency zeroing, shared by the journal-failure emergency and togi emergency-stop, zeroes every core, after a confirmed teardown" },
-    { path = "togi_machine::SmuValidated::checked", reason = "Only a host implementation that validated the SMU interface mints its proof" },
-    { path = "togi_machine::Stopped::confirmed", reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },
-    { path = "togi_journal::StateDir::simulated", reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },
-    { path = "togi_journal::StateDir::lock_with_fs", reason = "Only tests and simulations inject journal storage; production locks a durable directory with StateDir::lock" },
-    { path = "togi_journal::StateDir::lock_unsynced", reason = "Only the simulator's --state-dir writes a journal without fsync" },
+    { path = "togi_trial::Runner::new_unsynced", allow-invalid = true, reason = "Only kernel and hardware tests skip sample, trial-file and frequency-intent durability" },
+    { path = "togi_trial::native::Runner::new_unsynced", allow-invalid = true, reason = "Only kernel and hardware tests skip sample, trial-file and frequency-intent durability" },
+    { path = "togi_tool_trialfacts::write_unsynced", allow-invalid = true, reason = "Only kernel filesystem tests skip facts-output durability" },
+    { path = "togi_tool_trialfacts::file::write_unsynced", allow-invalid = true, reason = "Only kernel filesystem tests skip facts-output durability" },
+    { path = "togi_machine::Smu::set_offset", allow-invalid = true, reason = "Only the session write transaction writes a core offset through the SMU seam" },
+    { path = "togi_machine::seams::Smu::set_offset", allow-invalid = true, reason = "Only the session write transaction writes a core offset through the SMU seam" },
+    { path = "togi_machine::Smu::set_all_offsets", allow-invalid = true, reason = "Only the session write transaction writes every offset through the SMU seam" },
+    { path = "togi_machine::seams::Smu::set_all_offsets", allow-invalid = true, reason = "Only the session write transaction writes every offset through the SMU seam" },
+    { path = "togi_machine::Smu::emergency_zero", allow-invalid = true, reason = "Only the session's emergency zeroing, shared by the journal-failure emergency and togi emergency-stop, zeroes every core, after a confirmed teardown" },
+    { path = "togi_machine::seams::Smu::emergency_zero", allow-invalid = true, reason = "Only the session's emergency zeroing, shared by the journal-failure emergency and togi emergency-stop, zeroes every core, after a confirmed teardown" },
+    { path = "togi_machine::SmuValidated::checked", allow-invalid = true, reason = "Only a host implementation that validated the SMU interface mints its proof" },
+    { path = "togi_machine::seams::SmuValidated::checked", allow-invalid = true, reason = "Only a host implementation that validated the SMU interface mints its proof" },
+    { path = "togi_machine::Stopped::confirmed", allow-invalid = true, reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },
+    { path = "togi_machine::seams::Stopped::confirmed", allow-invalid = true, reason = "Only a seam implementation that confirmed every workload stopped mints a teardown proof" },
+    { path = "togi_journal::StateDir::simulated", allow-invalid = true, reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },
+    { path = "togi_journal::dir::StateDir::simulated", allow-invalid = true, reason = "Only simulations and session tests keep a journal in memory; production locks a directory on disk" },
+    { path = "togi_journal::StateDir::lock_with_fs", allow-invalid = true, reason = "Only tests and simulations inject journal storage; production locks a durable directory with StateDir::lock" },
+    { path = "togi_journal::dir::StateDir::lock_with_fs", allow-invalid = true, reason = "Only tests and simulations inject journal storage; production locks a durable directory with StateDir::lock" },
+    { path = "togi_journal::StateDir::lock_unsynced", allow-invalid = true, reason = "Only the simulator's --state-dir writes a journal without fsync" },
+    { path = "togi_journal::dir::StateDir::lock_unsynced", allow-invalid = true, reason = "Only the simulator's --state-dir writes a journal without fsync" },
     { path = "togi_journal::fs::unsynced_disk_fs", reason = "Only simulations, kernel filesystem tests and togi-statecopy's scratch copies use the explicitly non-durable disk adapter" },
     { path = "togi_journal::fs::MemFs::dump_to", reason = "Only simulations write an in-memory state directory to disk, on request" },
     { path = "std::process::Command::spawn", reason = "Only togi-command's runner, togi-trial's workload launcher and test helpers spawn processes" },
