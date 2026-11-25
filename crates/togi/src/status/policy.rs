@@ -32,7 +32,9 @@ pub(super) struct Where<'a> {
 
 impl Where<'_> {
     pub(super) fn clock(&self, at: Timestamp) -> String {
-        at.to_zoned(self.zone.clone()).strftime("%H:%M").to_string()
+        at.to_zoned_datetime(self.zone.clone())
+            .strftime("%H:%M")
+            .to_string()
     }
 }
 

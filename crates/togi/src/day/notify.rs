@@ -66,7 +66,7 @@ fn pause_warning(actions: bool, deadline: Timestamp, zone: &TimeZone) -> Invocat
     if actions {
         command = command.args(["--wait", "--action=extend-hour=Extend pause by one hour"]);
     }
-    let ends = deadline.to_zoned(zone.clone()).strftime("%H:%M");
+    let ends = deadline.to_zoned_datetime(zone.clone()).strftime("%H:%M");
     command.args([
         "Day pause ends within five minutes".to_owned(),
         format!("The pause ends at {ends}. Stock will be reapplied and verified before then, and daily observation resumes. Extend by one hour from that deadline, or use togi day pause to pause until cold boot."),

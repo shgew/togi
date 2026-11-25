@@ -92,7 +92,9 @@ pub(super) fn squash(text: &str) -> String {
 }
 
 pub(super) fn clock(time: Timestamp, zone: &TimeZone, format: &str) -> String {
-    time.to_zoned(zone.clone()).strftime(format).to_string()
+    time.to_zoned_datetime(zone.clone())
+        .strftime(format)
+        .to_string()
 }
 
 /// A journal of a session on two cores with its configuration loaded, then `payloads`, a second apart.
