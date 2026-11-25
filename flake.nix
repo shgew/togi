@@ -1,5 +1,5 @@
 {
-  description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
+  description = "Per-CCD Curve Optimizer tuner for Zen 5 desktop CPUs";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -298,7 +298,7 @@
               --nushell <($out/bin/togi completion nushell)
           '';
           meta = {
-            description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
+            description = "Per-CCD Curve Optimizer tuner for Zen 5 desktop CPUs";
             license = lib.licenses.gpl3Plus;
             mainProgram = "togi";
             platforms = [ system ];

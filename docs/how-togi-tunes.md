@@ -2,31 +2,21 @@
 
 This is the entry point to the tuning policy. [Ruleset 14](spec/tuner-ruleset14.md) owns the rules and numbers, [workloads](spec/workloads.md) owns what runs, and [ADR 0094](adr/0094-two-ends-bounded-exploration.md) records why two-ends D replaces statistical-cap permission.
 
-This guide describes shipped behavior. The [automatic edge-margin-wait model](model.md) is the design being built, not yet this policy.
+This guide describes the shipped per-CCD policy. Automatic per-core tuning is the goal; the [edge–margin–wait model](model.md) is the design being built.
 
 Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. It deliberately encounters failures, including crashes; passing the workloads tested is evidence about those workloads, not a promise that the machine cannot fail later.
 
 ## Two-ends D: Ruleset 14
 
-Ruleset 14 is the only tuning policy. Clean daily observation permits a bounded experiment, not a claim of reliability. The day service applies the committed permitted D through durable intent, write and all-core readback. The [activation decision](spec/tuner-ruleset14.md#9-safety-and-activation) makes successor scoring research, not permission; hardware acceptance is the first live step's on-machine check.
-
-D makes clean daily observation permission for a bounded experiment beneath a night-derived ceiling, not statistical certification by S. Nights must qualify the exact next whole profile; each daily change earns a fresh hold, including the first change from stock. A suspect event stops the newest stepped unit, with whole-profile vetoes and further retreats; a durable machine allowance is shared across coarse and later core refinement, never automatically renewed. Firmware changes return to stock before guarded exact-profile restoration. Per-core refinement inherits real coarse history rather than restarting the climb.
-
-Finishing the climb does not mean “stable” or “meets your goal”: evidence remains experimental until current-profile observations support the stated model claim. The [successor evidence wording](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown), [per-core cost contract](spec/tuner-ruleset14.md#8-per-core-refinement-is-the-end-goal-not-a-restart-from-zero) and [activation decision](spec/tuner-ruleset14.md#9-safety-and-activation) explain those limits. The original Ruleset 13 policy shipped in v0.12.0 but did not meet its registered gate; [#1457](https://github.com/shgew/togi/issues/1457) registers successor research, without retrospectively accepting the old result.
+Ruleset 14 is the shipped policy. Clean daily observation and exact-profile qualification can permit a bounded step beneath a night-derived ceiling. Completing those conditions does not establish a crash rate or certify the profile as stable. The [activation decision](spec/tuner-ruleset14.md#9-safety-and-activation) distinguishes a real-machine acceptance check from successor scoring.
 
 ## Days and nights
 
-- **Nights test.** The operator starts a night (the tuning boot, or `togi run` by hand). It tests with workloads and runs until the operator ends it or the next normal boot begins; it has no end time. Ending it restores every core to CO 0.
-- **Days observe.** In normal boots togi watches the day profile without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
-- **BIOS stays at CO 0.** The day service will apply the day profile at boot ([#1218](https://github.com/shgew/togi/issues/1218), [ADR 0082](adr/0082-bios-stays-at-zero.md)); togi never tells you to enter offsets in BIOS.
+- **Nights test.** An operator starts the tuning boot or runs `togi run` by hand. There is no scheduled end time. Crash reboots can resume work; see [starting and ending a tuning boot](howto.md#4-overnight-the-tuning-boot).
+- **Days apply and observe.** The day service applies the permitted committed profile and verifies its readback, without starting test workloads. See [daily observation](howto.md#daily-observation).
+- **BIOS stays at CO 0.** togi applies offsets after boot. Before nonzero night work the operator must attest that the machine is stable at stock under the [recorded firmware context](spec/tuner.md#firmware); the night does not test an all-zero profile.
 
-The normal `togi night` confirmation also confirms that the machine is stable
-at CO 0 with BIOS at stock. Its answer is journaled once per firmware context
-and required again after a BIOS, AGESA or microcode change. No night runs an
-all-zero trial; the first mapping offset is −5. A manually started tuning run
-without that current attestation stops at stock before nonzero work.
-
-A profile is the complete ordered per-core vector and its unit mapping. Coarse tuning moves one CCD at a time; later core refinement inherits the clean coarse result and actual history rather than restarting from zero.
+A profile is the complete ordered per-core vector and its unit mapping. The shipped policy tunes one CCD at a time, not individual cores.
 
 ## D, C and U
 
@@ -49,11 +39,7 @@ A night works through four queues, with soft shares of elapsed observed time; [N
 | mapping | Finds each unit's isolated U and sweeps uncovered cells toward C |
 | requalification | Refreshes the coverage certificate for the current day profile |
 
-When primary work is empty, filler repeats exact-current-D qualification cells using the durable cursor **only when D is nonzero**; there is no S−1 permission filler. All-zero D receives no filler or requalification. When no nonzero cell is admissible the night ends with a named reason and restores every core to stock. Unavailable backends supply no credit. Work spans nights rather than shortening required cells to fit.
-
-A **trial** is one launch of one workload under one applied profile for a stated duration. It passes, fails or is inconclusive; an inconclusive trial adds no evidence. Exposure is eligible measured execution time only, never intended time, downtime or an extrapolated crash tail. [The coverage matrix](spec/workloads.md#coverage-matrix) owns which classes a qualification needs.
-
-A **qualification** is a composite certificate for the proposed day profile: [the coverage matrix](spec/workloads.md#coverage-matrix) owns the current evidence requirements, including unchanged-CCD reuse and fresh whole-profile interaction cells. Reproduction never qualifies. A night can end mid-matrix; the next one resumes the outstanding cells.
+When none of the queues is due, filler repeats tests at the current nonzero D. A night can end with coverage still outstanding; unavailable backends supply no credit. The [workload matrix](spec/workloads.md#coverage-matrix) defines the evidence needed and which cells can be reused. Coverage is limited to those workloads and conditions; it does not establish that desktop freezes, sleep/wake failures or early-boot failures will be caught.
 
 ## What a day does
 
@@ -78,11 +64,7 @@ An unexplained unclean end raises a question; independent CPU machine-check evid
 - **Day panel.** Exact-profile hold, phase, latest successful step, held/finished/stopped reason, blockers, firmware, freeze/pause, events and vetoes.
 - **Campaign.** Consumed/remaining allowance, provisional and subsequently reclassified counts, and post-finish events.
 
-Status and watch distinguish applied/read-back, proposed and paused saved profiles and show current-profile observed hours/crashes beside stock totals. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Fifty clean hours support about 1 crash per 17 h under that model, not the 1/3,000 h goal. Finish means exploration ended, not “stable”; [§6](spec/tuner-ruleset14.md#6-finish-steady-use-and-the-words-shown) owns the assumptions and permitted claims.
-
-## Costs
-
-A qualification completes a composite certificate for the proposed profile, so each step can cost a night or several. Time already spent never counts twice: a pass at an unchanged CCD can be reused where [the workload spec](spec/workloads.md#coverage-matrix) allows. The external [day/night scorer is retired](benchmarking.md#daynight-gate); this document states no measured duration.
+Status and watch distinguish applied/read-back, proposed and paused saved profiles and show current-profile observations beside stock totals. The evidence is **experimental**. The displayed fixed-rate model bound, when available, is not a measured rare-crash rate. Neither recorded hours nor completed coverage predict how long the climb will take, and a finished climb is not a stability verdict.
 
 Earlier rulesets are recorded in [Ruleset history](#ruleset-history), the changelog and the [ADR index](adr/README.md). Historical ADRs keep their original terms and decisions; follow their supersession links rather than treating every old decision as active.
 

@@ -168,7 +168,7 @@ const WORDS: Section = Section {
         ),
         (
             "experimental",
-            "experimental: 50 clean hours; at most 1 crash per 17 h (95%, fixed-rate model). This is an example for current exact-profile evidence, not a reliability certificate; finish alone never meets the hazard goal",
+            "observations for the current exact profile, not a stability verdict; a fixed-rate model bound is not a measured crash rate or a prediction",
         ),
     ],
 };

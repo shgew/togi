@@ -1,6 +1,6 @@
 # togi
 
-togi finds the deepest per-CCD Curve Optimizer offsets a Zen 5 desktop CPU sustains, tests them on whole profiles at night and observes them by day: it reports evidence, not a durability grade.
+togi aims to find per-core Curve Optimizer offsets automatically. Today it tunes per CCD, testing at night and observing the applied profile by day.
 
 The glossary governs prose and display. Wire names are frozen: a vocabulary change renames messages, help and docs, never an event kind or field ([journal.md](docs/spec/journal.md#event-format)) or a configuration key ([runtime.md](docs/spec/runtime.md#configuration)), so it never bumps `togi_journal::SCHEMA` on its own.
 
@@ -16,7 +16,7 @@ One SMT thread of a core, the kernel's `cpuN`; every core has two.
 _Avoid_: core, hyperthread
 
 **CCD**:
-One of the two core dies, holding eight cores each.
+A core die. togi supports one or two full CCDs with eight cores each.
 _Avoid_: CCX, chiplet
 
 **Offset**:
@@ -125,7 +125,7 @@ A trial outcome that says nothing about stability, such as a backend that failed
 Evidence of instability: a computation error, a stall, a corrected MCE, an uncorrected MCE or a crash.
 
 **Crash**:
-The machine rebooted or froze without a clean shutdown, detected on the next boot.
+An unclean end observed after reboot. It does not by itself tell togi whether the machine froze.
 _Avoid_: hang, freeze, reset
 
 **Evidence epoch**:
@@ -143,7 +143,7 @@ _Avoid_: failure offset
 The hard night depth limit for a tuning unit, five counts shallower than its known edge, capped at zero.
 
 **Tuning unit**:
-A CCD in the coarse phase or a physical core in later refinement; the identity to which a day offset, mapped edge and finish reason belong.
+The identity to which a day offset, mapped edge and finish reason belong. Today it is a CCD; the design being built adds physical cores as units.
 
 **Machine allowance**:
 The campaign's lifetime ledger of two unique CPU-suspect learning events, shared across phases and retained through reclassification and transitions.
@@ -164,7 +164,7 @@ The ban a CPU-suspect daily event puts on its whole profile and every profile at
 A manual stop on promotions; it keeps the day offset and never blocks a retreat or a firmware reset.
 
 **Firmware validity**:
-Whether qualifications, slopes and caps still belong to the current BIOS, AGESA and microcode; a change invalidates them and sets the day offset to CO 0 ([Firmware](docs/spec/tuner.md#firmware)).
+Whether evidence belongs to the current recorded BIOS context. This compares recorded fields such as the BIOS version and microcode; togi does not read AGESA separately ([Firmware](docs/spec/tuner.md#firmware)).
 
 **Ruleset**:
 The policy for tuning-unit mapping, ceilings, qualification, reproduction, day steps and campaign allowance.
@@ -194,4 +194,4 @@ The recorded version, revision, ruleset, journal schema and fixes of the togi bu
 A since-fixed bug that changed a recorded decision, identifiable from its cause and surrounding journal events.
 
 **State**:
-The current situation derived from the journal, kept as a file for readers.
+The current situation reconstructed from the journal, not a separately persisted file.

@@ -710,7 +710,7 @@ fn a_reset_requires_a_fresh_stock_attestation_even_with_unchanged_firmware() {
     assert_eq!(current.events().len(), 2, "old consent was not imported");
 }
 
-#[test_case::test_case("bios"; "BIOS or AGESA change")]
+#[test_case::test_case("bios"; "BIOS version change")]
 #[test_case::test_case("microcode"; "microcode change")]
 fn changed_firmware_requires_and_records_the_confirmation_again(field: &str) {
     let night = Night::new();

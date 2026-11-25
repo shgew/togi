@@ -465,22 +465,39 @@ fn cpus(cpus: &[togi_machine::CpuId]) -> String {
 }
 
 fn trial_start(p: &TrialStart) -> String {
-    if p.instances.len() > 1 {
-        return format!(
-            "trial {} started {} instances in scopes {}-cNN on cpus {}",
-            p.trial,
-            p.instances.len(),
-            p.scope,
-            cpus(&p.cpus)
-        );
-    }
-    let where_ = if p.cpus.len() > 1 { "cpus" } else { "cpu" };
+    let (pid, scope, loaded) = match p.instances.as_slice() {
+        [] => (p.pid, p.scope.as_str(), p.cpus.as_slice()),
+        [instance] => (
+            instance.pid,
+            instance.scope.as_str(),
+            instance.cpus.as_slice(),
+        ),
+        [first, rest @ ..] => {
+            let mut text = format!(
+                "trial {} started {} instances in scopes {}",
+                p.trial,
+                p.instances.len(),
+                first.scope
+            );
+            for instance in rest {
+                let _ = write!(text, ", {}", instance.scope);
+            }
+            let mut loaded: Vec<_> = p
+                .instances
+                .iter()
+                .flat_map(|instance| instance.cpus.iter().copied())
+                .collect();
+            loaded.sort_unstable();
+            loaded.dedup();
+            let _ = write!(text, " on cpus {}", cpus(&loaded));
+            return text;
+        }
+    };
+    let where_ = if loaded.len() > 1 { "cpus" } else { "cpu" };
     format!(
-        "trial {} started pid {} in scope {} on {where_} {}",
+        "trial {} started pid {pid} in scope {scope} on {where_} {}",
         p.trial,
-        p.pid,
-        p.scope,
-        cpus(&p.cpus)
+        cpus(loaded)
     )
 }
 

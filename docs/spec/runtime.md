@@ -289,7 +289,7 @@ The night part is titled `Night since HH:MM`, or `Last night HH:MM–HH:MM` once
 
 A session written by a newer ruleset, schema or evidence epoch is refused before another event is appended, even if another dimension is older. `run` checks the journal's build stamp before validating configuration, so a newer journal still exits 16 when this build also rejects the config file. The diagnostic identifies the writing build's version and advises installing it or running `togi reset --all`. `reset` and `doctor` take that build from the first `session.start`, not the latest `config.loaded`.
 
-An older ruleset, schema or evidence epoch with no newer dimension is archived unchanged after configuration validation. The Ruleset 13 successor follows [the transition above](#ruleset-13-policy-boundary), not cap/qualification/D carry. A BIOS/AGESA/microcode change alone stays in the session and follows [Ruleset 14 restoration](tuner-ruleset14.md#7-reconcile-every-current-decision-path).
+An older ruleset, schema or evidence epoch with no newer dimension is archived unchanged after configuration validation. The Ruleset 13 successor follows [the transition above](#ruleset-13-policy-boundary), not cap/qualification/D carry. A change in [recorded BIOS context](tuner.md#firmware) alone stays in the session and follows [Ruleset 14 restoration](tuner-ruleset14.md#7-reconcile-every-current-decision-path).
 
 `status` and `events` (including `events --json`) warn to stderr before rendering a different ruleset with this build's rules, but refuse a different schema with a red bold line (journald priority 3). `watch` renders a different ruleset without a warning and shows a different schema's refusal on screen in place of the session. `reset --all` works across these build-dimension mismatches; a schema mismatch archives without appending to the old journal. Discarding a pending import occurs under the writer lock after establishing the permanent reset boundary and reports that raw-day import was discarded, never that tuning carry was dropped.
 
@@ -592,8 +592,9 @@ it is ended. The existing reboot confirmation also states that the operator
 confirms the machine is stable at CO 0 with BIOS at stock. There is no second
 prompt. Before selecting tuning, a yes durably journals
 [`stock.attested`](journal.md#stock-attestation) for the current firmware
-context if it has not already been attested. A BIOS, AGESA or microcode change
-requires a new current-context answer. A decline records no attestation.
+context if it has not already been attested. A change in that recorded context
+requires an answer for the new context unless this session already attested
+it. A decline records no attestation.
 The normal boot's session envelope and operator attestation alone are not
 tuning activity and do not admit that boot to tuning crash recovery.
 

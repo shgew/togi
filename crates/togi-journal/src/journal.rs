@@ -39,7 +39,7 @@ impl std::error::Error for WriteFailure {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppendError {
-    #[error("journal write failed")]
+    #[error("journal write failed; event durability is unknown")]
     Failed(#[source] Arc<WriteFailure>),
     #[error("journal refuses writes after an earlier failure")]
     Poisoned(#[source] Arc<WriteFailure>),

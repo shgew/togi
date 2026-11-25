@@ -176,7 +176,9 @@ This is a failed proposed-profile disposition, not a crash at D: it does not cre
 
 ### Firmware
 
-A BIOS, AGESA or microcode change invalidates active qualifications, slopes and ceilings. Set D to CO 0 at the next application opportunity; retain the previous profile as a requalification target and old raw observations as mapping hints only. Require a new operator stock attestation, exact previous-profile qualification and the fresh stock hold before [Ruleset 14 restoration](tuner-ruleset14.md#7-reconcile-every-current-decision-path). No all-zero controls run. Old facts never contribute current hours or qualification. This reset is not undone by a same-boot restart.
+The recorded BIOS context comprises the BIOS version, board, CPU model, microcode and boost limit. togi does not read a separate AGESA version.
+
+A change in the recorded context invalidates active qualifications, slopes and ceilings. Set D to CO 0 at the next application opportunity; retain the previous profile as a requalification target and old raw observations as mapping hints only. Require a new operator stock attestation, exact previous-profile qualification and the fresh stock hold before [Ruleset 14 restoration](tuner-ruleset14.md#7-reconcile-every-current-decision-path). No all-zero controls run. Old facts never contribute current hours or qualification. This reset is not undone by a same-boot restart.
 
 ## Daily events
 

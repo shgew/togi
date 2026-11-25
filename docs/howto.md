@@ -4,13 +4,13 @@ For a Zen 5 (Granite Ridge) desktop running NixOS with GRUB. Every command below
 
 ## 1. Install the module
 
-Add togi to your flake's inputs, pinned to a release, and pass the inputs to the host's configuration:
+Add the `main` branch as a flake input. Your lock file pins the revision you use:
 
 ```nix
 # flake.nix
 {
   inputs.togi = {
-    url = "github:shgew/togi/v0.5.0";
+    url = "github:shgew/togi/main";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -23,7 +23,7 @@ Add togi to your flake's inputs, pinned to a release, and pass the inputs to the
 }
 ```
 
-Keep your existing `nixpkgs` input and host name. `v0.5.0` is an example; the [releases page](https://github.com/shgew/togi/releases) lists the current tags. `specialArgs` is what gives the host's configuration its `inputs` argument; a flake that already passes its inputs another way keeps doing that.
+Keep your existing `nixpkgs` input and host name. `specialArgs` is what gives the host's configuration its `inputs` argument; a flake that already passes its inputs another way keeps doing that. See the [pre-1.0 update policy](../AGENTS.md#keeping-docs-current).
 
 Then import the module in the host's configuration:
 
@@ -51,7 +51,7 @@ When upgrading from TOML configuration, module users rebuild to generate the JSO
 
 The module also creates the unprivileged `togi-trial` system user and group and sets `"backend_user": "togi-trial"` in the configuration. Togi itself still runs as root; mprime and y-cruncher use that account, which can write only their own trial instance directory within togi's state ([Backends](spec/workloads.md#backends)). Rebuild after upgrading to this behavior so the account exists before the next run. A hand-written configuration must set `backend_user` to an existing unprivileged account; [Privileges](spec/runtime.md#privileges) and [Preflight](spec/runtime.md#preflight) say what is refused.
 
-To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. Ruleset 14 archives Ruleset 13 unchanged, starts from verified stock and reconstructs the durable campaign ([section 7](#7-after-a-breaking-update)).
+When you choose to update, run `nix flake update togi` and rebuild. For an existing Ruleset 13 journal, see [the Ruleset 14 transition](#7-after-a-breaking-update).
 
 The module installs `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.default`, the `togi` built with crane. Moving a host from the earlier Go build of togi takes the steps in [Go to Rust cutover](#go-to-rust-cutover). From a checkout, `nix build .#default` builds the package, `just togi ARGS` runs the binary from the tree and `just check-one package` checks its version and completion scripts.
 
@@ -90,13 +90,13 @@ Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially 
 sudo togi run
 ```
 
-`run` prints one line per journal event to stderr. To see the dashboard, run `togi watch` in another terminal; it follows the journal independently, shows the running trial and offsets, and `?` explains the screen. Press Ctrl-C in the **run** terminal to stop the session, restore offsets and exit 0 ([Exit codes](spec/runtime.md#exit-codes)). Quitting `watch` does not stop the run.
+`run` prints one line per journal event to stderr. To see the dashboard, run `togi watch` in another terminal; it follows the journal independently, shows the running trial and offsets, and `?` explains the screen. Press Ctrl-C in the **run** terminal to stop; a clean stop verifies stock and exits 0, and failed cleanup is reported ([Exit codes](spec/runtime.md#exit-codes)). Quitting `watch` does not stop the run.
 
 ```sh
 togi status
 ```
 
-An in-session run requires an armed, counting hardware watchdog, just like the tuning boot; `sudo togi run` checks once at startup and refuses if it is unarmed. Sampling countdown progress can take up to four seconds per candidate device; manual startup does not retry for readiness or arm a watchdog. It checks again before each nonzero profile application and each workload start; loss detected there stops new work and restores verified stock, and a stop signal interrupts sampling and takes ordinary cleanup ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows a failed `watchdog` result. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
+An in-session run requires an armed, counting hardware watchdog, just like the tuning boot; `sudo togi run` checks once at startup and refuses if it is unarmed. Sampling countdown progress can take up to four seconds per candidate device; manual startup does not retry for readiness or arm a watchdog. It checks again before each nonzero profile application and workload start; loss detected there stops new work and attempts to restore and verify stock. A stop signal interrupts sampling and takes ordinary cleanup ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows a failed `watchdog` result. After a reset or crash reboot, the next run uses the journal to recover and record the available [crash evidence](spec/tuner.md#crashes).
 
 If a previous run left nonzero offsets on the same boot, `run` attempts to restore and verify CO 0 even if the watchdog is unarmed. It still refuses to tune; a failed restoration reports that stock was not verified ([Same-boot resume](spec/runtime.md#same-boot-resume)).
 
@@ -177,9 +177,9 @@ services.togi = {
 
 The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; stop zeroes and verifies before recording a clean marker. Start it again with `systemctl start togi-day.service` afterward. A same-boot restart, including `nixos-rebuild switch`, reapplies the still-permitted committed D without promoting. Systemd-managed sleep restores the watchdog before the resume hook requests the same profile transaction with all-core readbacks. An abnormal exit runs zero-only emergency recovery before the delayed restart, except exit 16 (an incompatible journal, such as the previous ruleset's after an update): the unit stays failed because a restart would refuse again. After the journal has been transitioned, start it with `systemctl restart togi-day.service` or let the next boot do so. Inspect diagnostics with `journalctl -u togi-day.service`. Without a session, verified zero baseline or armed/counting watchdog, the service reports why it cannot start.
 
-The first eligible live nonzero step supplies [hardware acceptance](spec/tuner-ruleset14.md#9-safety-and-activation): perform that on-machine lifecycle check and record the exact revision/configuration and observations in that night's [run retrospective](https://github.com/shgew/togi/issues/260). Do not bypass qualification, holds or a safety blocker to obtain a step. Successor simulator scoring is research, not a prerequisite or a substitute for the machine check; no separately authorized supervised application is required.
+The first eligible live nonzero step supplies [hardware acceptance](spec/tuner-ruleset14.md#9-safety-and-activation). Keep the journal and record the exact revision, configuration and observations. A [retrospective](reviewing.md#retros) is optional. Do not bypass qualification, holds or safety blockers to obtain a step.
 
-Enabling `services.togi.day.enable` also loads `sp5100_tco`, the AMD chipset watchdog driver, and asks PID 1 to arm and feed a 60-second hardware watchdog in normal boots, so a frozen machine resets itself and the next day service start records why. The watchdog and its sleep hooks are part of day enablement, not a separate option. Remove `services.togi.day.watchdog` from existing configurations. Day application still refuses to start unless the watchdog is armed and counting.
+Enabling `services.togi.day.enable` loads `sp5100_tco` and asks PID 1 to arm and feed a 60-second hardware watchdog in normal boots. The watchdog can reset the machine if feeding stops; it does not catch every desktop freeze or establish why a boot ended. The watchdog and sleep hooks are part of day enablement, not a separate option. Remove `services.togi.day.watchdog` from existing configurations. Day application refuses unless the watchdog is armed and counting.
 
 A hardware watchdog may keep counting during s2idle, which has not been measured, so every day setup includes the pre-sleep pause in `togi-day-watchdog-sleep.service`. SP5100 TCO loses timer MMIO decoding after deep sleep on the measured platform: it can still report `active` while `timeleft` reads `4294967295`, providing no reset protection. After every systemd-managed resume the unit unloads and reloads `sp5100_tco` before re-arming PID 1's watchdog. Module failures are logged and do not skip the re-arm request. The observer rechecks at sampling ticks and checkpoints, recording changes immediately; `togi status` reports its last check, not merely its startup check. Check `/sys/class/watchdog/watchdog0/timeleft` several seconds apart before and after a deep sleep longer than 90 seconds: readings must be at most `timeout` and count down between PID 1's feeds, and status must say `armed`. A missing, unreadable, malformed or static counter, or a value greater than `timeout`, is not armed. An upward refresh by PID 1 needs a subsequent decrease; the refresh alone does not prove counting. A sleep started by writing `/sys/power/state` directly bypasses this unit, and `CONFIG_WATCHDOG_NOWAYOUT` or the driver's `nowayout` parameter can prevent release and reload. [Day watchdog](spec/runtime.md#day-watchdog) owns the rules and limits. A reset whose crashed boot ended at a sleep entry remains sleep-related, not evidence of a CPU hang.
 
@@ -250,8 +250,10 @@ Switch from the day with `sudo togi night`. It shows the plan, then its existing
 also asks you to confirm that the machine is stable at CO 0 with BIOS at
 stock. Only `y` or `yes` goes on: togi journals that attestation once per
 firmware context, selects the current generation's tuning entry, remembers
-the boot selection it replaces and reboots. A BIOS, AGESA or microcode change
-requires a new current-context attestation. Any other answer changes nothing.
+the boot selection it replaces and reboots. A change in the recorded BIOS
+context, which includes BIOS version and microcode but no separate AGESA
+version, requires an attestation for that context unless this session already
+has one. Any other answer changes nothing.
 In a normal boot, `sudo togi watch` offers the same switch on `n`, with the
 same stock-stability confirmation and no second prompt.
 
@@ -269,18 +271,7 @@ The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed t
 
 After an unclean tuning boot, `togi events --kind crash.detected,mce` shows the interrupted action, available reset reason and machine-check evidence ([Trial outcome](spec/workloads.md#trial-outcome)). togi does not read saved kernel dumps for crash classification.
 
-A night works through its queues (reproduction, qualification, mapping, requalification) by their shares of elapsed observed time, then the filler ([Night order](spec/tuner.md#night-order-and-reserved-budgets)). R7 loads run each CCD's full load, then partial loads derived from measured requests, and the all-core load ([coverage matrix](spec/workloads.md#coverage-matrix)). `status` and the dashboard show each queue's share used.
-
-Mapping descends one CCD at a time with only that CCD tuned, so a failure is charged to that CCD ([Night edge U](spec/tuner.md#night-edge-u)). Failures at a nonzero whole profile stay profile-level evidence until isolated testing locates them.
-
-Togi never runs a trial with every core at CO 0: there are no first-night or
-changed-firmware stock controls, stock-confirmation reruns, or all-zero
-filler/requalification. Mapping begins at −5 with the other CCDs at stock.
-A failure located on a CO-0 core during isolated mapping counts against the
-tested CCD; whole-profile qualification or reproduction retains the exact
-failed profile. [Operator-attested stock stability](spec/tuner-ruleset14.md#operator-attested-stock-stability)
-owns these rules. Day observation at stock and the 50 clean stock daily hours
-before the first promotion or firmware restoration remain.
+See [what a night does](how-togi-tunes.md#what-a-night-does) for the queues and coverage, and [stock attestation](spec/tuner-ruleset14.md#operator-attested-stock-stability) for the rules on all-zero profiles.
 
 ## 5. In the morning
 
@@ -306,10 +297,8 @@ sudo togi doctor --day
 ```
 
 The evidence view shows exact-profile qualification evidence, applied-step history and comparable same-class night measurements.
-The fixed-rate bound uses only compatible daily observations of the current exact applied profile.
 Historical observations across contexts are shown separately, alongside stock totals and unknown intervals.
-CO 0 is an untuned fallback, not a claim that stock meets the hazard goal.
-No view gives a safety verdict, an ETA or a promise that more nights will produce a nonzero profile.
+See [what the screens show](how-togi-tunes.md#what-the-screens-show) for how to read the experimental evidence. No view gives a safety verdict or an ETA.
 
 The first observed day boot after a night has a Morning report in `status`; `togi day notify` also
 sends it to the desktop. It summarizes recorded trial ends and observed task time, and explains that
@@ -329,13 +318,7 @@ An empty admissible nonzero queue stops with `no_nonzero_work`
 (exit 12), not a stock trial. Excluded backends and runtime safety stops
 retain their [named stopping conditions](spec/tuner.md#night-query-results).
 
-A night's mapping and qualification are evidence, not proof of stability.
-Qualification runs the [coverage matrix](spec/workloads.md#coverage-matrix) on the exact profile under test.
-Missing qualification coverage is shown as outstanding, never as safe.
-
-That coverage does not include light work on many cores at once or both threads of many cores at once beyond the matrix's own classes. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot stages before togi applies a profile. A qualified profile can still crash in ordinary use.
-
-Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. [Ruleset 14](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) requires 50 clean exact-profile hours even at initial stock, exact next-profile qualification and an eligible cold boot for each bounded step toward C. Status/watch show D/C/U, hold and campaign allowance; statistical S computation and display are retired. Evidence reads `experimental: N clean hours; at most 1 crash per X h (95%, fixed-rate model)`. Keep backups: neither a completed hold nor a finished climb proves stability.
+Keep BIOS Curve Optimizer at **0**; never copy a proposed day profile into firmware. Keep backups: [night coverage](how-togi-tunes.md#what-a-night-does) and a [clean hold](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) do not establish stability in daily use.
 
 ### If the profile crashes in daily use
 
@@ -357,7 +340,7 @@ the evidence it cites. Fix the named cause before starting again. For
 `stock_unattested`, return to the normal boot and confirm through
 `sudo togi night`; do not bypass the answer with a direct run. For
 `no_nonzero_work`, continue daily observation at stock rather than looking
-for an all-zero workload to run. A BIOS/AGESA/microcode change continues the
+for an all-zero workload to run. A change in the recorded BIOS context continues the
 session under [firmware invalidation](spec/tuner.md#firmware), requiring a
 new-context attestation rather than seeding a new session.
 [runtime.md](spec/runtime.md#dead-end-actions) and
@@ -377,7 +360,7 @@ The two-event machine allowance includes provisional charges and is never renewe
 
 A firmware change remains in-session: it returns to stock and requires new-context exact qualification and 50 clean stock hours before guarded restoration of the previous full profile. It never reopens a stopped unit.
 
-For rollback, an older build refuses to resume a newer-ruleset journal before append. Same-schema inspection remains possible with warnings/skipped unknown kinds, but strict reset may refuse unknown additive kinds; reinstall the writing build to archive it safely. [Reset and compatibility](spec/runtime.md#reset-and-compatibility) describes the exact operation-specific behavior. `SCHEMA` remains 1; build-fingerprint changes rebuild snapshots.
+For rollback, an older build refuses to resume a newer-ruleset journal before append. Same-schema inspection remains possible with warnings/skipped unknown kinds, but strict reset may refuse unknown additive kinds; reinstall the writing build to archive it safely. [Reset and compatibility](spec/runtime.md#reset-and-compatibility) describes the exact operation-specific behavior.
 
 ## Go to Rust cutover
 

@@ -2,7 +2,7 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Firmware {
     Current,
-    /// A BIOS, AGESA or microcode change not yet answered by a firmware zero.
+    /// The recorded firmware context differs and no firmware zero has answered it yet.
     Changed,
 }
 

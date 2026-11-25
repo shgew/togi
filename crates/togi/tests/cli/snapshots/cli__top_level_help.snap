@@ -2,7 +2,7 @@
 source: crates/togi/tests/cli/mod.rs
 expression: stdout(&ran)
 ---
-Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs
+Tunes Curve Optimizer offsets per CCD on Zen 5 desktop CPUs
 
 Usage: togi [OPTIONS] <COMMAND>
 

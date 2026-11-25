@@ -44,7 +44,12 @@ fn a_trigger_at_a_later_append_fails_its_sync_after_the_line_is_written() {
     assert!(trigger.arm(&fs, 1));
     journal.append(stamp(1), note("two"), &[]).unwrap();
     assert!(!trigger.fired());
-    assert!(journal.append(stamp(2), note("three"), &[]).is_err());
+    let error = journal.append(stamp(2), note("three"), &[]).unwrap_err();
+    assert!(matches!(error, crate::AppendError::Failed(_)));
+    assert_eq!(
+        error.to_string(),
+        "journal write failed; event durability is unknown"
+    );
     assert!(trigger.disarm(&fs));
     assert!(trigger.fired());
     assert_eq!(lines(&fs), 3);

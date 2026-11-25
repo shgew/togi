@@ -73,10 +73,11 @@ pub enum FoldError {
     Facts(#[from] togi_journal::FoldError),
 }
 
-/// Why an event that reached the journal was not fully taken in.
+/// Why an event could not be appended or fully taken in.
 #[derive(Debug, thiserror::Error)]
 pub enum AppendFailure {
-    /// The append itself failed: nothing is durable and the journal accepts nothing more.
+    /// The run latched a journal fault and will not append again. An I/O failure during
+    /// append may have left a complete record; it does not establish whether it is durable.
     #[error(transparent)]
     Journal(#[from] JournalFailure),
     /// The event is durable but the run's state cannot absorb it.

@@ -469,8 +469,8 @@ mod vm_recovery {
         }
     }
 
-    /// Seeds a current-build session and its stock baseline, as `togi run` would.
-    /// Only this helper does it: the production `togi day` never creates a session.
+    /// Writes synthetic session metadata and a stock baseline. The production `togi day`
+    /// never creates a session.
     fn seed_session(shipped: bool, day_profile: bool) -> i32 {
         std::fs::create_dir_all(STATE_DIR).unwrap();
         let dir = StateDir::lock(STATE_DIR).unwrap();
@@ -539,6 +539,8 @@ mod vm_recovery {
         }
     }
 
+    /// Seeds records for an already committed D without selecting it, qualifying it or
+    /// applying offsets.
     fn seed_day_profile(journal: &mut togi_journal::Journal, stamp: Stamp, topology: &[CoreInfo]) {
         use togi_journal::{
             ApplicationId, ApplyCause, CcdVector, ClimbAction, ClimbDecision, ClimbHold,

@@ -232,6 +232,25 @@ fn intent_message_names_the_activity_fields() {
     );
 }
 
+#[test_case(0, "trial 0413 started pid 48211 in scope togi-trial-0413 on cpu 7"; "legacy primary scope")]
+#[test_case(1, "trial 0413 started pid 48211 in scope togi-trial-0413-c03 on cpus 3,11"; "one worker scope")]
+#[test_case(2, "trial 0413 started 2 instances in scopes togi-trial-0413-c03, other.scope on cpus 3,9,11"; "all recorded worker scopes and cpus")]
+fn a_trial_start_names_its_recorded_scopes(workers: usize, expected: &str) {
+    use togi_machine::CpuId;
+
+    let Payload::TrialStart(mut start) = sample(EventKind::TrialStart) else {
+        unreachable!()
+    };
+    start.instances.push(TrialInstance {
+        core: core(9),
+        cpus: vec![CpuId::from(9)],
+        pid: 48212,
+        scope: "other.scope".into(),
+    });
+    start.instances.truncate(workers);
+    assert_eq!(Payload::from(start).message(), expected);
+}
+
 #[test]
 fn smu_messages_carry_core_and_offset() {
     assert_eq!(

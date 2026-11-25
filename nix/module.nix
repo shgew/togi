@@ -18,7 +18,7 @@ let
 in
 {
   options.services.togi = {
-    enable = lib.mkEnableOption "togi, the per-core Curve Optimizer tuner";
+    enable = lib.mkEnableOption "togi, the per-CCD Curve Optimizer tuner";
     package = lib.mkOption {
       type = lib.types.package;
       default = packages.${pkgs.stdenv.hostPlatform.system}.default;
