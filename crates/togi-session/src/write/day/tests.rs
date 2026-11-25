@@ -660,7 +660,7 @@ fn a_journal_that_fails_during_restoration_is_answered_by_the_zero_only_emergenc
     };
     assert!(zeroed.is_clean(), "{zeroed:?}");
     let read_back: Vec<_> = zeroed
-        .readbacks
+        .readbacks()
         .iter()
         .map(|readback| readback.result.as_ref().ok().map(|offset| offset.0))
         .collect();
