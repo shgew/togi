@@ -3,15 +3,14 @@
 use jiff::SignedDuration;
 use std::time::Duration;
 use togi_machine::{
-    BootId, CancellationToken, CcdId, CoreInfo, CoreRank, CpuId, Error, KernelCursor, Partial,
-    Regime, ResetKind, Signal,
+    BankType, BootId, CancellationToken, CcdId, CoreInfo, CoreRank, CpuId, Error, KernelCursor,
+    Partial, Regime, ResetKind, TargetOffset,
 };
-use togi_sim::definition::ScriptDef;
-use togi_sim::{History, RunSettings};
+use togi_sim::{History, ScriptedMachine, ScriptedMce, ScriptedTopology, TrialOutcome};
 
 use test_case::test_case;
 
-use crate::common::{Rig, basic, core, flat_cores, machine, model, offset};
+use crate::common::{Rig, basic, core, machine, offset};
 
 const MINUTE: Duration = Duration::from_secs(60);
 
@@ -56,7 +55,7 @@ fn ranking_is_unavailable_unless_the_machine_declares_one() {
 
 #[test]
 fn write_faults_start_counting_when_armed() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.fail_write(2);
     rig.set(0, -1).expect("the first write");
     assert!(rig.set(1, -2).is_err(), "the second write fails");
@@ -72,7 +71,7 @@ fn write_faults_start_counting_when_armed() {
 
 #[test]
 fn a_missing_backend_fails_every_start_of_its_workloads() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let mprime = basic(Regime::R1, &[0], MINUTE);
     assert_eq!(mprime.workload.backend(), togi_machine::Backend::Mprime);
     rig.sim.miss_backend(togi_machine::Backend::Mprime);
@@ -93,7 +92,7 @@ fn a_missing_backend_fails_every_start_of_its_workloads() {
 
 #[test]
 fn simulated_content_is_fixed_per_workload_and_differs_between_workloads() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let mprime = togi_machine::pick_workload(Regime::R1, 0).id();
     let ycruncher = togi_machine::pick_workload(Regime::R1, 1).id();
     let first = rig.machine.trials.content(mprime).expect("content");
@@ -110,7 +109,7 @@ fn simulated_content_is_fixed_per_workload_and_differs_between_workloads() {
 
 #[test]
 fn a_missing_backend_has_no_simulated_content() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.miss_backend(togi_machine::Backend::Mprime);
     let mprime = togi_machine::pick_workload(Regime::R1, 0).id();
     assert!(matches!(
@@ -140,7 +139,7 @@ fn an_old_kernel_reports_no_reset_reason_whatever_the_reset(kind: ResetKind) {
 #[test_case("cpu"; "cpu")]
 #[test_case("ryzen_smu"; "ryzen smu")]
 fn identity_checks_block_smu_validation(name: &str) {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.fail_check(name, "unsupported");
     let Err(error) = rig.machine.host.validate_smu() else {
         panic!("a failed {name} check was accepted");
@@ -152,7 +151,7 @@ fn identity_checks_block_smu_validation(name: &str) {
 
 #[test]
 fn root_check_does_not_block_smu_validation() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.fail_check("root", "not root");
     assert!(rig.machine.host.validate_smu().is_ok());
 }
@@ -160,7 +159,7 @@ fn root_check_does_not_block_smu_validation() {
 #[test_case("not armed", false; "not armed")]
 #[test_case("", true; "armed")]
 fn watchdog_check_is_separate(detail: &str, ok: bool) {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.fail_check("watchdog", detail);
     let Ok(check) = rig.machine.host.watchdog(&CancellationToken::new()) else {
         panic!("the simulated check never waits, so nothing cancels it")
@@ -174,9 +173,11 @@ fn watchdog_check_is_separate(detail: &str, ok: bool) {
 
 #[test]
 fn an_smu_access_to_a_missing_core_changes_nothing() {
-    let mut definition = two_cores();
-    definition.bios = Some(vec![-3, -4]);
-    let mut rig = Rig::new(&definition, 1);
+    let inputs = ScriptedMachine::new(ScriptedTopology::TwoCores, TargetOffset::ZERO, |_, _| {
+        TrialOutcome::Pass
+    })
+    .with_boot_offsets(|id| offset(-3 - i64::from(id.get())));
+    let mut rig = Rig::with_script(inputs, History::default());
     let missing = core(2);
     let read = rig.machine.smu.offset(missing).expect_err("no such core");
     assert!(read.to_string().contains("no core"));
@@ -192,7 +193,7 @@ fn an_smu_access_to_a_missing_core_changes_nothing() {
 
 #[test]
 fn a_cancelled_start_does_not_consume_a_setup_fault_or_move_the_clock() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.fail_setup(1);
     let start = rig.sim.now();
     let cancel = CancellationToken::new();
@@ -229,7 +230,7 @@ enum Machine {
 #[test_case(Machine::Crashed; "crashed")]
 #[test_case(Machine::Rebooted; "rebooted")]
 fn stopping_a_trial_matches_what_a_cancelled_wait_would_clean_up(state: Machine) {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let mut running = rig
         .start(basic(Regime::R1, &[0], MINUTE))
         .unwrap_or_else(|error| panic!("{error}"));
@@ -273,7 +274,7 @@ fn stopping_a_trial_matches_what_a_cancelled_wait_would_clean_up(state: Machine)
 
 #[test]
 fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let boot = rig.boot();
     rig.sim.crash();
     let start = rig.sim.now();
@@ -334,12 +335,14 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
     );
 }
 
-#[test_case(2; "two cores")]
-#[test_case(4; "four cores")]
-#[test_case(16; "sixteen cores")]
-fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads(cores: usize) {
-    let definition = machine(i64::try_from(cores).expect("count"), vec![]);
-    let mut rig = Rig::new(&definition, 1);
+#[test_case(ScriptedTopology::TwoCores, 2; "two cores")]
+#[test_case(ScriptedTopology::FourCores, 4; "four cores")]
+#[test_case(ScriptedTopology::SixteenCores, 16; "sixteen cores")]
+fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads(
+    topology: ScriptedTopology,
+    cores: usize,
+) {
+    let mut rig = Rig::scripted(topology, |_, _| TrialOutcome::Pass);
     let want: Vec<CoreInfo> = (0..cores)
         .map(|index| CoreInfo {
             core: togi_machine::CoreId::try_from(index).expect("core"),
@@ -356,18 +359,20 @@ fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads(cores:
 
 #[test]
 fn a_machine_starts_at_the_epoch_or_one_reboot_after_its_history() {
-    let rig = Rig::new(&two_cores(), 1);
+    let rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let epoch = jiff::Timestamp::from_second(1_767_225_600).expect("a time");
     assert_eq!(rig.sim.now(), epoch);
     let last = epoch + SignedDuration::from_hours(7);
-    let settings = RunSettings {
-        history: History {
+    let inputs = ScriptedMachine::new(ScriptedTopology::TwoCores, TargetOffset::ZERO, |_, _| {
+        TrialOutcome::Pass
+    });
+    let rig = Rig::with_script(
+        inputs,
+        History {
             last_time: Some(last),
             ..History::default()
         },
-        ..RunSettings::default()
-    };
-    let rig = Rig::with(model(&two_cores()), settings);
+    );
     assert_eq!(rig.sim.now(), last + SignedDuration::from_secs(90));
 }
 
@@ -378,19 +383,21 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
 ) {
     let epoch = jiff::Timestamp::from_second(1_767_225_600).expect("a time");
     let last = epoch + SignedDuration::from_hours(7);
-    let (settings, start) = if resumed {
-        let settings = RunSettings {
-            history: History {
+    let (history, start) = if resumed {
+        (
+            History {
                 last_time: Some(last),
                 ..History::default()
             },
-            ..RunSettings::default()
-        };
-        (settings, last + SignedDuration::from_secs(90))
+            last + SignedDuration::from_secs(90),
+        )
     } else {
-        (RunSettings::default(), epoch)
+        (History::default(), epoch)
     };
-    let mut rig = Rig::with(model(&two_cores()), settings);
+    let inputs = ScriptedMachine::new(ScriptedTopology::TwoCores, TargetOffset::ZERO, |_, _| {
+        TrialOutcome::Pass
+    });
+    let mut rig = Rig::with_script(inputs, history);
     let cancel = CancellationToken::new();
     assert_eq!(rig.machine.clock.now(), start);
     assert_eq!(
@@ -435,14 +442,16 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
 }
 
 fn cursor_machine() -> Rig {
-    let mut definition = machine(2, flat_cores(2, -50, -50));
-    definition.script = vec![ScriptDef {
-        trial: "0001".to_owned(),
-        signal: Some(Signal::CorrectedMce),
-        at_s: 7.0,
-        ..ScriptDef::default()
-    }];
-    Rig::new(&definition, 1)
+    Rig::scripted(ScriptedTopology::TwoCores, |_, _| {
+        TrialOutcome::CorrectedMce {
+            mce: ScriptedMce {
+                core: core(0),
+                bank: 0,
+                bank_type: BankType::LoadStore,
+            },
+            at: Duration::from_secs(7),
+        }
+    })
 }
 
 #[test]
@@ -489,7 +498,7 @@ fn a_kernel_cursor_resumes_across_empty_reads_and_stays_in_its_boot() {
 
 #[test]
 fn unknown_boots_and_cursors_are_named_errors() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let boot = rig.boot();
     let missing = BootId::from("missing".to_owned());
     assert!(matches!(
@@ -526,7 +535,7 @@ fn unknown_boots_and_cursors_are_named_errors() {
 #[test_case(false; "missing boot")]
 #[test_case(true; "current boot")]
 fn reset_reason_after_requires_a_successor(current: bool) {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let boot = if current {
         rig.boot()
     } else {
@@ -543,7 +552,7 @@ fn reset_reason_after_requires_a_successor(current: bool) {
 #[test_case("-1"; "negative")]
 #[test_case("1"; "missing index")]
 fn unknown_kernel_cursors_are_named_errors(suffix: &str) {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let boot = rig.boot();
     let cursor = KernelCursor::from(format!("{boot}:{suffix}"));
     assert!(
@@ -566,7 +575,7 @@ fn unknown_kernel_cursors_are_named_errors(suffix: &str) {
 #[test_case(ResetKind::Unknown, Some("unrecognized reset reason"); "unknown")]
 #[test_case(ResetKind::PowerLoss, None; "power loss")]
 fn each_reset_leaves_the_line_a_recent_kernel_logs(kind: ResetKind, line: Option<&str>) {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.next_reset(kind);
     rig.sim.crash();
     rig.sim.reboot().expect("a representable reboot");
@@ -591,7 +600,7 @@ fn each_reset_leaves_the_line_a_recent_kernel_logs(kind: ResetKind, line: Option
 
 #[test]
 fn a_boot_without_a_reset_reports_no_kind_and_a_hold_of_the_power_button_is_its_own() {
-    let mut rig = Rig::new(&two_cores(), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let first = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&first).expect("a reason");
     assert!(reason.supported && reason.kind.is_none() && reason.raw.is_empty());

@@ -4,15 +4,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use togi_machine::Error;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, TrialOutcome};
 
 use test_case::test_case;
 
-use crate::common::{Rig, core, machine};
+use crate::common::{Rig, core, offset};
 
 fn rig() -> Rig {
-    let mut definition = machine(2, vec![]);
-    definition.bios = Some(vec![-5, -6]);
-    Rig::new(&definition, 1)
+    let inputs = ScriptedMachine::new(ScriptedTopology::TwoCores, offset(0), |_, _| {
+        TrialOutcome::Pass
+    })
+    .with_boot_offsets(|id| offset(-5 - i64::from(id.get())));
+    Rig::with_script(inputs, History::default())
 }
 
 fn registers(rig: &mut Rig) -> Vec<i64> {

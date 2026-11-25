@@ -8,7 +8,10 @@ use togi_machine::{
     Workload, pick_workload,
 };
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
-use togi_sim::{InvalidMachine, Load, MachineDefinition, Model, RunSettings, Simulator, file};
+use togi_sim::{
+    History, InvalidMachine, Load, MachineDefinition, Model, RunSettings, ScriptedMachine,
+    ScriptedTopology, Simulator, TrialOutcome, file,
+};
 
 pub(crate) fn machines_dir() -> PathBuf {
     PathBuf::from("/machines")
@@ -504,7 +507,24 @@ impl Rig {
     }
 
     pub(crate) fn with(model: Model, settings: RunSettings) -> Self {
-        let sim = Simulator::new(model, settings).expect("a representable machine");
+        Self::from_simulator(Simulator::new(model, settings).expect("a representable machine"))
+    }
+
+    pub(crate) fn scripted(
+        topology: ScriptedTopology,
+        outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+    ) -> Self {
+        Self::with_script(
+            ScriptedMachine::new(topology, TargetOffset::ZERO, outcome),
+            History::default(),
+        )
+    }
+
+    pub(crate) fn with_script(inputs: ScriptedMachine, history: History) -> Self {
+        Self::from_simulator(Simulator::scripted(inputs, 1, history).expect("a scripted machine"))
+    }
+
+    pub(crate) fn from_simulator(sim: Simulator) -> Self {
         let machine = sim.seams();
         Self {
             sim,

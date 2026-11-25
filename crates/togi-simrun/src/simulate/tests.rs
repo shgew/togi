@@ -1,15 +1,13 @@
-use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
 use test_case::test_case;
 use togi_config::Config;
 use togi_journal::{Build, EventKind, FixStamp, MemFs, SCHEMA};
-use togi_machine::{CancellationToken, Signal};
+use togi_machine::{CancellationToken, TargetOffset};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, Divergence};
-use togi_sim::definition::{CoreDef, ModelDef, Weights};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 
 use super::{due, events, simulate, simulate_checked, verify};
 use crate::{Observe, Persistence, Replay, SimError, SimInput, SimOutcome};
@@ -74,42 +72,15 @@ fn sim_input(
     }
 }
 
-/// Four cores, a neighbour on each CCD, with past-limit crashes at rate 1.
-fn machine() -> Simulator {
-    let definition = MachineDefinition {
-        cores: 4,
-        core: (0..4)
-            .map(|id| CoreDef {
-                id,
-                alone: [-10; 5],
-                together: [-10, -10, -10, -10, -10, -10, -50],
-                flat: 0.0,
-                idle: None,
-                workload: BTreeMap::new(),
-            })
-            .collect(),
-        model: ModelDef {
-            past_limit_rate: 1.0,
-            signals: Weights::from([(Signal::Crash, 1.0)]),
-            crash_mce: 0.0,
-            ..ModelDef::default()
-        },
-        ..MachineDefinition::default()
-    };
-    Simulator::new(
-        Model::new(&definition, 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap()
+fn machine(topology: ScriptedTopology) -> Simulator {
+    let script = ScriptedMachine::new(topology, TargetOffset::ZERO, |_, _| TrialOutcome::Pass);
+    Simulator::scripted(script, 1, History::default()).unwrap()
 }
 
 /// The machine, crashed at each of the first three trial ends, so each of the first three boots crashes before
 /// the simulation's cap of three boots.
 fn crashing_input(persistence: Persistence, replay: Replay, every: Option<NonZeroU32>) -> SimInput {
-    let simulator = machine();
+    let simulator = machine(ScriptedTopology::FourCores);
     let crasher = simulator.clone();
     let mut ends = 0;
     let mut input = sim_input(simulator, persistence, replay, every);
@@ -168,14 +139,7 @@ fn a_failed_check_of_the_last_boot_fails_the_simulation_instead_of_capping_it(re
 
 #[test]
 fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
-    let simulator = Simulator::new(
-        Model::new(&MachineDefinition::default(), 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap();
+    let simulator = machine(ScriptedTopology::SixteenCores);
     let persistence = Persistence::Memory(MemFs::new());
     let mut input = sim_input(simulator, persistence.clone(), Replay::Warm, None);
     input.observer = Some(Box::new(|event| {
@@ -242,7 +206,7 @@ fn a_failed_check_after_a_warm_crash_still_closes_the_journal() {
 fn a_dump_receives_the_stopped_memory_directory_after_close() {
     let fs = MemFs::new();
     let mut input = sim_input(
-        machine(),
+        machine(ScriptedTopology::FourCores),
         Persistence::Memory(fs.clone()),
         Replay::Warm,
         None,

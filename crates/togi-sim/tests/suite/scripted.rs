@@ -2,35 +2,18 @@ use std::time::Duration;
 
 use test_case::test_case;
 use togi_machine::{
-    BankType, ControllerMode, Error, Purpose, Regime, ResetKind, Signal, TargetOffset, TrialResult,
-    TrialSpec,
+    BankType, ControllerMode, Error, Partial, Purpose, Regime, ResetKind, Signal, TargetOffset,
+    TrialResult, TrialSpec,
 };
 use togi_sim::{
     History, ReportedFailure, RestoreError, ScriptError, ScriptedMachine, ScriptedMce,
     ScriptedTopology, ScriptedVoltageSamples, Simulator, TrialOutcome, model::Script,
 };
 
-use crate::common::{Journal, Rig, basic, core, machine, offset};
+use crate::common::{Rig, basic, core, machine, offset};
 
 const AFTER: Duration = Duration::from_secs(7);
 const DURATION: Duration = Duration::from_secs(90);
-
-fn rig(
-    topology: ScriptedTopology,
-    outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
-) -> Rig {
-    let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, outcome);
-    rig_with(inputs)
-}
-
-fn rig_with(inputs: ScriptedMachine) -> Rig {
-    let sim = Simulator::scripted(inputs, 1, History::default()).expect("a scripted machine");
-    Rig {
-        machine: sim.seams(),
-        sim,
-        journal: Journal::default(),
-    }
-}
 
 fn profile_and_placement(spec: &TrialSpec, registers: &[TargetOffset]) -> TrialOutcome {
     if spec.cores == [core(0)]
@@ -63,7 +46,7 @@ fn the_script_can_distinguish_profile_and_placement(
     rotation: u64,
     fails: bool,
 ) {
-    let mut rig = rig(ScriptedTopology::SixteenCores, profile_and_placement);
+    let mut rig = Rig::scripted(ScriptedTopology::SixteenCores, profile_and_placement);
     rig.set(0, loaded).expect("set loaded core");
     rig.set(8, idle).expect("set unloaded core");
     let mut trial = basic(Regime::R2, &[0], DURATION);
@@ -101,19 +84,29 @@ fn power(_: &TrialSpec, _: &[TargetOffset]) -> TrialOutcome {
     }
 }
 
+fn watchdog(_: &TrialSpec, _: &[TargetOffset]) -> TrialOutcome {
+    TrialOutcome::Reset {
+        stalled: Some(core(8)),
+        kind: ResetKind::Watchdog,
+        at: AFTER,
+    }
+}
+
 #[test_case(mce, ResetKind::SyncFlood; "uncorrected machine check")]
 #[test_case(power, ResetKind::PowerButton; "power button reset")]
+#[test_case(watchdog, ResetKind::Watchdog; "watchdog reset with an idle stalled core")]
 fn a_scripted_reset_and_its_evidence_survive_restoration(
     outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
     reset: ResetKind,
 ) {
-    let mut rig = rig(ScriptedTopology::SixteenCores, outcome);
+    let mut rig = Rig::scripted(ScriptedTopology::SixteenCores, outcome);
     let old_boot = rig.boot();
     rig.set(0, -5).expect("a nonstock register");
     let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
     let failure = result.expect_err("the machine crashed");
     assert!(matches!(failure.error, togi_machine::Error::Crashed));
     assert_eq!(failure.value.ran, AFTER);
+    assert_eq!(rig.sim.monotonic(), AFTER);
     let persisted = serde_json::to_vec(&rig.sim.persisted()).expect("encode the crashed machine");
     let resumed = Simulator::restore(
         rig.sim.source(),
@@ -162,7 +155,7 @@ fn restoring_with_a_different_source_kind_is_refused(
     expected: (&str, &str),
 ) {
     let fitted = Rig::new(&machine(4, vec![]), 1);
-    let scripted = rig(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
+    let scripted = Rig::scripted(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
     let (original, restoring) = if fitted_snapshot {
         (&fitted.sim, &scripted.sim)
     } else {
@@ -196,7 +189,7 @@ fn an_invalid_scripted_outcome_does_not_complete_the_trial(
     outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
     expected: &str,
 ) {
-    let mut rig = rig(ScriptedTopology::FourCores, outcome);
+    let mut rig = Rig::scripted(ScriptedTopology::FourCores, outcome);
     let before = rig.sim.persisted();
     let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
     let refusal = result.expect_err("an invalid scripted outcome");
@@ -212,7 +205,7 @@ fn an_invalid_scripted_outcome_does_not_complete_the_trial(
 
 #[test]
 fn a_scripted_machine_refuses_fitted_trial_overrides() {
-    let rig = rig(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
+    let rig = Rig::scripted(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
     let script = Script {
         signal: Some(Signal::ComputationError),
         at_s: 7.0,
@@ -228,21 +221,31 @@ fn a_scripted_machine_refuses_fitted_trial_overrides() {
 
 #[test]
 fn a_scripted_machine_reports_no_preferred_core_ranking() {
-    let mut rig = rig(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
+    let mut rig = Rig::scripted(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
     let missing = rig.machine.host.ranking().expect_err("no scripted ranking");
     assert_eq!(missing.value, []);
+    assert!(matches!(&missing.error, Error::Other(_)));
     assert_eq!(
         missing.error.to_string(),
         "simulated preferred-core ranking unavailable"
     );
+    rig.sim.crash();
+    assert!(matches!(
+        rig.machine.host.ranking(),
+        Err(Partial {
+            error: Error::Crashed,
+            ..
+        })
+    ));
 }
 
 #[test_case(ScriptedTopology::TwoCores, 2; "two cores")]
 #[test_case(ScriptedTopology::EightCores, 8; "eight cores")]
+#[test_case(ScriptedTopology::SixteenCores, 16; "sixteen cores")]
 fn mixed_registers_are_restored_on_each_boot(topology: ScriptedTopology, count: i64) {
     let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, |_, _| TrialOutcome::Pass)
         .with_boot_offsets(|core| offset(-5 - i64::from(core.get())));
-    let mut rig = rig_with(inputs);
+    let mut rig = Rig::with_script(inputs, History::default());
     let Ok(detected) = rig.machine.host.topology() else {
         panic!("missing scripted topology");
     };
@@ -257,6 +260,13 @@ fn mixed_registers_are_restored_on_each_boot(topology: ScriptedTopology, count: 
         );
     }
     assert!(rig.set_all(-2).is_ok(), "change the initial registers");
+    for id in 0..count {
+        assert_eq!(
+            rig.read(id).expect("written register"),
+            offset(-2).observed(),
+            "core {id}"
+        );
+    }
     assert!(
         rig.sim.reboot().is_ok(),
         "reboot with mixed stock registers"
@@ -287,7 +297,7 @@ fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
             at: AFTER,
         },
     };
-    let mut rig = rig(ScriptedTopology::TwoCores, script);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, script);
     let boot = rig.boot();
     let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
     let Err(crash) = result else {
@@ -303,9 +313,10 @@ fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
     ));
 }
 
-#[test]
-fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
-    let mut rig = rig(ScriptedTopology::FourCores, |_, _| {
+#[test_case(DURATION; "machine check before the end")]
+#[test_case(AFTER; "machine check at the end")]
+fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting(duration: Duration) {
+    let mut rig = Rig::scripted(ScriptedTopology::FourCores, |_, _| {
         TrialOutcome::CorrectedMce {
             mce: ScriptedMce {
                 core: core(0),
@@ -317,7 +328,10 @@ fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
     });
     let boot = rig.boot();
     let before = rig.sim.monotonic();
-    assert_eq!(rig.pass(basic(Regime::R2, &[0], DURATION)).ran, DURATION);
+    let result = rig.pass(basic(Regime::R2, &[0], duration));
+    assert_eq!(result.ran, duration);
+    assert!(result.failure.is_none());
+    assert_eq!(rig.sim.monotonic(), before + duration);
     assert_eq!(rig.boot(), boot);
     let evidence = rig.mces(&boot);
     let [check] = evidence.as_slice() else {
@@ -333,7 +347,7 @@ fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
 
 #[test]
 fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
-    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| {
+    let mut rig = Rig::scripted(ScriptedTopology::SixteenCores, |_, _| {
         TrialOutcome::ResetWithMce {
             mce: ScriptedMce {
                 core: core(15),
@@ -351,12 +365,21 @@ fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
         result.expect_err("in-flight reset").error,
         Error::Crashed
     ));
+    assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
     assert!(report.signals.is_empty());
     let sim =
         Simulator::restore(rig.sim.source(), rig.sim.persisted()).expect("restore before reboot");
     sim.reboot().expect("boot with pending kernel evidence");
     let mut machine = sim.seams();
     let current = machine.host.boot_id().expect("successor boot");
+    assert_ne!(current, before);
+    assert!(
+        machine
+            .kernel
+            .mces(&before, Duration::ZERO)
+            .expect("crashed boot")
+            .is_empty()
+    );
     assert_eq!(
         machine
             .kernel
@@ -376,22 +399,30 @@ fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
         (check.core, check.bank, check.bank_type, check.corrected),
         (Some(core(15)), 6, BankType::L3Cache, false)
     );
+    assert_eq!(check.cpu.get(), 15);
 }
 
-#[test_case(|_, _| TrialOutcome::UnexpectedExit { core: core(0), at: AFTER }, Signal::UnexpectedExit; "unexpected exit")]
-#[test_case(|_, _| TrialOutcome::Stall { core: core(0), at: AFTER }, Signal::Stall; "stall")]
+#[test_case(|_, _| TrialOutcome::UnexpectedExit { core: core(0), at: AFTER }, 0, Signal::UnexpectedExit, AFTER; "unexpected exit")]
+#[test_case(|_, _| TrialOutcome::Stall { core: core(0), at: AFTER }, 0, Signal::Stall, AFTER; "stall")]
+#[test_case(
+    |_, _| TrialOutcome::ComputationError { core: core(1), at: Duration::from_secs(2) },
+    1, Signal::ComputationError, Duration::from_secs(2);
+    "computation error on core one"
+)]
 fn a_backend_failure_ends_the_trial_without_resetting(
     outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+    tested_core: i64,
     signal: Signal,
+    at: Duration,
 ) {
-    let mut rig = rig(ScriptedTopology::SixteenCores, outcome);
+    let mut rig = Rig::scripted(ScriptedTopology::SixteenCores, outcome);
     let boot = rig.boot();
-    let result = rig.pass(basic(Regime::R2, &[0], DURATION));
-    assert_eq!(result.ran, AFTER);
+    let result = rig.pass(basic(Regime::R2, &[tested_core], DURATION));
+    assert_eq!(result.ran, at);
     let Some(failure) = result.failure else {
         panic!("missing in-process backend failure");
     };
-    assert_eq!((failure.core, failure.signal), (core(0), signal));
+    assert_eq!((failure.core, failure.signal), (core(tested_core), signal));
     assert_eq!(rig.boot(), boot);
 }
 
@@ -406,7 +437,7 @@ fn voltage_samples_keep_the_written_lanes_after_snapshot_restoration() {
         |_, _| TrialOutcome::Pass,
         &SAMPLES,
     );
-    let mut rig = rig_with(inputs);
+    let mut rig = Rig::with_script(inputs, History::default());
     rig.pass(basic(Regime::R2, &[8], DURATION));
     let restored =
         Simulator::restore(rig.sim.source(), rig.sim.persisted()).expect("restore sampled machine");

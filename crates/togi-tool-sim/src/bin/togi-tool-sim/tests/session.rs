@@ -1,30 +1,27 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
+use std::time::Duration;
 
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use test_case::test_case;
 use togi_config::Config;
 use togi_journal::{DeadEndCondition, MemFs, Payload, ShutdownReason};
-use togi_machine::CancellationToken;
+use togi_machine::{CancellationToken, ResetKind, TargetOffset};
 use togi_render::Renderer;
 use togi_session::ConfigSource;
-use togi_sim::{History, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 use togi_simrun::{Persistence, Replay, SimInput, simulate};
 use togi_tool_sim::scripted::developer_machine;
 
-use super::common::Host;
+use super::common::{Host, WATCHDOG_MACHINE};
 
 #[test]
 fn the_boot_cap_ends_an_unfinished_session_with_status_three() {
-    let ran = Host::hunting().run([
-        "--machine",
-        "/hunt.json",
-        "--max-boots",
-        "2",
-        "--state-dir",
-        "/state",
-    ]);
+    let ran = Host::default().run_scripted(
+        ["--max-boots", "2", "--state-dir", "/state"],
+        WATCHDOG_MACHINE,
+    );
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
     assert!(
         ran.stderr.ends_with(
@@ -54,8 +51,8 @@ fn a_simulation_failure_prints_its_operation_path_and_cause_once() {
 
 #[test]
 fn without_a_state_directory_a_temporary_one_is_kept_and_announced_first() {
-    let mut host = Host::hunting();
-    let ran = host.run(["--machine", "/hunt.json", "--max-boots", "2"]);
+    let mut host = Host::default();
+    let ran = host.run_scripted(["--max-boots", "2"], WATCHDOG_MACHINE);
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
     assert_eq!(host.states.len(), 1);
     let dir = host.states.keys().next().unwrap();
@@ -160,11 +157,10 @@ fn a_rerun_after_a_closed_night_runs_a_fresh_night() {
 #[test]
 fn a_restart_after_a_decided_stop_starts_a_fresh_night() {
     let mut host = Host::default();
-    host.put("/machine.json", THERMAL_MACHINE);
-    let args = ["--machine", "/machine.json", "--state-dir", "/state"];
-    assert_eq!(host.run(args).code, Some(1));
+    let args = ["--state-dir", "/state"];
+    assert_eq!(host.run_scripted(args, THERMAL_MACHINE).code, Some(1));
     let first = host.events("/state").len();
-    assert_eq!(host.run(args).code, Some(1));
+    assert_eq!(host.run_scripted(args, THERMAL_MACHINE).code, Some(1));
     let events = host.events("/state");
     let Payload::Shutdown(stop) = &events[first - 1].payload else {
         panic!("the first run does not end in a shutdown");
@@ -247,22 +243,31 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     }
 }
 
-const THERMAL_MACHINE: &str = r#"{
-  "cores": 4,
-  "model": {"signals": {"crash": 1}, "reset": {"thermal_trip": 1}},
-  "core": [
-    {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
-    {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
-    {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]},
-    {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -10]}
-  ]
-}"#;
+const THERMAL_MACHINE: ScriptedMachine = ScriptedMachine::new(
+    ScriptedTopology::FourCores,
+    TargetOffset::ZERO,
+    |trial, offsets| {
+        // A fresh night can start at a later trial ordinal than the first one.
+        if let Some(&core) = trial
+            .cores
+            .iter()
+            .find(|core| offsets[core.index()] != TargetOffset::ZERO)
+        {
+            TrialOutcome::Reset {
+                stalled: Some(core),
+                kind: ResetKind::ThermalTrip,
+                at: Duration::from_secs(1),
+            }
+        } else {
+            TrialOutcome::Pass
+        }
+    },
+);
 
 #[test]
 fn a_dead_end_exits_one_and_cites_the_events_that_caused_it() {
     let mut host = Host::default();
-    host.put("/machine.json", THERMAL_MACHINE);
-    let ran = host.run(["--machine", "/machine.json", "--state-dir", "/state"]);
+    let ran = host.run_scripted(["--state-dir", "/state"], THERMAL_MACHINE);
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
     let events = host.events("/state");
     let (dead_end, causes) = events

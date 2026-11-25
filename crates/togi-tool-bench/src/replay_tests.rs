@@ -1,60 +1,47 @@
 use std::num::NonZeroU32;
+use std::time::Duration;
 
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use proptest::prelude::*;
 use togi_config::Config;
-use togi_journal::{Build, Event, FixStamp, MemFs, StateDir};
-use togi_machine::CancellationToken;
+use togi_journal::{Build, Event, FixStamp, MemFs, Payload, StateDir};
+use togi_machine::{CancellationToken, ControllerMode, ResetKind, TargetOffset, TrialSpec};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, ReadState};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 use togi_simrun::{Observe, Observer, Persistence, SimInput, events, simulate};
 use togi_watch::model::Model as Watch;
 
-/// Four cores that crash past -10: a Ruleset 13 night needs a neighbour on every CCD, and this one crashes.
-fn hunting() -> MachineDefinition {
-    let core = |id: i64| {
-        serde_json::json!({
-            "id": id,
-            "alone": [-10, -10, -10, -10, -10],
-            "together": [-10, -10, -10, -10, -10, -10, -50],
-        })
-    };
-    serde_json::from_value(serde_json::json!({
-        "cores": 4,
-        "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
-        "core": [core(0), core(1), core(2), core(3)],
-    }))
-    .unwrap()
+fn reset_first_trial(spec: &TrialSpec, _: &[TargetOffset]) -> TrialOutcome {
+    let ControllerMode::Managed { rotation, .. } = spec.controller;
+    if rotation == 1 {
+        TrialOutcome::Reset {
+            stalled: Some(spec.cores[0]),
+            kind: ResetKind::Watchdog,
+            at: Duration::ZERO,
+        }
+    } else {
+        TrialOutcome::Pass
+    }
 }
 
-fn generated(seed: u64, cores: i64, minutes: i64, crashing: bool) -> Vec<Event> {
-    let definition = if crashing {
-        hunting()
+fn machine(topology: ScriptedTopology, crashing: bool) -> ScriptedMachine {
+    let outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome = if crashing {
+        reset_first_trial
     } else {
-        MachineDefinition {
-            cores,
-            ..MachineDefinition::default()
-        }
+        |_, _| TrialOutcome::Pass
     };
-    generated_from(&definition, seed, SignedDuration::from_mins(minutes), None)
+    ScriptedMachine::new(topology, TargetOffset::ZERO, outcome)
 }
 
 fn generated_from(
-    definition: &MachineDefinition,
+    script: ScriptedMachine,
     seed: u64,
     duration: SignedDuration,
     observer: Option<Observer>,
 ) -> Vec<Event> {
-    let simulator = Simulator::new(
-        Model::new(definition, seed).unwrap(),
-        RunSettings {
-            seed,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap();
+    let simulator = Simulator::scripted(script, seed, History::default()).unwrap();
     let night_end = simulator.now() + duration;
     let persistence = Persistence::Memory(MemFs::new());
     simulate(SimInput {
@@ -108,11 +95,41 @@ proptest! {
     })]
     #[test]
     fn incremental_and_full_replay_agree_on_frames(
-        seed in any::<u64>(), cores in prop::sample::select(vec![4_i64, 6]),
+        seed in any::<u64>(),
+        (topology, cores) in prop::sample::select(vec![
+            (ScriptedTopology::FourCores, 4_usize),
+            (ScriptedTopology::EightCores, 8),
+        ]),
         minutes in 15_i64..91, crashing in any::<bool>(),
         cuts in prop::collection::vec(any::<usize>(), 1..5),
     ) {
-        let events = generated(seed, cores, minutes, crashing);
+        let events = generated_from(
+            machine(topology, crashing), seed, SignedDuration::from_mins(minutes), None,
+        );
+        let recorded_cores = events.iter().find_map(|event| {
+            if let Payload::SessionStart(start) = &event.payload {
+                Some(start.cores.len())
+            } else {
+                None
+            }
+        });
+        prop_assert_eq!(recorded_cores, Some(cores), "seed {}", seed);
+        let reset = events.iter().find_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(crash.reset_reason)
+            } else {
+                None
+            }
+        });
+        prop_assert_eq!(
+            reset, crashing.then_some(Some(ResetKind::Watchdog)), "seed {}, cores {}, minutes {}",
+            seed, cores, minutes,
+        );
+        prop_assert!(
+            events.iter().any(|event| matches!(event.payload, Payload::TrialEnd(_))),
+            "no trial ended: seed {}, cores {}, minutes {}, crashing {}",
+            seed, cores, minutes, crashing,
+        );
         let state = ReadState::replay(&events).unwrap();
         prop_assert_eq!(state.facts(), &togi_journal::State::replay(&events).unwrap());
         let mut tuner = togi_tuner::State::new(togi_tuner::Params::SPEC);
@@ -148,21 +165,26 @@ fn incremental_replay_then_config_reload_has_the_same_cleared_trial_end_as_full_
     // Detect the crash through the durable journal hook rather than finishing the night.
     let observer: Option<Observer> = crash.then(|| {
         Box::new(|event: &Event| {
-            if matches!(event.payload, togi_journal::Payload::CrashDetected(_)) {
+            if matches!(event.payload, Payload::CrashDetected(_)) {
                 Observe::Stop
             } else {
                 Observe::Continue
             }
         }) as Observer
     });
-    let events = generated_from(&hunting(), 1, SignedDuration::from_hours(8), observer);
+    let events = generated_from(
+        machine(ScriptedTopology::FourCores, true),
+        1,
+        SignedDuration::from_hours(8),
+        observer,
+    );
     let cut = events
         .iter()
         .rposition(|event| {
             if crash {
-                matches!(event.payload, togi_journal::Payload::CrashDetected(_))
+                matches!(event.payload, Payload::CrashDetected(_))
             } else {
-                matches!(event.payload, togi_journal::Payload::Shutdown(_))
+                matches!(event.payload, Payload::Shutdown(_))
             }
         })
         .expect("the simulation must reach the requested boundary")
@@ -170,18 +192,14 @@ fn incremental_replay_then_config_reload_has_the_same_cleared_trial_end_as_full_
     let config = events
         .iter()
         .find_map(|event| {
-            matches!(event.payload, togi_journal::Payload::ConfigLoaded(_))
-                .then(|| event.payload.clone())
+            matches!(event.payload, Payload::ConfigLoaded(_)).then(|| event.payload.clone())
         })
         .unwrap();
     // A stopped simulation still appends cancellation cleanup after the crash boundary.
     let mut events = events[..cut].to_vec();
     let last = events.last().unwrap();
     if crash {
-        assert!(matches!(
-            last.payload,
-            togi_journal::Payload::CrashDetected(_)
-        ));
+        assert!(matches!(last.payload, Payload::CrashDetected(_)));
     }
     let reload = Event::new(
         last.seq.next().unwrap(),

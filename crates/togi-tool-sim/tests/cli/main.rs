@@ -16,12 +16,15 @@ use nix::unistd::Pid;
 use test_case::test_case;
 use togi_config::Config;
 use togi_journal::{Build, EventKind, FixStamp, Payload, Recording, SCHEMA, ShutdownReason};
-use togi_machine::CancellationToken;
+use togi_machine::{CancellationToken, TargetOffset};
 use togi_render::Renderer;
 use togi_session::ConfigSource;
-use togi_sim::{Model, RunSettings, Simulator};
+use togi_sim::{
+    History, MachineDefinition, Model, RunSettings, ScriptedMachine, ScriptedTopology, Simulator,
+    TrialOutcome,
+};
 use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome};
-use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase};
+use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase, developer_machine};
 
 fn command() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-sim"));
@@ -143,15 +146,12 @@ fn real_process_a_log_that_cannot_be_flushed_fails_a_command_that_otherwise_succ
 #[test_case(false; "without samples")]
 #[test_case(true; "with samples")]
 fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_samples: bool) {
-    let definition = togi_sim::MachineDefinition::default();
-    let simulator = Simulator::new(
-        Model::new(&definition, 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap();
+    let script = ScriptedMachine::new(
+        ScriptedTopology::SixteenCores,
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::Pass,
+    );
+    let simulator = Simulator::scripted(script, 1, History::default()).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let persistence = Persistence::Files(dir.path().to_owned());
     let outcome = togi_simrun::simulate(SimInput {
@@ -221,27 +221,18 @@ fn real_process_simulator_arithmetic_errors_are_reported(
     value: serde_json::Value,
     operation: &str,
 ) {
-    // The boot exhaustion needs a crash to reboot at; four cores that crash past -10 give one in the first night.
-    let definition: togi_sim::MachineDefinition = serde_json::from_str(
-        r#"{
-          "cores": 4,
-          "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
-          "core": [
-            {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-            {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-            {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-            {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]}
-          ]
-        }"#,
-    )
-    .unwrap();
-    let sim = Simulator::new(
-        Model::new(&definition, 1).unwrap(),
-        RunSettings {
-            seed: 1,
-            ..Default::default()
-        },
-    )
+    let definition = (field == "boot_number").then(boot_exhaustion_machine);
+    let sim = if let Some(definition) = &definition {
+        Simulator::new(
+            Model::new(definition, 1).unwrap(),
+            RunSettings {
+                seed: 1,
+                ..Default::default()
+            },
+        )
+    } else {
+        Simulator::scripted(developer_machine(), 1, History::default())
+    }
     .unwrap();
     let mut persisted = serde_json::to_value(sim.persisted()).unwrap();
     persisted[field] = value;
@@ -254,18 +245,34 @@ fn real_process_simulator_arithmetic_errors_are_reported(
         serde_json::to_vec(&persisted).unwrap(),
     )
     .unwrap();
-    let machine = tmp.path().join("hunt.json");
-    std::fs::write(&machine, serde_json::to_vec(&definition).unwrap()).unwrap();
-    let output = command()
-        .arg("--state-dir")
-        .arg(tmp.path())
-        .arg("--machine")
-        .arg(&machine)
-        .args(["--max-boots", "1"])
-        .output()
-        .unwrap();
+    let mut run = command();
+    run.arg("--state-dir").arg(tmp.path());
+    if let Some(definition) = definition {
+        let machine = tmp.path().join("hunt.json");
+        std::fs::write(&machine, serde_json::to_vec(&definition).unwrap()).unwrap();
+        run.arg("--machine").arg(&machine);
+    }
+    let output = run.args(["--max-boots", "1"]).output().unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(output.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains(operation), "{stderr}");
     assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+// A restored crashed machine cannot answer the boot-ID probe. The CLI needs a live
+// machine that resets during the run; the default script never does.
+fn boot_exhaustion_machine() -> MachineDefinition {
+    serde_json::from_str(
+        r#"{
+          "cores": 4,
+          "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
+          "core": [
+            {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
+            {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
+            {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
+            {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]}
+          ]
+        }"#,
+    )
+    .unwrap()
 }

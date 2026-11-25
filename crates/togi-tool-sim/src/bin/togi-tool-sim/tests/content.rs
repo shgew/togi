@@ -8,10 +8,10 @@ use togi_journal::{Event, Payload, WorkloadContent};
 use togi_machine::{ALL_REGIMES, Backend, ContentId, Digest, Error, Regime, WorkloadId, workloads};
 use togi_simrun::{SimOutcome, simulate};
 
-use super::common::Host;
+use super::common::{Host, WATCHDOG_MACHINE};
 use crate::content::{RecordedContent, recorded};
 
-const MACHINE: [&str; 4] = ["--machine", "/hunt.json", "--state-dir", "/state"];
+const STATE: [&str; 2] = ["--state-dir", "/state"];
 
 /// A fixture identity no simulator produces, one per marker.
 fn marked(workload: WorkloadId, marker: u8) -> ContentId {
@@ -57,14 +57,15 @@ fn intents(events: &[Event]) -> Vec<WorkloadContent> {
         .collect()
 }
 
-/// One boot of the hunting machine whose trials report `marker` identities, ending in a crash.
+/// One boot of the watchdog script whose trials report `marker` identities, ending in a crash.
 fn record(host: &mut Host, marker: u8) {
     let before = host
         .states
         .get(Path::new("/state"))
         .map_or(0, |_| host.events("/state").len());
-    let ran = host.execute(
-        MACHINE.into_iter().chain(["--max-boots", "1"]),
+    let ran = host.execute_scripted(
+        STATE.into_iter().chain(["--max-boots", "1"]),
+        WATCHDOG_MACHINE,
         |mut input| {
             input.adapt_trials = Some(everything_marked(marker).adapter());
             simulate(input)
@@ -82,9 +83,9 @@ fn record(host: &mut Host, marker: u8) {
 /// workload the journal never recorded. The second boot journals the rest.
 const RECORDED_BOOTS: usize = 2;
 
-/// A hunting machine whose journal holds [`RECORDED_BOOTS`] boots recorded with marker 7.
+/// A scripted machine whose journal holds [`RECORDED_BOOTS`] boots recorded with marker 7.
 fn recording() -> Host {
-    let mut host = Host::hunting();
+    let mut host = Host::default();
     for _ in 0..RECORDED_BOOTS {
         record(&mut host, 7);
     }
@@ -94,11 +95,12 @@ fn recording() -> Host {
 /// Resumes the recording for one boot and returns what the trial intents it appends report.
 fn resumed(host: &mut Host, extra: &[&str]) -> Vec<WorkloadContent> {
     let before = host.events("/state").len();
-    let ran = host.run(
-        MACHINE
+    let ran = host.run_scripted(
+        STATE
             .into_iter()
             .chain(["--max-boots", "1"])
             .chain(extra.iter().copied()),
+        WATCHDOG_MACHINE,
     );
     assert!(matches!(ran.code, Some(0 | 3)), "{}", ran.stderr);
     let appended = intents(&host.events("/state")[before..]);
@@ -133,10 +135,11 @@ fn without_the_option_a_resumed_run_reports_synthetic_identities() {
 #[test]
 fn the_runner_wraps_the_trials_of_every_boot() {
     let wrapped = Rc::new(Cell::new(0_u32));
-    let mut host = Host::hunting();
+    let mut host = Host::default();
     let counter = Rc::clone(&wrapped);
-    let ran = host.execute(
-        MACHINE.into_iter().chain(["--max-boots", "3"]),
+    let ran = host.execute_scripted(
+        STATE.into_iter().chain(["--max-boots", "3"]),
+        WATCHDOG_MACHINE,
         move |mut input| {
             let mut adapt = everything_marked(7).adapter();
             input.adapt_trials = Some(Box::new(move |trials| {
@@ -161,16 +164,16 @@ fn the_runner_wraps_the_trials_of_every_boot() {
 
 #[test]
 fn the_option_gives_the_runner_its_adapter_and_the_default_gives_none() {
-    let mut host = Host::hunting();
+    let mut host = Host::default();
     record(&mut host, 7);
-    let ran = host.execute(MACHINE, |input| {
+    let ran = host.execute(STATE, |input| {
         assert!(input.adapt_trials.is_none());
         Ok(SimOutcome::Capped {
             boots: NonZeroU32::MIN,
         })
     });
     assert_eq!(ran.code, Some(3), "{}", ran.stderr);
-    let ran = host.execute(MACHINE.into_iter().chain(["--recorded-content"]), |input| {
+    let ran = host.execute(STATE.into_iter().chain(["--recorded-content"]), |input| {
         assert!(input.adapt_trials.is_some());
         Ok(SimOutcome::Capped {
             boots: NonZeroU32::MIN,
@@ -181,7 +184,7 @@ fn the_option_gives_the_runner_its_adapter_and_the_default_gives_none() {
 
 #[test]
 fn the_adapter_answers_recorded_workloads_and_refuses_the_rest() {
-    let mut host = Host::hunting();
+    let mut host = Host::default();
     record(&mut host, 7);
     let known: BTreeSet<WorkloadId> = identities(&host.events("/state"))
         .iter()
@@ -193,8 +196,9 @@ fn the_adapter_answers_recorded_workloads_and_refuses_the_rest() {
         .map(togi_machine::Workload::id)
         .find(|workload| !known.contains(&workload.runs()))
         .expect("the bounded recording leaves an unseen workload");
-    let ran = host.execute(
-        MACHINE.into_iter().chain(["--recorded-content"]),
+    let ran = host.execute_scripted(
+        STATE.into_iter().chain(["--recorded-content"]),
+        WATCHDOG_MACHINE,
         |mut input| {
             let mut adapt = input.adapt_trials.take().unwrap();
             let mut trials = adapt(input.simulator.seams().trials);
@@ -218,11 +222,11 @@ fn the_adapter_answers_recorded_workloads_and_refuses_the_rest() {
 
 #[test]
 fn conflicting_recorded_identities_refuse_before_the_session_starts() {
-    let mut host = Host::hunting();
+    let mut host = Host::default();
     record(&mut host, 7);
     record(&mut host, 8);
     let before = host.events("/state");
-    let ran = host.execute(MACHINE.into_iter().chain(["--recorded-content"]), |_| {
+    let ran = host.execute(STATE.into_iter().chain(["--recorded-content"]), |_| {
         unreachable!("the session started on ambiguous identities")
     });
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
@@ -240,9 +244,10 @@ fn conflicting_recorded_identities_refuse_before_the_session_starts() {
 
 #[test]
 fn a_recorded_identity_on_another_backend_refuses_before_the_session_starts() {
-    let mut host = Host::hunting();
-    let ran = host.execute(
-        MACHINE.into_iter().chain(["--max-boots", "1"]),
+    let mut host = Host::default();
+    let ran = host.execute_scripted(
+        STATE.into_iter().chain(["--max-boots", "1"]),
+        WATCHDOG_MACHINE,
         |mut input| {
             let mut misrecorded = everything_marked(7);
             for content in misrecorded.contents.values_mut() {
@@ -265,7 +270,7 @@ fn a_recorded_identity_on_another_backend_refuses_before_the_session_starts() {
                 .all(|content| content.content.backend != content.workload.backend()),
         "{misrecorded:?}"
     );
-    let ran = host.execute(MACHINE.into_iter().chain(["--recorded-content"]), |_| {
+    let ran = host.execute(STATE.into_iter().chain(["--recorded-content"]), |_| {
         unreachable!("the session started on identities of another backend")
     });
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
@@ -287,8 +292,8 @@ fn a_recorded_identity_on_another_backend_refuses_before_the_session_starts() {
 
 #[test]
 fn the_option_without_a_recording_refuses_before_the_session_starts() {
-    let mut host = Host::hunting();
-    let ran = host.execute(MACHINE.into_iter().chain(["--recorded-content"]), |_| {
+    let mut host = Host::default();
+    let ran = host.execute(STATE.into_iter().chain(["--recorded-content"]), |_| {
         unreachable!("the session started without recorded identities")
     });
     assert_eq!(ran.code, Some(1), "{}", ran.stderr);
