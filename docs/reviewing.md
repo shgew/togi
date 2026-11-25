@@ -49,7 +49,7 @@ A run with nothing new gets the short form instead: no failure pattern that earl
 
 Retros have no dashboard section: the owner files dashboard and UI issues directly.
 
-A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into its bench machine files under `tools/bench/machines/`, and what simulated runs should show goes into `docs/simulating.md`. The retro links to the pull request that moved it.
+A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into an issue with its hardware evidence ([issues](issues.md)), and what simulated runs should show goes into `docs/simulating.md`. The retro links to the issue or pull request that moved it.
 
 ## Querying journals and samples (`just sql`)
 
