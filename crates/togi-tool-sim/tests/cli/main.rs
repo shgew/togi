@@ -210,13 +210,13 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
     }
 }
 
-#[test_case("clock", serde_json::json!({"secs": u64::MAX, "nanos": 0}), "add elapsed time to the simulated epoch", EPOCH.checked_add(std::time::Duration::from_secs(u64::MAX)).unwrap_err(); "elapsed overflow")]
-#[test_case("wall_offset", serde_json::to_value(SignedDuration::from_secs(-1)).unwrap(), "apply the simulated wall-clock offset", jiff::Timestamp::MIN.checked_add(SignedDuration::from_secs(-1)).unwrap_err(); "lower timestamp overflow")]
+#[test_case("clock", serde_json::json!({"secs": u64::MAX, "nanos": 0}), "add elapsed time to the simulated epoch", &EPOCH.checked_add(std::time::Duration::from_secs(u64::MAX)).unwrap_err(); "elapsed overflow")]
+#[test_case("wall_offset", serde_json::to_value(SignedDuration::from_secs(-1)).unwrap(), "apply the simulated wall-clock offset", &jiff::Timestamp::MIN.checked_add(SignedDuration::from_secs(-1)).unwrap_err(); "lower timestamp overflow")]
 fn real_process_simulator_arithmetic_errors_are_reported(
     field: &str,
     value: serde_json::Value,
     operation: &str,
-    cause: jiff::Error,
+    cause: &jiff::Error,
 ) {
     let sim = Simulator::scripted(developer_machine(), 1, History::default()).unwrap();
     let mut persisted = serde_json::to_value(sim.persisted()).unwrap();
