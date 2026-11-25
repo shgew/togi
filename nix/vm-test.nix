@@ -18,6 +18,13 @@ let
     '';
   # The tuning VM tests share this node: the NixOS module with the tuning specialisation, GRUB on a virtual disk
   # and the ICH9 TCO watchdog with a readable countdown and guest reset. Their nodes disable DHCP.
+  # lpc_ich creates the TCO device, so loading it in the initrd lets PID 1 open the watchdog as it starts and
+  # claims the TCO ports before parport_pc probes 0x678 inside them; loaded later by udev, the device could
+  # miss PID 1's initial transaction or fail its probe, and that boot would run without a watchdog.
+  watchdogModules = [
+    "lpc_ich"
+    "iTCO_wdt"
+  ];
   tuningBoot =
     { pkgs, lib, ... }:
     {
@@ -31,7 +38,7 @@ let
         "-global ICH9-LPC.noreboot=false"
         "-watchdog-action reset"
       ];
-      boot.initrd.kernelModules = [ "iTCO_wdt" ];
+      boot.initrd.kernelModules = watchdogModules;
       specialisation.togi.configuration = {
         # The module check pins the shipped 30s; only the test waits less for a reset.
         systemd.settings.Manager.RuntimeWatchdogSec = lib.mkForce "10s";
@@ -867,7 +874,7 @@ let
           '';
         };
         hardware.cpu.amd.ryzen-smu.enable = false;
-        boot.initrd.kernelModules = [ "iTCO_wdt" ];
+        boot.initrd.kernelModules = watchdogModules;
         users.users.alice.isNormalUser = true;
         users.users.mallory.isNormalUser = true;
         systemd.tmpfiles.rules = [
@@ -890,8 +897,20 @@ let
             return [e for e in events() if e["kind"].startswith("day.") and (kind is None or e["kind"] == kind)]
 
 
+        def assert_watchdog_armed():
+            # The day service refuses without it, so fail here and name the cause instead of waiting on the service.
+            status, _ = machine.execute(
+                "grep -qx active /sys/class/watchdog/watchdog0/state && "
+                "{ readlink /proc/1/fd/* 2>/dev/null || true; } | grep -qxE '/dev/watchdog0?'"
+            )
+            assert status == 0, "PID 1 did not arm the VM watchdog on this boot: " + machine.succeed(
+                "journalctl -b _PID=1 -o cat --no-pager | grep -i watchdog || true"
+            )
+
+
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
+        assert_watchdog_armed()
         # Without a session the service refuses and creates no journal.
         machine.wait_until_succeeds("journalctl -u togi-day.service -o cat --no-pager | grep -F 'no session journal'")
         machine.succeed(f"test ! -e {journal}")
@@ -908,6 +927,8 @@ let
         # A clean stop zeroes and reads back before the final checkpoint and clean marker.
         machine.succeed("systemctl start togi-day.service")
         machine.wait_until_succeeds(f"grep -q day.boot_start {journal}")
+        watchdog = day("day.boot_start")[0]["data"]["watchdog"]
+        assert watchdog["state"] == "armed", watchdog
         # Even a writer targeting a different state directory cannot take the live service's lock.
         status, output = machine.execute("togi --state-dir /tmp/day-lock-state reset --all 2>&1")
         assert status == 3, (status, output)
@@ -943,6 +964,7 @@ let
         machine.crash()
         machine.start(allow_reboot=True)
         machine.wait_for_unit("multi-user.target")
+        assert_watchdog_armed()
         machine.wait_for_unit("togi-day.service")
         machine.wait_until_succeeds(f"grep -q day.unclean_end {journal}")
         unclean = day("day.unclean_end")

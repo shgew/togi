@@ -50,7 +50,7 @@ mod vm_recovery {
         CoreRank, CpuId, Error, Host, Kernel, KernelCursor, KernelRead, Machine, Mce,
         ObservedOffset, Partial, PerCore, Regime, Reporter, ResetReason, Running, Signal, Smu,
         SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialRole, TrialSpec, Trials,
-        Workload, pick_workload,
+        WatchdogState, Workload, pick_workload,
     };
     use togi_render::OutputFacts;
     use togi_trial::{BackendIdentity, Backends, Options, Runner};
@@ -414,44 +414,8 @@ mod vm_recovery {
                 })
         }
 
-        /// Reads sysfs and PID 1's descriptors once without waiting, so cancellation has nothing to interrupt.
-        fn watchdog(
-            &mut self,
-            _cancel: &CancellationToken,
-        ) -> Result<togi_machine::WatchdogState, Error> {
-            let device = Path::new("/sys/class/watchdog/watchdog0");
-            let active = std::fs::read_to_string(device.join("state"))
-                .is_ok_and(|state| state.trim() == "active");
-            let counting = std::fs::read_to_string(device.join("timeleft")).map_or_else(
-                |error| error.kind() == io::ErrorKind::NotFound,
-                |left| {
-                    let timeout = std::fs::read_to_string(device.join("timeout"));
-                    left.trim()
-                        .parse::<u64>()
-                        .ok()
-                        .zip(
-                            timeout
-                                .ok()
-                                .and_then(|value| value.trim().parse::<u64>().ok()),
-                        )
-                        .is_some_and(|(left, timeout)| left <= timeout)
-                },
-            );
-            let held = std::fs::read_dir("/proc/1/fd").is_ok_and(|entries| {
-                entries.filter_map(Result::ok).any(|entry| {
-                    std::fs::read_link(entry.path()).is_ok_and(|target| {
-                        target == Path::new("/dev/watchdog0")
-                            || target == Path::new("/dev/watchdog")
-                    })
-                })
-            });
-            let detail =
-                format!("VM watchdog active={active} counting={counting} held-by-PID1={held}");
-            Ok(if active && counting && held {
-                togi_machine::WatchdogState::Armed { detail }
-            } else {
-                togi_machine::WatchdogState::Unarmed { detail }
-            })
+        fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, Error> {
+            togi_hardware::day::watchdog_state(cancel)
         }
 
         fn live_faults(
