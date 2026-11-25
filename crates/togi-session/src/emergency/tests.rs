@@ -146,7 +146,7 @@ fn a_gated_emergency_zeroes_every_core_reads_each_back_and_reports() {
         panic!("withheld");
     };
     assert!(zeroed.is_clean());
-    assert_eq!(zeroed.readbacks.len(), 2);
+    assert_eq!(zeroed.readbacks().len(), 2);
     assert_eq!((rig.offset(0), rig.offset(1)), (0, 0));
     assert_eq!(rig.kinds(), events);
     assert_eq!(

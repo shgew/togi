@@ -154,14 +154,14 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             );
         }
     };
-    for readback in &zeroed.readbacks {
+    for readback in zeroed.readbacks() {
         say(ctx.err, readback_line(readback));
     }
     if !zeroed.is_clean() {
         let unconfirmed = Unconfirmed {
             missing: cores
                 - zeroed
-                    .readbacks
+                    .readbacks()
                     .iter()
                     .filter(|readback| readback.is_zero())
                     .count(),
