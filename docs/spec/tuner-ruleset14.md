@@ -8,7 +8,7 @@ explicitly below. §9 records the nonzero activation decision and first-live-ste
 
 ## 1. Scope, compatibility and terminology
 
-Rules below apply to a **tuning unit**: a CCD in the coarse phase; a physical core in later refinement. The whole profile is always the complete ordered per-core vector plus its topology and phase/unit mapping. A CCD offset expands uniformly to its member cores; a core offset expands to that physical core's SMT siblings. No daily crash identifies a guilty unit.
+Rules below apply to a **tuning unit**: a CCD in the coarse phase; a physical core in later refinement. The whole profile is always the complete ordered per-core vector plus its topology and phase/unit mapping. Constructing a profile from unit offsets rejects a repeated unit identity. A CCD offset expands uniformly to its member cores; a core offset expands to that physical core's SMT siblings. No daily crash identifies a guilty unit.
 
 The Ruleset 14 design number is distinct from the Rust `RULESET` compatibility constant. This policy requires a ruleset transition; the final compatibility number is assigned with the implementation switch. `SCHEMA` remains 1: the new journal kinds are additive and retain released wire meanings.
 
