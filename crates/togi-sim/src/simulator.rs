@@ -68,7 +68,16 @@ impl Simulator {
         Self::start(MachineSource::Scripted(script), seed, history)
     }
 
-    fn start(source: MachineSource, seed: u64, history: History) -> Result<Self, ArithmeticError> {
+    /// Starts either machine source one reboot after its recorded history.
+    ///
+    /// # Errors
+    ///
+    /// The next boot number or resumed timestamp cannot be represented.
+    pub fn start(
+        source: MachineSource,
+        seed: u64,
+        history: History,
+    ) -> Result<Self, ArithmeticError> {
         Ok(Self {
             shared: Rc::new(RefCell::new(Runtime::new(source, seed, history)?)),
         })

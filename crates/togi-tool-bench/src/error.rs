@@ -164,6 +164,20 @@ pub enum RunError {
     Interrupted,
 }
 
+/// A scripted child did not complete its protocol.
+#[derive(Debug, thiserror::Error)]
+pub enum ScriptedError {
+    #[error(transparent)]
+    Run(#[from] RunError),
+    #[error("scripted simulator exited with status {exit}")]
+    Exit { exit: i32 },
+    #[error(
+        "scripted-contract printed {answer:?}; expected version {} followed by a newline",
+        togi_tool_sim::scripted::CONTRACT_VERSION
+    )]
+    Version { answer: String },
+}
+
 /// Why a finished run's journal could not be measured.
 #[derive(Debug, thiserror::Error)]
 pub enum MeasureError {

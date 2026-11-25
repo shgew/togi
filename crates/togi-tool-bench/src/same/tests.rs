@@ -26,14 +26,16 @@ impl MemoryDir {
 }
 
 use super::SameError;
-use super::compare::{self, Config, Launcher, Pair, Ran, Side};
+use super::compare::{self, Config, Launcher, Ran, Side};
 use super::digests::DigestCache;
 use super::journal::{self, Difference, JournalError};
 use crate::cache::Costs;
-use crate::error::RunError;
+use crate::error::{RunError, ScriptedError};
 use crate::process::Fleet;
-use crate::suite::RunSpec;
-use togi_tool_sim::Split;
+use togi_tool_sim::scripted::ScriptedCase;
+use togi_tool_sim::scripted::ScriptedCase::{
+    MappingStop, MceResume, PowerButtonReset, ProfilePlacement,
+};
 
 const SESSION_START: &str = r#"{"seq":1,"time":"2026-01-01T00:00:00Z","boot":"b","kind":"session.start","msg":"session s started by togi old+abc (schema 1, ruleset 7, evidence epoch 2, fixes 3, 2 cores); togi old+abc","data":{"build":{"version":"old","rev":"abc","ruleset":7,"schema":1,"fixes":3,"evidence":2},"session":"s","cores":[]}}"#;
 
@@ -317,8 +319,8 @@ struct Behavior {
     fail: bool,
 }
 
-type Behave = Box<dyn Fn(Side, &RunSpec) -> Behavior + Sync>;
-type Hook<'a> = Box<dyn Fn(Side, &RunSpec) + Sync + 'a>;
+type Behave = Box<dyn Fn(Side, ScriptedCase) -> Behavior + Sync>;
+type Hook<'a> = Box<dyn Fn(Side, ScriptedCase) + Sync + 'a>;
 
 struct Fake<'a> {
     root: PathBuf,
@@ -334,7 +336,7 @@ impl<'a> Fake<'a> {
     fn new(
         root: &MemoryDir,
         fleet: &'a Fleet,
-        behave: impl Fn(Side, &RunSpec) -> Behavior + Sync + 'static,
+        behave: impl Fn(Side, ScriptedCase) -> Behavior + Sync + 'static,
     ) -> Self {
         Self {
             root: root.path().to_path_buf(),
@@ -365,11 +367,11 @@ fn journal(text: &str) -> Behavior {
 }
 
 impl Launcher for Fake<'_> {
-    fn dir(&self, side: Side, spec: &RunSpec) -> PathBuf {
+    fn dir(&self, side: Side, spec: ScriptedCase) -> PathBuf {
         self.root.join(side.name()).join(spec.name())
     }
 
-    fn launch(&self, side: Side, spec: &RunSpec) -> Result<Ran, RunError> {
+    fn launch(&self, side: Side, spec: ScriptedCase) -> Result<Ran, ScriptedError> {
         self.launches
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -380,11 +382,11 @@ impl Launcher for Fake<'_> {
             hook(side, spec);
         }
         if self.fleet.stopping() {
-            return Err(RunError::Interrupted);
+            return Err(RunError::Interrupted.into());
         }
         let behavior = (self.behave)(side, spec);
         if behavior.fail {
-            return Err(RunError::TimedOut { seconds: 1 });
+            return Err(RunError::TimedOut { seconds: 1 }.into());
         }
         if let Some(text) = &behavior.journal {
             self.fs.put(dir.join("events.jsonl"), text.as_bytes());
@@ -426,27 +428,6 @@ impl Launcher for Fake<'_> {
     }
 }
 
-fn spec(scenario: &str, split: Split, seed: u64) -> RunSpec {
-    RunSpec {
-        scenario: scenario.to_owned(),
-        split,
-        seed,
-        machine: None,
-        replay: None,
-        smoke: false,
-    }
-}
-
-fn same_sessions(seeds: &[u64]) -> Vec<Pair> {
-    let runs = || {
-        seeds
-            .iter()
-            .map(|&seed| spec("s", Split::Dev, seed))
-            .collect()
-    };
-    compare::pair([runs(), runs()])
-}
-
 fn config(fleet: &Fleet) -> Config<'_> {
     Config {
         jobs: 2,
@@ -482,26 +463,25 @@ fn report(outcome: &compare::Outcome) -> String {
 }
 
 #[test]
-fn the_report_names_each_differing_session_and_the_sessions_one_tree_lacks() {
+fn the_report_names_each_differing_scripted_case() {
     let root = MemoryDir::new();
     let fleet = Fleet::new();
-    let pairs = compare::pair([
-        vec![
-            spec("scenario", Split::Dev, 1),
-            spec("removed", Split::Holdout, 2),
-        ],
-        vec![
-            spec("scenario", Split::Dev, 1),
-            spec("added", Split::Holdout, 3),
-        ],
-    ]);
-    let fake = Fake::new(&root, &fleet, |side, spec| match (side, spec.seed) {
-        (Side::Base, 1) => journal("{}\n{\"decision\":0}\n"),
-        (Side::Head, 1) => Behavior {
-            exit: 1,
-            ..journal("{}\n{\"decision\":1}\n")
-        },
-        _ => journal("{}\n"),
+    let pairs = ScriptedCase::SMOKE;
+    let fake = Fake::new(&root, &fleet, |side, case| {
+        if case == MappingStop {
+            match side {
+                Side::Base => journal("{}\n{\"decision\":0}\n"),
+                Side::Head => Behavior {
+                    exit: 1,
+                    ..journal("{}\n{\"decision\":1}\n")
+                },
+            }
+        } else {
+            match side {
+                Side::Base => journal("{}\n"),
+                Side::Head => journal("{\"changed\":true}\n"),
+            }
+        }
     });
     let mut config = config(&fleet);
     config.keep_going = true;
@@ -516,7 +496,7 @@ fn the_report_names_each_differing_session_and_the_sessions_one_tree_lacks() {
         text.push('\n');
     }
     let expected = include_str!(
-        "snapshots/togi_tool_bench__same__tests__the_report_names_each_differing_session_and_the_sessions_one_tree_lacks.snap"
+        "snapshots/togi_tool_bench__same__tests__the_report_names_each_differing_scripted_case.snap"
     );
     assert_eq!(
         text,
@@ -528,27 +508,12 @@ fn the_report_names_each_differing_session_and_the_sessions_one_tree_lacks() {
     );
 }
 
-#[test_case::test_case((
-            "equal nonzero exits",
-            [Split::Dev, Split::Dev],
-            [1, 1],
-            false,
-        ); "equal nonzero exits")]
-#[test_case::test_case(("different exits", [Split::Dev, Split::Dev], [0, 1], true); "different exits")]
-#[test_case::test_case((
-            "split is part of identity",
-            [Split::Dev, Split::Holdout],
-            [0, 0],
-            true,
-        ); "split is part of identity")]
-fn a_session_is_identified_by_its_split_and_judged_by_its_exit_status(
-    case: (&str, [Split; 2], [i32; 2], bool),
-) {
-    let (name, splits, exits, different) = case;
-
+#[test_case::test_case([1, 1], false; "equal exit statuses")]
+#[test_case::test_case([0, 1], true; "different exit statuses")]
+fn matching_journals_are_judged_by_exit_status(exits: [i32; 2], different: bool) {
     let root = MemoryDir::new();
     let fleet = Fleet::new();
-    let pairs = compare::pair([vec![spec("s", splits[0], 1)], vec![spec("s", splits[1], 1)]]);
+    let pairs = [MappingStop];
     let fake = Fake::new(&root, &fleet, move |side, _| Behavior {
         exit: exits[side.index()],
         ..journal("{}\n")
@@ -556,48 +521,39 @@ fn a_session_is_identified_by_its_split_and_judged_by_its_exit_status(
     let mut config = config(&fleet);
     config.keep_going = true;
     let outcome = compare::run(&pairs, &config, &fake).unwrap();
-    assert_eq!(outcome.different(), different, "{name}");
+    assert_eq!(outcome.different(), different);
 }
 
 #[test_case::test_case((
             false,
             vec![
-                "base/differs/dev-1/events.jsonl",
-                "base/differs/dev-1/sim.log",
-                "head/differs/dev-1/events.jsonl",
-                "head/differs/dev-1/sim.log",
+                "base/mapping-stop/events.jsonl",
+                "base/mapping-stop/sim.log",
+                "head/mapping-stop/events.jsonl",
+                "head/mapping-stop/sim.log",
             ],
-        ); "false vec base differs dev 1 events jsonl base differs dev 1 sim ")]
+        ); "without keep")]
 #[test_case::test_case((
             true,
             vec![
-                "base/differs/dev-1/events.jsonl",
-                "base/differs/dev-1/sim.log",
-                "base/matches/dev-1/events.jsonl",
-                "base/matches/dev-1/sim.log",
-                "head/differs/dev-1/events.jsonl",
-                "head/differs/dev-1/sim.log",
-                "head/matches/dev-1/events.jsonl",
-                "head/matches/dev-1/sim.log",
+                "base/mapping-stop/events.jsonl",
+                "base/mapping-stop/sim.log",
+                "base/mce-resume/events.jsonl",
+                "base/mce-resume/sim.log",
+                "head/mapping-stop/events.jsonl",
+                "head/mapping-stop/sim.log",
+                "head/mce-resume/events.jsonl",
+                "head/mce-resume/sim.log",
             ],
-        ); "true vec base differs dev 1 events jsonl base differs dev 1 sim l")]
+        ); "with keep")]
 fn only_differing_sessions_keep_their_runs_unless_asked_to_keep_all(case: (bool, Vec<&str>)) {
     let (keep, want) = case;
 
     let root = MemoryDir::new();
     let fleet = Fleet::new();
-    let pairs = compare::pair([
-        vec![
-            spec("matches", Split::Dev, 1),
-            spec("differs", Split::Dev, 1),
-        ],
-        vec![
-            spec("matches", Split::Dev, 1),
-            spec("differs", Split::Dev, 1),
-        ],
-    ]);
+    let pairs = [MappingStop, MceResume];
     let fake = Fake::new(&root, &fleet, |side, spec| Behavior {
-        exit: i32::from(side == Side::Head && spec.scenario == "differs"),
+        exit: i32::from(side == Side::Head && spec == MappingStop),
         ..journal("{}\n")
     });
     let mut config = config(&fleet);
@@ -614,22 +570,19 @@ fn a_matching_session_is_removed_before_the_next_one_starts(case: bool) {
 
     let root = MemoryDir::new();
     let fleet = Fleet::new();
-    let pairs = compare::pair([
-        vec![spec("first", Split::Dev, 1), spec("second", Split::Dev, 1)],
-        vec![spec("first", Split::Dev, 1), spec("second", Split::Dev, 1)],
-    ]);
+    let pairs = ScriptedCase::SMOKE;
     let mut fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
     let seen = root.path().to_path_buf();
     let fs = Arc::clone(&root.fs);
     fake.hook = Some(Box::new(move |side, spec| {
-        if side == Side::Base && spec.scenario == "second" {
+        if side == Side::Base && spec == MceResume {
             for name in ["base", "head"] {
-                let path = seen.join(name).join("first/dev-1");
+                let path = seen.join(name).join("mapping-stop");
                 let present = fs
                     .entries()
                     .iter()
                     .any(|(entry, kind)| *kind == FileKind::File && entry.starts_with(&path));
-                assert_eq!(present, keep, "{name} first/dev-1 with keep={keep}");
+                assert_eq!(present, keep, "{name} mapping-stop with keep={keep}");
             }
         }
     }));
@@ -645,18 +598,9 @@ fn a_failed_run_stops_the_comparison_and_leaves_its_own_diagnostics() {
     for failed_side in Side::BOTH {
         let root = MemoryDir::new();
         let fleet = Fleet::new();
-        let pairs = compare::pair([
-            vec![
-                spec("failed", Split::Dev, 1),
-                spec("matches", Split::Dev, 1),
-            ],
-            vec![
-                spec("failed", Split::Dev, 1),
-                spec("matches", Split::Dev, 1),
-            ],
-        ]);
+        let pairs = ScriptedCase::SMOKE;
         let fake = Fake::new(&root, &fleet, move |side, spec| Behavior {
-            fail: side == failed_side && spec.scenario == "failed",
+            fail: side == failed_side && spec == MappingStop,
             ..journal("{}\n")
         });
         let mut config = config(&fleet);
@@ -665,7 +609,7 @@ fn a_failed_run_stops_the_comparison_and_leaves_its_own_diagnostics() {
         let SameError::Run { side, key, .. } = &error else {
             panic!("want a run error, got {error}");
         };
-        assert_eq!((*side, key.as_str()), (failed_side.name(), "failed/dev-1"));
+        assert_eq!((*side, key.as_str()), (failed_side.name(), "mapping-stop"));
         assert_eq!(
             String::from_utf8(
                 root.fs
@@ -673,7 +617,7 @@ fn a_failed_run_stops_the_comparison_and_leaves_its_own_diagnostics() {
                         &root
                             .path()
                             .join(failed_side.name())
-                            .join("failed/dev-1/sim.log")
+                            .join("mapping-stop/sim.log")
                     )
                     .unwrap()
             )
@@ -683,7 +627,7 @@ fn a_failed_run_stops_the_comparison_and_leaves_its_own_diagnostics() {
         let left = files_under(&root);
         assert!(
             left.iter()
-                .all(|path| path.ends_with("failed/dev-1/sim.log")),
+                .all(|path| path.ends_with("mapping-stop/sim.log")),
             "{left:?}"
         );
         assert_eq!(
@@ -707,7 +651,7 @@ fn sessions_without_journals_or_events_never_compare_equal(case: (Option<String>
         wall: 1.0,
         fail: false,
     });
-    let error = compare::run(&same_sessions(&[1]), &config(&fleet), &fake).unwrap_err();
+    let error = compare::run(&[MappingStop], &config(&fleet), &fake).unwrap_err();
     let chain = togi_machine::error_chain(&error);
     assert!(chain.contains(message), "{chain}");
 }
@@ -762,14 +706,14 @@ fn both_sides_are_cached_and_a_fresh_run_ignores_the_cache() {
     let root = MemoryDir::new();
     let fleet = Fleet::new();
     let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
-    let pairs = same_sessions(&[1, 2, 3]);
+    let pairs = [MappingStop, MceResume, PowerButtonReset];
     let config = cache.config(&fleet);
     for run in 0..2 {
         let outcome = compare::run(&pairs, &config, &fake).unwrap();
         assert!(!outcome.different(), "run {run}");
         assert_eq!(fake.launches().len(), 6, "run {run}");
     }
-    assert!(cache.costs.get("base", "s/dev-2").is_some());
+    assert!(cache.costs.get("base", "mce-resume").is_some());
     assert!(files_under(&root).is_empty());
     let mut fresh = cache.config(&fleet);
     fresh.fresh = true;
@@ -787,8 +731,8 @@ fn a_difference_reruns_only_the_sides_that_have_no_run_to_show() {
             journal(&format!("{{}}\n{{\"side\":{}}}\n", side.index()))
         })
     };
-    let pairs = same_sessions(&[1]);
-    let want = "same: s/dev-1\n  events.jsonl:2\n  base: {\"side\":0}\n  head: {\"side\":1}\n";
+    let pairs = [MappingStop];
+    let want = "same: mapping-stop\n  events.jsonl:2\n  base: {\"side\":0}\n  head: {\"side\":1}\n";
     let cold = fake(&fleets[0]);
     let outcome = compare::run(&pairs, &cache.config(&fleets[0]), &cold).unwrap();
     assert!(report(&outcome).starts_with(want), "{}", report(&outcome));
@@ -807,7 +751,7 @@ fn a_difference_reruns_only_the_sides_that_have_no_run_to_show() {
     compare::run(&pairs, &head_fresh, &head_only).unwrap();
     assert_eq!(
         head_only.launches(),
-        ["head s/dev-1", "base s/dev-1"],
+        ["head mapping-stop", "base mapping-stop"],
         "a fresh head runs once and the cached base once more to show the line"
     );
 }
@@ -820,7 +764,7 @@ fn the_comparison_stops_at_the_first_difference_unless_told_to_go_on(case: bool)
     let root = MemoryDir::new();
     let fleet = Fleet::new();
     let fake = Fake::new(&root, &fleet, |side, spec| {
-        if spec.seed == 1 && side == Side::Head {
+        if spec == MappingStop && side == Side::Head {
             journal("{\"changed\":true}\n")
         } else {
             journal("{}\n")
@@ -829,7 +773,12 @@ fn the_comparison_stops_at_the_first_difference_unless_told_to_go_on(case: bool)
     let mut config = config(&fleet);
     config.jobs = 1;
     config.keep_going = keep_going;
-    let outcome = compare::run(&same_sessions(&[1, 2, 3, 4]), &config, &fake).unwrap();
+    let outcome = compare::run(
+        &[MappingStop, MceResume, PowerButtonReset, ProfilePlacement],
+        &config,
+        &fake,
+    )
+    .unwrap();
     assert!(outcome.different());
     let (launches, summary) = if keep_going {
         (8, "same: 1 of 4 sessions differ")
@@ -841,10 +790,10 @@ fn the_comparison_stops_at_the_first_difference_unless_told_to_go_on(case: bool)
     assert_eq!(
         files_under(&root),
         [
-            "base/s/dev-1/events.jsonl",
-            "base/s/dev-1/sim.log",
-            "head/s/dev-1/events.jsonl",
-            "head/s/dev-1/sim.log"
+            "base/mapping-stop/events.jsonl",
+            "base/mapping-stop/sim.log",
+            "head/mapping-stop/events.jsonl",
+            "head/mapping-stop/sim.log"
         ]
     );
 }
@@ -855,7 +804,7 @@ fn an_interrupt_removes_every_run_and_reports_nothing() {
     let fleet = Fleet::new();
     let mut fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
     fake.hook = Some(Box::new(|_, _| fleet.cancel()));
-    let error = compare::run(&same_sessions(&[1, 2, 3, 4]), &config(&fleet), &fake).unwrap_err();
+    let error = compare::run(&ScriptedCase::ALL, &config(&fleet), &fake).unwrap_err();
     assert!(matches!(error, SameError::Interrupted), "{error}");
     assert!(files_under(&root).is_empty(), "{:?}", files_under(&root));
     assert!(
@@ -865,65 +814,51 @@ fn an_interrupt_removes_every_run_and_reports_nothing() {
     );
 }
 
-#[test_case::test_case(("exit code", false, [0, 1]); "exit code")]
-#[test_case::test_case(("missing on head", true, [0, 0]); "missing on head")]
-fn a_differing_session_keeps_the_journals_of_its_cached_sides(case: (&str, bool, [i32; 2])) {
-    let (name, missing_on_head, exits) = case;
-
+#[test]
+fn a_differing_session_keeps_the_journals_of_its_cached_sides() {
     let cache = cached();
     let fleets = [Fleet::new(), Fleet::new()];
-    let pairs = || {
-        let mut pairs = same_sessions(&[1]);
-        if missing_on_head {
-            pairs[0].runs[1] = None;
-        }
-        pairs
-    };
-    let behave = move |side: Side, _: &RunSpec| Behavior {
-        exit: exits[side.index()],
+    let pairs = [MappingStop];
+    let behave = move |side: Side, _: ScriptedCase| Behavior {
+        exit: i32::from(side == Side::Head),
         ..journal("{}\n")
     };
     let mut config = cache.config(&fleets[0]);
     config.keep = true;
     let cold = MemoryDir::new();
     let first = Fake::new(&cold, &fleets[0], behave);
-    assert!(
-        compare::run(&pairs(), &config, &first).unwrap().different(),
-        "{name}"
-    );
+    assert!(compare::run(&pairs, &config, &first).unwrap().different());
     let root = MemoryDir::new();
     let second = Fake::new(&root, &fleets[1], behave);
     let mut cached_config = cache.config(&fleets[1]);
     cached_config.keep = true;
     assert!(
-        compare::run(&pairs(), &cached_config, &second)
+        compare::run(&pairs, &cached_config, &second)
             .unwrap()
-            .different(),
-        "{name}"
+            .different()
     );
-    let want: Vec<&str> = if missing_on_head {
-        vec!["base/s/dev-1/events.jsonl", "base/s/dev-1/sim.log"]
-    } else {
-        vec![
-            "base/s/dev-1/events.jsonl",
-            "base/s/dev-1/sim.log",
-            "head/s/dev-1/events.jsonl",
-            "head/s/dev-1/sim.log",
+    assert_eq!(
+        files_under(&root),
+        [
+            "base/mapping-stop/events.jsonl",
+            "base/mapping-stop/sim.log",
+            "head/mapping-stop/events.jsonl",
+            "head/mapping-stop/sim.log",
         ]
-    };
-    assert_eq!(files_under(&root), want, "{name}");
+    );
 }
 
 #[test]
 fn sessions_that_race_to_a_difference_report_one_when_stopping_at_the_first() {
     let cache = cached();
     let fleet = Fleet::new();
-    let changed = |side: Side, _: &RunSpec| journal(&format!("{{\"side\":{}}}\n", side.index()));
+    let changed =
+        |side: Side, _: ScriptedCase| journal(&format!("{{\"side\":{}}}\n", side.index()));
     let cold = MemoryDir::new();
     let mut keep_going = cache.config(&fleet);
     keep_going.keep_going = true;
     compare::run(
-        &same_sessions(&[1, 2]),
+        &ScriptedCase::SMOKE,
         &keep_going,
         &Fake::new(&cold, &fleet, changed),
     )
@@ -941,10 +876,10 @@ fn sessions_that_race_to_a_difference_report_one_when_stopping_at_the_first() {
         }
         journal(&format!("{{\"side\":{}}}\n", side.index()))
     });
-    let outcome = compare::run(&same_sessions(&[1, 2]), &cache.config(&fleet), &fake).unwrap();
+    let outcome = compare::run(&ScriptedCase::SMOKE, &cache.config(&fleet), &fake).unwrap();
     assert_eq!(reruns.load(Ordering::SeqCst), 2);
     assert_eq!(outcome.differences.len(), 1);
-    let reported = outcome.differences[0].key.to_string();
+    let reported = outcome.differences[0].key.name();
     let mut want: Vec<String> = ["base", "head"]
         .into_iter()
         .flat_map(|side| {
@@ -961,10 +896,11 @@ fn sessions_that_race_to_a_difference_report_one_when_stopping_at_the_first() {
 fn a_rerun_cancelled_for_an_interrupt_leaves_its_directory_nowhere() {
     let cache = cached();
     let fleet = Fleet::new();
-    let changed = |side: Side, _: &RunSpec| journal(&format!("{{\"side\":{}}}\n", side.index()));
+    let changed =
+        |side: Side, _: ScriptedCase| journal(&format!("{{\"side\":{}}}\n", side.index()));
     let cold = MemoryDir::new();
     compare::run(
-        &same_sessions(&[1]),
+        &[MappingStop],
         &cache.config(&fleet),
         &Fake::new(&cold, &fleet, changed),
     )
@@ -972,7 +908,7 @@ fn a_rerun_cancelled_for_an_interrupt_leaves_its_directory_nowhere() {
     let root = MemoryDir::new();
     let mut fake = Fake::new(&root, &fleet, changed);
     fake.hook = Some(Box::new(|_, _| fleet.cancel()));
-    let error = compare::run(&same_sessions(&[1]), &cache.config(&fleet), &fake).unwrap_err();
+    let error = compare::run(&[MappingStop], &cache.config(&fleet), &fake).unwrap_err();
     assert!(matches!(error, SameError::Interrupted), "{error}");
     assert!(files_under(&root).is_empty());
 }
@@ -982,27 +918,31 @@ fn the_time_of_the_compared_sessions_is_reported_without_failing() {
     let cache = cached();
     let root = MemoryDir::new();
     let fleet = Fleet::new();
-    let times: BTreeMap<(usize, u64), f64> = [
-        ((0, 1), 10.0),
-        ((1, 1), 21.0),
-        ((0, 2), 10.0),
-        ((1, 2), 20.0),
-        ((0, 3), 1.0),
-        ((1, 3), 5.0),
+    let times: BTreeMap<(usize, ScriptedCase), f64> = [
+        ((0, MappingStop), 10.0),
+        ((1, MappingStop), 21.0),
+        ((0, MceResume), 10.0),
+        ((1, MceResume), 20.0),
+        ((0, PowerButtonReset), 1.0),
+        ((1, PowerButtonReset), 5.0),
     ]
     .into();
     let fake = Fake::new(&root, &fleet, move |side, spec| Behavior {
-        wall: times[&(side.index(), spec.seed)],
+        wall: times[&(side.index(), spec)],
         ..journal("{}\n")
     });
     let want = "same: simulator time of the compared sessions: base 21.0s, head 46.0s\n\
         same: 2 sessions took more than 2x their base's time (informational)\n\
-        \x20 s/dev-3: head 5.0s, base 1.0s, 5.0x\n\
-        \x20 s/dev-1: head 21.0s, base 10.0s, 2.1x\n\
+        \x20 power-button-reset: head 5.0s, base 1.0s, 5.0x\n\
+        \x20 mapping-stop: head 21.0s, base 10.0s, 2.1x\n\
         same: 0 of 3 sessions differ\n";
     for run in ["ran", "cached"] {
-        let outcome =
-            compare::run(&same_sessions(&[1, 2, 3]), &cache.config(&fleet), &fake).unwrap();
+        let outcome = compare::run(
+            &[MappingStop, MceResume, PowerButtonReset],
+            &cache.config(&fleet),
+            &fake,
+        )
+        .unwrap();
         assert!(!outcome.different(), "{run}");
         assert_eq!(report(&outcome), want, "{run}");
     }
@@ -1010,14 +950,24 @@ fn the_time_of_the_compared_sessions_is_reported_without_failing() {
 
 #[test]
 fn only_the_slowest_sessions_are_listed_and_the_rest_counted() {
-    let root = MemoryDir::new();
-    let fleet = Fleet::new();
-    let fake = Fake::new(&root, &fleet, |side, _| Behavior {
-        wall: if side == Side::Base { 1.0 } else { 5.0 },
-        ..journal("{}\n")
-    });
-    let seeds: Vec<u64> = (1..=12).collect();
-    let outcome = compare::run(&same_sessions(&seeds), &config(&fleet), &fake).unwrap();
+    let outcome = compare::Outcome {
+        sessions: 12,
+        differences: Vec::new(),
+        keep_going: false,
+        cached: [0; 2],
+        scheduled: [12; 2],
+        total_s: [12.0, 60.0],
+        slow: vec![
+            super::Slow {
+                key: MappingStop,
+                base_s: 1.0,
+                head_s: 5.0,
+            };
+            12
+        ],
+        warnings: Vec::new(),
+        semantic: None,
+    };
     let text = report(&outcome);
     assert!(
         text.contains("same: 12 sessions took more than 2x their base's time (informational)"),
@@ -1039,83 +989,26 @@ fn real_fs_a_digest_cache_keeps_the_most_recent_trees_only() {
 }
 
 #[test]
-fn a_session_s_inputs_change_with_any_file_of_its_machine() {
-    use crate::suite::Machine;
-    use togi_sim::MachineDefinition;
-    let with = |name: &str, sum: &str| {
-        let mut run = spec("s", Split::Dev, 1);
-        run.machine = Some(Arc::new(Machine {
-            name: name.to_owned(),
-            path: PathBuf::from(name),
-            definition: MachineDefinition::default(),
-            inputs: vec![(PathBuf::from(name), Some(sum.to_owned()))],
-        }));
-        super::digests::inputs(&run)
-    };
-    let plain = super::digests::inputs(&spec("s", Split::Dev, 1));
-    let base = with("m.json", "aa");
-    assert_ne!(base, plain);
-    assert_ne!(base, with("m.json", "bb"));
-    assert_ne!(base, with("n.json", "aa"));
-    assert_eq!(base, with("m.json", "aa"));
-}
-
-#[derive(Clone, Copy)]
-enum SessionInput {
-    Seed,
-    Split,
-    Name,
-    Replay,
-}
-
-#[test_case::test_case(SessionInput::Seed; "Seed")]
-#[test_case::test_case(SessionInput::Split; "Split")]
-#[test_case::test_case(SessionInput::Name; "Name")]
-#[test_case::test_case(SessionInput::Replay; "Replay")]
-fn a_session_s_inputs_change_with_its_identity_and_replay(scenario: SessionInput) {
-    use togi_sim::replay::Replay;
-    let base = spec("s", Split::Dev, 1);
-    let want = super::digests::inputs(&base);
-    assert_eq!(want, super::digests::inputs(&spec("s", Split::Dev, 1)));
-    let mut replaying = base;
-    replaying.replay = Some(Arc::new(Replay::default()));
-    let (what, other) = match scenario {
-        SessionInput::Seed => ("seed", spec("s", Split::Dev, 2)),
-        SessionInput::Split => ("split", spec("s", Split::Holdout, 1)),
-        SessionInput::Name => ("name", spec("t", Split::Dev, 1)),
-        SessionInput::Replay => ("replay", replaying),
-    };
-
-    assert_ne!(super::digests::inputs(&other), want, "{what}");
+fn the_digest_namespace_changes_with_the_simulator_and_contract() {
+    let base = super::digests::key("simulator", "1");
+    assert_eq!(base, super::digests::key("simulator", "1"));
+    assert_ne!(base, super::digests::key("simulator 2", "1"), "simulator");
+    assert_ne!(base, super::digests::key("simulator", "2"), "contract");
 }
 
 #[test]
-fn the_digest_key_changes_with_the_simulator_and_the_boot_cap() {
-    let base = super::digests::key("simulator", 1000);
-    assert_eq!(base, super::digests::key("simulator", 1000));
-    assert_ne!(base, super::digests::key("simulator 2", 1000), "simulator");
-    assert_ne!(base, super::digests::key("simulator", 5), "boot cap");
-}
-
-#[test]
-fn a_digest_record_holds_only_for_the_inputs_that_made_it() {
+fn a_digest_record_holds_only_for_the_case_that_made_it() {
     let dir = MemoryDir::new();
     let cache = DigestCache::with_fs(dir.path(), "k", dir.fs.clone());
-    let run = spec("s", Split::Dev, 1);
-    assert_eq!(cache.get(&run, "in"), None, "an empty cache hits");
+    assert_eq!(cache.get(MappingStop), None, "an empty cache hits");
     let record = super::digests::SideRecord {
         digest: "abc".to_owned(),
         exit: 3,
         wall_s: 1.5,
     };
-    cache.put(&run, "in", &record).unwrap();
-    assert_eq!(cache.get(&run, "in"), Some(record));
-    assert_eq!(
-        cache.get(&run, "other"),
-        None,
-        "a record made from other inputs hits"
-    );
-    assert_eq!(cache.get(&spec("s", Split::Dev, 2), "in"), None);
+    cache.put(MappingStop, &record).unwrap();
+    assert_eq!(cache.get(MappingStop), Some(record));
+    assert_eq!(cache.get(MceResume), None, "a record for another case hits");
 }
 
 #[test_case::test_case(("truncated", "{"); "truncated")]
@@ -1125,177 +1018,16 @@ fn a_corrupt_digest_record_misses(case: (&str, &str)) {
     let (what, bytes) = case;
     let dir = MemoryDir::new();
     let cache = DigestCache::with_fs(dir.path(), "k", dir.fs.clone());
-    let run = spec("s", Split::Dev, 1);
     let record = super::digests::SideRecord {
         digest: "abc".to_owned(),
         exit: 0,
         wall_s: 1.0,
     };
-    cache.put(&run, "in", &record).unwrap();
-    let path = dir.path().join("same/k/s/dev-1.json");
+    cache.put(MappingStop, &record).unwrap();
+    let path = dir.path().join("same/k/mapping-stop.json");
 
     dir.fs.put(&path, bytes.as_bytes());
-    assert_eq!(cache.get(&run, "in"), None, "{what}");
-}
-
-const SUITE: &str = r#"{"scenarios":[{"name":"default","dev":[1,2],"holdout":[101],"smoke":[2]},{"name":"late","dev":[1],"smoke":[1]}]}"#;
-
-fn options() -> super::Options {
-    super::Options {
-        base: PathBuf::from("/base"),
-        head: PathBuf::from("/head"),
-        suite: PathBuf::from("suite.json"),
-        smoke: false,
-        semantic: None,
-        keep_going: false,
-        no_cache: false,
-        keep: None,
-        jobs: std::num::NonZeroUsize::MIN,
-        timeout: Duration::from_secs(1),
-        max_boots: std::num::NonZeroU32::MIN,
-        cache: PathBuf::from("/cache"),
-        simulators: [None, None],
-    }
-}
-
-fn plan(bytes: &str, path: &Path) -> Result<Vec<RunSpec>, crate::error::Error> {
-    crate::suite::Suite::parse(bytes.as_bytes(), path.parent().unwrap().to_path_buf())?
-        .plan(crate::suite::Selection::All)
-        .map(|plan| plan.runs)
-}
-
-#[test_case::test_case((true, false); "true false")]
-#[test_case::test_case((false, true); "false true")]
-fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing(case: (bool, bool)) {
-    let (no_cache, keep) = case;
-    let options = options();
-    let trees = [options.base.clone(), options.head.clone()];
-    let pairs =
-        compare::pair(super::load_runs_with(&options, &trees, &|path| plan(SUITE, path)).unwrap());
-    let keys = ["same binary".to_owned(), "same binary".to_owned()];
-    assert!(super::same_inputs(&keys, &pairs));
-    let done =
-        super::identical_report(&options, pairs.len(), true, super::Timings::default()).unwrap();
-    assert!(done.identical && !done.different());
-    assert_eq!(done.outcome.scheduled, [0, 0]);
-    let mut text = Vec::new();
-    done.write(&mut text).unwrap();
-    assert_eq!(
-        String::from_utf8(text).unwrap(),
-        "same: both trees build the same simulator and read the same inputs; 0 of 4 sessions differ\n"
-    );
-    assert!(!super::same_inputs(
-        &["base".to_owned(), "head".to_owned()],
-        &pairs
-    ));
-    let mut missing = pairs.clone();
-    missing[0].runs[1] = None;
-    assert!(!super::same_inputs(&keys, &missing));
-    let mut changed = pairs;
-    changed[0].inputs[1].push_str("changed");
-    assert!(!super::same_inputs(&keys, &changed));
-
-    let mut options = options;
-    options.no_cache = no_cache;
-    options.keep = keep.then(|| PathBuf::from("/kept"));
-    assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
-
-    options.semantic = Some(Vec::new());
-    options.no_cache = false;
-    options.keep = None;
-    assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
-}
-
-#[test]
-fn smoke_compares_only_the_sessions_the_head_suite_lists() {
-    let mut options = options();
-    options.smoke = true;
-    let trees = [options.base.clone(), options.head.clone()];
-    let base = r#"{"scenarios":[{"name":"default","dev":[1,2],"holdout":[101],"smoke":[1]},{"name":"late","dev":[1]}]}"#;
-    let runs = super::load_runs_with(&options, &trees, &|path| {
-        plan(
-            if path.starts_with("/base") {
-                base
-            } else {
-                SUITE
-            },
-            path,
-        )
-    })
-    .unwrap();
-    assert_eq!(
-        runs[0]
-            .iter()
-            .map(|spec| (spec.scenario.as_str(), spec.seed))
-            .collect::<Vec<_>>(),
-        [("default", 2), ("late", 1)]
-    );
-    let root = MemoryDir::new();
-    let fleet = Fleet::new();
-    let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
-    let done = compare::run(&compare::pair(runs), &config(&fleet), &fake).unwrap();
-    assert!(!done.different());
-    assert!(report(&done).ends_with("same: 0 of 2 sessions differ\n"));
-    assert_eq!(
-        fake.launches()
-            .iter()
-            .filter(|name| name.starts_with("head "))
-            .count(),
-        2
-    );
-}
-
-#[test]
-fn smoke_without_smoke_sessions_is_an_error() {
-    let mut options = options();
-    options.smoke = true;
-    let trees = [options.base.clone(), options.head.clone()];
-    let failed = super::load_runs_with(&options, &trees, &|path| {
-        plan(r#"{"scenarios":[{"name":"default","dev":[1]}]}"#, path)
-    })
-    .unwrap_err();
-    assert!(matches!(failed, SameError::NoSmoke), "{failed}");
-}
-
-#[test]
-fn a_tree_whose_suite_cannot_be_read_is_an_error_naming_it() {
-    let options = options();
-    let trees = [options.base.clone(), options.head.clone()];
-    let failed = super::load_runs_with(&options, &trees, &|path| {
-        plan(
-            if path.starts_with("/head") {
-                "not json"
-            } else {
-                SUITE
-            },
-            path,
-        )
-    })
-    .unwrap_err();
-    assert!(
-        failed.to_string().starts_with("load the head suite in "),
-        "{failed}"
-    );
-}
-
-#[test]
-fn an_absolute_suite_path_is_read_from_the_same_file_in_both_trees() {
-    let mut options = options();
-    options.suite = PathBuf::from("/base/suite.json");
-    let trees = [options.base.clone(), options.head.clone()];
-    let paths = std::cell::RefCell::new(Vec::new());
-    let runs = super::load_runs_with(&options, &trees, &|path| {
-        paths.borrow_mut().push(path.to_path_buf());
-        plan(SUITE, path)
-    })
-    .unwrap();
-    assert_eq!(*paths.borrow(), [options.suite.clone(), options.suite]);
-    let root = MemoryDir::new();
-    let fleet = Fleet::new();
-    let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
-    let done = compare::run(&compare::pair(runs), &config(&fleet), &fake).unwrap();
-    assert!(!done.different());
-    assert!(report(&done).contains("0 of 4 sessions differ"));
+    assert_eq!(cache.get(MappingStop), None, "{what}");
 }
 
 #[test]
@@ -1335,18 +1067,6 @@ fn real_fs_pruning_removes_empty_branches_without_following_symlinks() {
     assert!(outside.path().join("untouched").is_dir());
 }
 
-fn full_pairs() -> Vec<Pair> {
-    let options = options();
-    compare::pair(
-        super::load_runs_with(
-            &options,
-            &[options.base.clone(), options.head.clone()],
-            &|path| plan(SUITE, path),
-        )
-        .unwrap(),
-    )
-}
-
 #[test_case::test_case((true, false); "true false")]
 #[test_case::test_case((false, true); "false true")]
 fn identical_simulators_still_run_when_asked_to_keep_or_ignore_the_cache(case: (bool, bool)) {
@@ -1359,10 +1079,10 @@ fn identical_simulators_still_run_when_asked_to_keep_or_ignore_the_cache(case: (
     let mut config = cache.config(&fleet);
     config.fresh = no_cache || keep;
     config.keep = keep;
-    let done = compare::run(&full_pairs(), &config, &fake).unwrap();
+    let done = compare::run(&ScriptedCase::ALL, &config, &fake).unwrap();
     assert!(!done.different());
-    assert_eq!(done.scheduled, [4, 4]);
-    assert_eq!(fake.launches().len(), 8, "no_cache={no_cache} keep={keep}");
+    assert_eq!(done.scheduled, [5, 5]);
+    assert_eq!(fake.launches().len(), 10, "no_cache={no_cache} keep={keep}");
     assert_eq!(!files_under(&root).is_empty(), keep);
 }
 
@@ -1376,25 +1096,25 @@ fn a_build_stamp_alone_is_not_a_difference_and_a_decision_is() {
     let fake = Fake::new(&root, &fleet, move |side, _| {
         journal(if side == Side::Base { &base } else { &stamped })
     });
-    let done = compare::run(&full_pairs(), &config(&fleet), &fake).unwrap();
+    let done = compare::run(&ScriptedCase::ALL, &config(&fleet), &fake).unwrap();
     assert!(!done.different());
     assert_eq!(
         report(&done).lines().last(),
-        Some("same: 0 of 4 sessions differ")
+        Some("same: 0 of 5 sessions differ")
     );
     assert_eq!(
         fake.launches()
             .iter()
             .filter(|name| name.starts_with("base "))
             .count(),
-        4
+        5
     );
     assert_eq!(
         fake.launches()
             .iter()
             .filter(|name| name.starts_with("head "))
             .count(),
-        4
+        5
     );
 
     let changed = text.replacen("\"seq\":3,", "\"seq\":3000,", 1);
@@ -1406,19 +1126,19 @@ fn a_build_stamp_alone_is_not_a_difference_and_a_decision_is() {
     });
     let mut config = config(&fleet);
     config.jobs = 1;
-    let done = compare::run(&full_pairs(), &config, &fake).unwrap();
+    let done = compare::run(&ScriptedCase::ALL, &config, &fake).unwrap();
     assert!(done.different());
     let text = report(&done);
     assert!(
-        text.starts_with("same: default/dev-1\n  events.jsonl:3\n"),
+        text.starts_with("same: mapping-stop\n  events.jsonl:3\n"),
         "{text}"
     );
     assert!(text.ends_with(
         "same: stopped at the first difference; --keep-going reports every differing session\n"
     ));
     let kept = files_under(&root);
-    assert!(kept.contains(&"base/default/dev-1/events.jsonl".to_owned()));
-    assert!(kept.contains(&"head/default/dev-1/events.jsonl".to_owned()));
+    assert!(kept.contains(&"base/mapping-stop/events.jsonl".to_owned()));
+    assert!(kept.contains(&"head/mapping-stop/events.jsonl".to_owned()));
 }
 
 #[test]
@@ -1431,59 +1151,23 @@ fn a_second_comparison_of_the_same_binaries_runs_nothing_again() {
     let fake = Fake::new(&root, &fleet, move |side, _| {
         journal(if side == Side::Base { &text } else { &stamped })
     });
-    compare::run(&full_pairs(), &cache.config(&fleet), &fake).unwrap();
-    let done = compare::run(&full_pairs(), &cache.config(&fleet), &fake).unwrap();
-    assert_eq!(done.cached, [4, 4]);
+    compare::run(&ScriptedCase::ALL, &cache.config(&fleet), &fake).unwrap();
+    let done = compare::run(&ScriptedCase::ALL, &cache.config(&fleet), &fake).unwrap();
+    assert_eq!(done.cached, [5, 5]);
     assert_eq!(done.scheduled, [0, 0]);
     assert_eq!(
         fake.launches()
             .iter()
             .filter(|name| name.starts_with("base "))
             .count(),
-        4
+        5
     );
     assert_eq!(
         fake.launches()
             .iter()
             .filter(|name| name.starts_with("head "))
             .count(),
-        4
-    );
-}
-
-#[test]
-fn a_session_one_suite_lacks_is_a_difference() {
-    let options = options();
-    let head = r#"{"scenarios":[{"name":"default","dev":[1,2],"holdout":[101],"smoke":[2]}]}"#;
-    let runs = super::load_runs_with(
-        &options,
-        &[options.base.clone(), options.head.clone()],
-        &|path| {
-            plan(
-                if path.starts_with("/head") {
-                    head
-                } else {
-                    SUITE
-                },
-                path,
-            )
-        },
-    )
-    .unwrap();
-    let root = MemoryDir::new();
-    let fleet = Fleet::new();
-    let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
-    let mut config = config(&fleet);
-    config.keep_going = true;
-    let done = compare::run(&compare::pair(runs), &config, &fake).unwrap();
-    let text: String = report(&done)
-        .lines()
-        .filter(|line| !line.starts_with("same: simulator time"))
-        .flat_map(|line| [line, "\n"])
-        .collect();
-    assert_eq!(
-        text,
-        "same: late/dev-1\n  <session>\n  base: <present>\n  head: <missing>\nsame: 1 of 4 sessions differ\n"
+        5
     );
 }
 
@@ -1503,30 +1187,18 @@ fn a_simulator_that_leaves_no_journal_fails_the_comparison_and_keeps_the_runs() 
     });
     let mut config = config(&fleet);
     config.jobs = 1;
-    let failed = compare::run(&full_pairs(), &config, &fake).unwrap_err();
+    let failed = compare::run(&ScriptedCase::ALL, &config, &fake).unwrap_err();
     let chain = togi_machine::error_chain(&failed);
     assert!(chain.contains("journals contain no events"), "{chain}");
     let kept = files_under(&root);
     assert!(
-        kept.contains(&"head/default/dev-1/sim.log".to_owned()),
+        kept.contains(&"head/mapping-stop/sim.log".to_owned()),
         "{kept:?}"
     );
     assert!(
-        kept.contains(&"head/default/dev-1/events.jsonl".to_owned()),
+        kept.contains(&"head/mapping-stop/events.jsonl".to_owned()),
         "{kept:?}"
     );
-}
-
-#[test]
-fn semantic_comparison_refuses_changed_inputs_for_a_paired_session() {
-    let mut pairs = same_sessions(&[1, 2]);
-    super::check_semantic_inputs(&pairs).unwrap();
-
-    pairs[1].inputs[1].push_str("changed");
-    let Err(SameError::SemanticInputs { key }) = super::check_semantic_inputs(&pairs) else {
-        panic!("expected a semantic input mismatch");
-    };
-    assert_eq!(key, "s/dev-2");
 }
 
 #[test]
@@ -1547,7 +1219,7 @@ fn semantic_comparison_retains_reference_meaning_after_base_caps_disappear() {
     let mut config = config(&fleet);
     config.fresh = true;
     config.keep_going = true;
-    let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
+    let outcome = compare::run(&[MappingStop], &config, &fake).unwrap();
     assert!(!outcome.different());
     assert_eq!(outcome.scheduled, [1, 1]);
     assert_eq!(outcome.semantic.unwrap().retired["ccd.cap"], 1);
@@ -1564,7 +1236,7 @@ fn semantic_mode_never_uses_raw_digest_equality_to_hide_head_caps() {
     let mut config = config(&fleet);
     config.fresh = true;
     config.keep_going = true;
-    let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
+    let outcome = compare::run(&[MappingStop], &config, &fake).unwrap();
     assert!(outcome.different());
     assert_eq!(outcome.semantic.unwrap().classes["ccd.cap"].head, 1);
 }
@@ -1585,7 +1257,7 @@ fn semantic_equality_does_not_hide_changed_simulator_exit_status() {
     let mut config = config(&fleet);
     config.fresh = true;
     config.keep_going = true;
-    let outcome = compare::run(&same_sessions(&[1]), &config, &fake).unwrap();
+    let outcome = compare::run(&[MappingStop], &config, &fake).unwrap();
     assert_eq!(outcome.differences[0].difference.file, "<exit code>");
     assert_eq!(outcome.differences[0].difference.head, "3");
 }

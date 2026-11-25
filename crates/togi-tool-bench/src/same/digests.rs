@@ -11,11 +11,12 @@ use togi_journal::fs::Fs;
 
 use sha2::{Digest, Sha256};
 use togi_machine::object_only;
+use togi_tool_sim::scripted::ScriptedCase;
 
 use crate::cache::{touch, write_atomic, write_in};
-use crate::suite::{RunSpec, hex};
+use crate::suite::hex;
 
-const FORMAT: &str = "togi-bench-same-v1";
+const FORMAT: &str = "togi-bench-scripted-v1";
 const KEPT_TREES: usize = 8;
 
 object_only! {
@@ -28,42 +29,18 @@ object_only! {
         pub exit: i32,
         pub wall_s: f64,
     }
-
-    #[derive(Debug, serde::Serialize)]
-    #[serde(deny_unknown_fields)]
-    struct Entry {
-        inputs: String,
-        record: SideRecord,
-    }
 }
 
-/// The key of the sessions a cache holds: the format, the boot cap and the simulator's bytes, which carry the
-/// code that ran them. The rest of a session's inputs are checked per record ([`inputs`]).
-pub(crate) fn key(simulator: &str, max_boots: u32) -> String {
+/// The namespace of cached cases: the format, scripted input contract and simulator bytes.
+pub(crate) fn key(simulator: &str, contract: &str) -> String {
     let mut hash = Sha256::new();
     hash.update(format!(
-        "{FORMAT} boots={max_boots}\nsimulator {simulator}\n"
+        "{FORMAT} contract={contract}\nsimulator {simulator}\n"
     ));
     hex(&hash.finalize())
 }
 
-/// The digest of what a session's simulator reads besides its own binary: the session's identity, whether it
-/// replays facts, and every file of its machine by name relative to its suite, the facts extract included.
-pub(crate) fn inputs(spec: &RunSpec) -> String {
-    let mut hash = Sha256::new();
-    hash.update(format!(
-        "run {} replay={}\nmachine {}\n",
-        spec.name(),
-        spec.replay.is_some(),
-        spec.machine.as_ref().map_or_else(
-            || "default".to_owned(),
-            |machine| format!("{} {}", machine.name, machine.digest()),
-        ),
-    ));
-    hex(&hash.finalize())
-}
-
-/// One tree's finished sessions, each under the digest of its inputs.
+/// One tree's finished sessions, indexed by scripted case.
 #[derive(Debug)]
 pub struct DigestCache {
     dir: PathBuf,
@@ -102,31 +79,24 @@ impl DigestCache {
         }
     }
 
-    fn path(&self, spec: &RunSpec) -> PathBuf {
-        self.dir
-            .join(&spec.scenario)
-            .join(format!("{}-{}.json", spec.split, spec.seed))
+    fn path(&self, case: ScriptedCase) -> PathBuf {
+        self.dir.join(format!("{}.json", case.name()))
     }
 
-    /// The record kept for `spec` if it was made from the same `inputs`.
-    pub fn get(&self, spec: &RunSpec, inputs: &str) -> Option<SideRecord> {
-        let path = self.path(spec);
+    /// The record kept for this case in this input namespace.
+    pub fn get(&self, case: ScriptedCase) -> Option<SideRecord> {
+        let path = self.path(case);
         let bytes = match &self.fs {
             Some(fs) => fs.read(&path),
             None => fs::read(path),
         }
         .ok()?;
-        let entry: Entry = serde_json::from_slice(&bytes).ok()?;
-        (entry.inputs == inputs).then_some(entry.record)
+        serde_json::from_slice(&bytes).ok()
     }
 
-    pub fn put(&self, spec: &RunSpec, inputs: &str, record: &SideRecord) -> io::Result<()> {
-        let entry = Entry {
-            inputs: inputs.to_owned(),
-            record: record.clone(),
-        };
-        let path = self.path(spec);
-        let bytes = serde_json::to_vec(&entry)?;
+    pub fn put(&self, case: ScriptedCase, record: &SideRecord) -> io::Result<()> {
+        let path = self.path(case);
+        let bytes = serde_json::to_vec(record)?;
         match &self.fs {
             None => write_atomic(&path, &bytes),
             Some(fs) => write_in(fs.as_ref(), &path, &bytes),

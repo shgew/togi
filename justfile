@@ -182,7 +182,7 @@ recovery: _dev-shell
     read -r -a checks <<< "$names"
     just check-one "${checks[@]}"
 
-# Run a simulated session, flags as `togi-tool-sim` takes them (`just sim --seed 7 --max-boots 20`)
+# Run a real simulated session with the developer script (`--machine FILE` selects a fitted research machine)
 [group('run')]
 sim *args: _dev-shell
     cargo run --release --locked -p togi-tool-sim -- "$@"
@@ -222,20 +222,41 @@ bench *args: _dev-shell
 audit *args: _dev-shell
     cargo run --release --locked -p togi-tool-audit -- "$@"
 
-# Prove simulated session decisions are unchanged from a base revision, building both trees' simulators; stops at the first difference (`--keep-going` counts them all)
+# Compare exact journals from five fixed scripted sessions; stops at the first difference unless --keep-going
 [group('run')]
 same base="origin/main" *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" "${@:2}"
+    @{{ just_executable() }} --justfile '{{ justfile() }}' _scripted-comparison exact "$@"
 
-# Prove a fixed selection of simulated sessions, one per scenario, is unchanged from a base revision; same cache and fail-fast as `same`
+# Compare the mapping-stop and mce-resume subset of the scripted sessions
 [group('run')]
 smoke base="origin/main" *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --smoke "${@:2}"
+    @{{ just_executable() }} --justfile '{{ justfile() }}' _scripted-comparison smoke "$@"
 
 # Compare retained journal semantics with repeatable --retired KIND; on demand, never a CI gate
 [group('run')]
 same-semantic base *args: _dev-shell
-    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; cargo run --release --locked -p togi-tool-bench -- same "$dir" --semantic "${@:2}"
+    @{{ just_executable() }} --justfile '{{ justfile() }}' _scripted-comparison semantic "$@"
+
+_scripted-comparison mode base *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mode=$1 base=$2
+    shift 2
+    marker=crates/togi-tool-sim/scripted-input-version
+    version=$(cat "$marker")
+    if ! base_version=$(git show "$base:$marker" 2>/dev/null) || [[ "$base_version" != "$version" ]]; then
+        printf 'base simulator cannot run the scripted comparison set (requires scripted input contract v%s)\n' "$version" >&2
+        exit 1
+    fi
+    dir=$(mktemp -d)
+    trap 'rm -rf "$dir"' EXIT
+    git archive "$base" | tar -x -C "$dir"
+    case "$mode" in
+        exact) ;;
+        smoke) set -- --smoke "$@" ;;
+        semantic) set -- --semantic "$@" ;;
+    esac
+    cargo run --release --locked -p togi-tool-bench -- same "$dir" "$@"
 
 # Re-record the committed bench baseline over all seeds, without wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]

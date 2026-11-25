@@ -60,7 +60,7 @@ fn run(options: &Options) -> Report {
 }
 
 #[test]
-fn real_process_the_simulator_gets_the_seed_a_state_directory_and_the_boot_cap() {
+fn real_process_the_simulator_gets_its_seed_state_directory_boot_cap_and_fitted_default() {
     let bench = Bench::new();
     run(&bench.options(bench.simulator("sim", 0, "", "")));
     let args = fs::read_to_string(bench.path("args.txt")).unwrap();
@@ -69,11 +69,12 @@ fn real_process_the_simulator_gets_the_seed_a_state_directory_and_the_boot_cap()
     assert_eq!(lines.len(), 5);
     for line in &lines {
         assert!(
-            line.contains("--state-dir ") && line.ends_with("--max-boots 7"),
+            line.contains("--state-dir ")
+                && line.ends_with("--max-boots 7 --default-fitted-machine"),
             "{line}"
         );
         assert!(
-            !line.contains("--machine") && !line.contains("--replay-facts"),
+            !line.contains("--machine ") && !line.contains("--replay-facts"),
             "{line}"
         );
     }

@@ -1,9 +1,9 @@
-//! `togi-tool-sim`: one seeded simulated tuning session without hardware or root, or the suite check that runs
-//! every session of `tools/bench/suite.json` by shard and proves each ran once and ended clean.
+//! `togi-tool-sim`: run simulated tuning sessions without hardware or root, or verify the fitted research suite.
 
 mod content;
 mod log;
 mod machine;
+mod scripted;
 mod session;
 mod signals;
 mod suite;
@@ -18,6 +18,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use togi_journal::{Build, FixStamp, SCHEMA};
+use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase};
 
 use crate::log::Log;
 
@@ -27,7 +28,7 @@ const USAGE: u8 = 2;
 #[command(
     name = "togi-tool-sim",
     version = togi_version::version(),
-    about = "Run a seeded simulated tuning session, or check the simulator suite",
+    about = "Run a simulated tuning session, a named mechanics script, or the fitted research suite",
     args_conflicts_with_subcommands = true
 )]
 struct Cli {
@@ -39,10 +40,30 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Print the named scripts' input contract version.
+    ScriptedContract,
+    /// Run a named deterministic mechanics script.
+    Scripted(ScriptedArgs),
     /// Run every session of one shard of the suite and write the shard's manifest.
     Suite(SuiteArgs),
     /// Check that the shards' manifests cover every session of the suite once and that each ended clean.
     Check(CheckArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ScriptedArgs {
+    /// The mechanics case to run.
+    #[arg(long, value_enum)]
+    pub(crate) case: ScriptedCase,
+    /// The input contract version the caller expects.
+    #[arg(long, value_name = "VERSION")]
+    pub(crate) contract: String,
+    /// Write this case's state to this directory.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) state_dir: PathBuf,
+    /// Allow at most N simulated boots.
+    #[arg(long, value_name = "N")]
+    pub(crate) max_boots: NonZeroU32,
 }
 
 #[expect(
@@ -51,12 +72,17 @@ enum Command {
 )]
 #[derive(Debug, Args)]
 struct SessionArgs {
-    /// Draw the simulated machine's limits and failures from this seed.
+    /// Seed simulated boot IDs and, for fitted machines, model draws.
     #[arg(long, default_value_t = 1)]
     seed: u64,
-    /// Load the simulated machine from this JSON file; default the seeded default machine.
+    /// Load a fitted research machine from this JSON file; without it or --default-fitted-machine, use the developer
+    /// mechanics script.
     #[arg(long, value_name = "FILE")]
     machine: Option<PathBuf>,
+    /// Use the research suite's seeded default fitted machine, which its machine-free scenarios run, instead of the
+    /// developer mechanics script.
+    #[arg(long, conflicts_with = "machine")]
+    default_fitted_machine: bool,
     /// Answer exact class and profile matches from the machine's same-BIOS facts extract.
     #[arg(long)]
     replay_facts: bool,
@@ -143,6 +169,8 @@ fn main() -> ExitCode {
     let code = match parse(std::env::args_os(), &mut log) {
         Ok(cli) => match cli.command {
             None => session::run(cli.session, &mut log),
+            Some(Command::ScriptedContract) => print_scripted_contract(&mut log),
+            Some(Command::Scripted(args)) => scripted::run(args, &mut log),
             Some(Command::Suite(args)) => suite::run(&args, &mut log),
             Some(Command::Check(args)) => suite::check(&args, &mut log),
         },
@@ -153,6 +181,16 @@ fn main() -> ExitCode {
         Err(error) => {
             let _ = writeln!(std::io::stderr(), "sim: write the log: {error}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+fn print_scripted_contract(log: &mut Log) -> u8 {
+    match writeln!(std::io::stdout().lock(), "{CONTRACT_VERSION}") {
+        Ok(()) => 0,
+        Err(error) => {
+            let _ = writeln!(log, "sim: write the scripted contract version: {error}");
+            1
         }
     }
 }

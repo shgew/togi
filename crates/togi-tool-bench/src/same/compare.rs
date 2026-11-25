@@ -1,23 +1,21 @@
 //! The comparison of every session of two trees: which sessions to run, in what order, how each pair is judged and
 //! which run directories remain.
 
-use std::collections::BTreeMap;
-use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
+use togi_tool_sim::scripted::ScriptedCase;
+
 use crate::cache::{Costs, longest_first};
-use crate::error::RunError;
+use crate::error::{RunError, ScriptedError};
 use crate::pool;
 use crate::process::Fleet;
-use crate::suite::RunSpec;
-use togi_tool_sim::Split;
 
 use super::SameError;
-use super::digests::{DigestCache, SideRecord, inputs};
+use super::digests::{DigestCache, SideRecord};
 use super::journal::{self, Difference};
 
 /// A session of the head's own time beyond this multiple of its base's is reported, never judged.
@@ -48,57 +46,6 @@ impl Side {
     }
 }
 
-/// The identity of a session across the two trees: its scenario, split and seed.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Key {
-    pub scenario: String,
-    pub split: Split,
-    pub seed: u64,
-}
-
-impl Key {
-    pub(super) fn of(spec: &RunSpec) -> Self {
-        Self {
-            scenario: spec.scenario.clone(),
-            split: spec.split,
-            seed: spec.seed,
-        }
-    }
-}
-
-impl fmt::Display for Key {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}-{}", self.scenario, self.split, self.seed)
-    }
-}
-
-/// One session as each tree's suite defines it; a side without it has none.
-#[derive(Clone, Debug)]
-pub(crate) struct Pair {
-    pub key: Key,
-    pub runs: [Option<RunSpec>; 2],
-    /// Each side's digest of what its simulator reads besides its binary, which a cached record must match.
-    pub inputs: [String; 2],
-}
-
-/// Pairs the sessions of the base's and the head's runs by scenario, split and seed, in that order.
-pub(crate) fn pair(runs: [Vec<RunSpec>; 2]) -> Vec<Pair> {
-    let mut pairs: BTreeMap<Key, [Option<RunSpec>; 2]> = BTreeMap::new();
-    for (side, specs) in runs.into_iter().enumerate() {
-        for spec in specs {
-            let key = Key::of(&spec);
-            pairs.entry(key).or_default()[side] = Some(spec);
-        }
-    }
-    pairs
-        .into_iter()
-        .map(|(key, runs)| {
-            let inputs = [0, 1].map(|side| runs[side].as_ref().map(inputs).unwrap_or_default());
-            Pair { key, runs, inputs }
-        })
-        .collect()
-}
-
 /// A finished simulator process and the directory it left.
 #[derive(Debug)]
 pub(crate) struct Ran {
@@ -110,10 +57,10 @@ pub(crate) struct Ran {
 /// Runs the sessions of the comparison.
 pub(crate) trait Launcher: Sync {
     /// The directory a session of `side` runs in.
-    fn dir(&self, side: Side, spec: &RunSpec) -> PathBuf;
+    fn dir(&self, side: Side, case: ScriptedCase) -> PathBuf;
 
-    /// Runs `spec` on `side` to its end. A failure to run is an error; a session that ended badly is a result.
-    fn launch(&self, side: Side, spec: &RunSpec) -> Result<Ran, RunError>;
+    /// Runs the case on this side to its end.
+    fn launch(&self, side: Side, case: ScriptedCase) -> Result<Ran, ScriptedError>;
 
     fn digest(&self, dir: &Path) -> Result<String, journal::JournalError> {
         journal::digest(dir)
@@ -158,14 +105,14 @@ pub(crate) struct Config<'a> {
 /// A session whose two sides differ.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Found {
-    pub key: Key,
+    pub key: ScriptedCase,
     pub difference: Difference,
 }
 
 /// A session whose head took more than `SLOW_RATIO` times its base's time.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Slow {
-    pub key: Key,
+    pub key: ScriptedCase,
     pub base_s: f64,
     pub head_s: f64,
 }
@@ -204,7 +151,7 @@ impl Outcome {
         }
         for found in &self.differences {
             let difference = &found.difference;
-            write!(w, "same: {}\n  {}", found.key, difference.file)?;
+            write!(w, "same: {}\n  {}", found.key.name(), difference.file)?;
             if let Some(line) = difference.line {
                 write!(w, ":{line}")?;
             }
@@ -231,7 +178,7 @@ impl Outcome {
                 writeln!(
                     w,
                     "  {}: head {:.1}s, base {:.1}s, {:.1}x",
-                    slow.key,
+                    slow.key.name(),
                     slow.head_s,
                     slow.base_s,
                     slow.head_s / slow.base_s
@@ -279,11 +226,8 @@ struct PairState {
 }
 
 impl PairState {
-    fn complete(&self, pair: &Pair) -> bool {
-        pair.runs
-            .iter()
-            .zip(&self.rec)
-            .all(|(run, rec)| run.is_none() || rec.is_some())
+    fn complete(&self) -> bool {
+        self.rec.iter().all(Option::is_some)
     }
 }
 
@@ -297,7 +241,7 @@ struct State {
 }
 
 struct Comparison<'a> {
-    pairs: &'a [Pair],
+    cases: &'a [ScriptedCase],
     config: &'a Config<'a>,
     launcher: &'a dyn Launcher,
     state: Mutex<State>,
@@ -309,16 +253,16 @@ struct Comparison<'a> {
 /// directory left. Run directories of sessions that match are removed unless `keep`, and a differing session
 /// keeps the directories of every side.
 pub(crate) fn run(
-    pairs: &[Pair],
+    cases: &[ScriptedCase],
     config: &Config<'_>,
     launcher: &dyn Launcher,
 ) -> Result<Outcome, SameError> {
     let comparison = Comparison {
-        pairs,
+        cases,
         config,
         launcher,
         state: Mutex::new(State {
-            pairs: pairs.iter().map(|_| PairState::default()).collect(),
+            pairs: cases.iter().map(|_| PairState::default()).collect(),
             found: Vec::new(),
             total_s: [0.0; 2],
             slow: Vec::new(),
@@ -340,16 +284,12 @@ impl Comparison<'_> {
         let mut jobs = Vec::new();
         let mut ready = Vec::new();
         let (mut cached, mut scheduled) = ([0_usize; 2], [0_usize; 2]);
-        for (i, pair) in self.pairs.iter().enumerate() {
+        for (i, &case) in self.cases.iter().enumerate() {
             for side in Side::BOTH {
-                let Some(spec) = &pair.runs[side.index()] else {
-                    continue;
-                };
                 let hit = if self.config.fresh {
                     None
                 } else {
-                    self.config.caches[side.index()]
-                        .and_then(|cache| cache.get(spec, &pair.inputs[side.index()]))
+                    self.config.caches[side.index()].and_then(|cache| cache.get(case))
                 };
                 if let Some(record) = hit {
                     self.state().pairs[i].rec[side.index()] = Some(record);
@@ -359,7 +299,7 @@ impl Comparison<'_> {
                     scheduled[side.index()] += 1;
                 }
             }
-            if self.state().pairs[i].complete(pair) {
+            if self.state().pairs[i].complete() {
                 ready.push(i);
             }
         }
@@ -369,10 +309,7 @@ impl Comparison<'_> {
             let order = longest_first(jobs.len(), |n| {
                 let (i, side) = jobs[n];
                 self.config.costs.and_then(|costs| {
-                    costs.get(
-                        &self.config.scopes[side.index()],
-                        &self.pairs[i].key.to_string(),
-                    )
+                    costs.get(&self.config.scopes[side.index()], self.cases[i].name())
                 })
             });
             errors = pool::run(self.config.jobs, &order, |n| {
@@ -407,7 +344,7 @@ impl Comparison<'_> {
             .found
             .iter()
             .map(|(i, difference)| Found {
-                key: self.pairs[*i].key.clone(),
+                key: self.cases[*i],
                 difference: difference.clone(),
             })
             .collect();
@@ -419,7 +356,7 @@ impl Comparison<'_> {
                     return None;
                 };
                 Some(Slow {
-                    key: self.pairs[i].key.clone(),
+                    key: self.cases[i],
                     base_s: base.wall_s,
                     head_s: head.wall_s,
                 })
@@ -427,7 +364,7 @@ impl Comparison<'_> {
             .collect();
         slow.sort_by(|a, b| (b.head_s / b.base_s).total_cmp(&(a.head_s / a.base_s)));
         Outcome {
-            sessions: self.pairs.len(),
+            sessions: self.cases.len(),
             differences,
             keep_going: self.config.keep_going,
             cached,
@@ -439,24 +376,21 @@ impl Comparison<'_> {
         }
     }
 
-    fn launch(&self, side: Side, spec: &RunSpec) -> Result<Ran, RunError> {
-        let result = self.launcher.launch(side, spec);
-        if matches!(result, Err(RunError::Interrupted)) {
-            let _ = self.launcher.remove(&self.launcher.dir(side, spec));
+    fn launch(&self, side: Side, case: ScriptedCase) -> Result<Ran, ScriptedError> {
+        let result = self.launcher.launch(side, case);
+        if matches!(result, Err(ScriptedError::Run(RunError::Interrupted))) {
+            let _ = self.launcher.remove(&self.launcher.dir(side, case));
         }
         result
     }
 
     /// Runs one side of a session, records its digest and, if that completes the pair, compares the pair.
     fn run_side(&self, i: usize, side: Side) -> Result<(), Halt> {
-        let pair = &self.pairs[i];
-        let Some(spec) = &pair.runs[side.index()] else {
-            return Ok(());
-        };
-        let name = pair.key.to_string();
-        let ran = self.launch(side, spec).map_err(|source| SameError::Run {
+        let case = self.cases[i];
+        let name = case.name();
+        let ran = self.launch(side, case).map_err(|source| SameError::Run {
             side: side.name(),
-            key: name.clone(),
+            key: name.to_owned(),
             source,
         })?;
         let record = self
@@ -469,73 +403,70 @@ impl Comparison<'_> {
             })
             .map_err(|source| SameError::Digest {
                 side: side.name(),
-                key: name.clone(),
+                key: name.to_owned(),
                 source,
             })?;
         if let Some(cache) = self.config.caches[side.index()]
-            && let Err(error) = cache.put(spec, &pair.inputs[side.index()], &record)
+            && let Err(error) = cache.put(case, &record)
         {
             self.state()
                 .warnings
                 .push(format!("cache {} {name}: {error}", side.name()));
         }
         if let Some(costs) = self.config.costs {
-            costs.set(&self.config.scopes[side.index()], &name, record.wall_s);
+            costs.set(&self.config.scopes[side.index()], name, record.wall_s);
         }
         let complete = {
             let mut state = self.state();
             let entry = &mut state.pairs[i];
             entry.rec[side.index()] = Some(record);
             entry.dirs[side.index()] = Some(ran.dir);
-            entry.complete(pair)
+            entry.complete()
         };
         if complete { self.resolve(i) } else { Ok(()) }
     }
 
     /// Compares a session whose sides all have records, and drops its run directories when they match. A
-    /// differing session is kept with every present side's journals, and reported unless the comparison was
+    /// differing session is kept with both sides' journals, and reported unless the comparison was
     /// interrupted or, without `keep_going`, another session was reported first.
     fn resolve(&self, i: usize) -> Result<(), Halt> {
-        let pair = &self.pairs[i];
-        if let [Some(_), Some(_)] = &pair.runs {
-            let mut state = self.state();
-            let [Some(base), Some(head)] = state.pairs[i].rec.clone() else {
-                return Ok(());
-            };
-            state.total_s[0] += base.wall_s;
-            state.total_s[1] += head.wall_s;
-            if base.wall_s > 0.0 && head.wall_s > SLOW_RATIO * base.wall_s {
-                state.slow.push(i);
-            }
-            let dirs = state.pairs[i].dirs.clone();
-            drop(state);
-            if let [Some(base_dir), Some(head_dir)] = dirs
-                && let Some(compared) = self
-                    .launcher
-                    .semantic_comparison(&base_dir, &head_dir)
-                    .map_err(|source| SameError::Compare {
-                        key: pair.key.to_string(),
-                        source,
-                    })?
-            {
-                self.state()
-                    .semantic
-                    .get_or_insert_default()
-                    .merge(compared.summary);
-                if compared.first.is_none() && base.exit == head.exit {
-                    return Ok(self.remove_runs(i)?);
-                }
-                let difference = compared.first.unwrap_or_else(|| Difference {
-                    file: "<exit code>".to_owned(),
-                    line: None,
-                    base: base.exit.to_string(),
-                    head: head.exit.to_string(),
-                });
-                return self.report_difference(i, difference);
-            }
-            if base.digest == head.digest && base.exit == head.exit {
+        let mut state = self.state();
+        let [Some(base), Some(head)] = state.pairs[i].rec.clone() else {
+            return Ok(());
+        };
+        state.total_s[0] += base.wall_s;
+        state.total_s[1] += head.wall_s;
+        if base.wall_s > 0.0 && head.wall_s > SLOW_RATIO * base.wall_s {
+            state.slow.push(i);
+        }
+        let dirs = state.pairs[i].dirs.clone();
+        drop(state);
+        if let [Some(base_dir), Some(head_dir)] = dirs
+            && let Some(compared) = self
+                .launcher
+                .semantic_comparison(&base_dir, &head_dir)
+                .map_err(|source| SameError::Compare {
+                    key: self.cases[i].name().to_owned(),
+                    source,
+                })?
+        {
+            self.state()
+                .semantic
+                .get_or_insert_default()
+                .merge(compared.summary);
+            if compared.first.is_none() && base.exit == head.exit {
                 return Ok(self.remove_runs(i)?);
             }
+            let difference = compared.first.unwrap_or_else(|| Difference {
+                file: "<exit code>".to_owned(),
+                line: None,
+                base: base.exit.to_string(),
+                head: head.exit.to_string(),
+            });
+            return self.report_difference(i, difference);
+        }
+        if base.digest == head.digest && base.exit == head.exit {
+            return Ok(self.remove_runs(i)?);
         }
         self.rerun_cached(i)?;
         let difference = self.difference(i)?;
@@ -563,19 +494,16 @@ impl Comparison<'_> {
         }
     }
 
-    /// Reruns each present side of a session that has no run directory, so that its journals can be shown.
+    /// Reruns each side with no run directory, so that its journals can be shown.
     fn rerun_cached(&self, i: usize) -> Result<(), SameError> {
-        let pair = &self.pairs[i];
+        let case = self.cases[i];
         for side in Side::BOTH {
-            let Some(spec) = &pair.runs[side.index()] else {
-                continue;
-            };
             if self.state().pairs[i].dirs[side.index()].is_some() {
                 continue;
             }
-            let ran = self.launch(side, spec).map_err(|source| SameError::Rerun {
+            let ran = self.launch(side, case).map_err(|source| SameError::Rerun {
                 side: side.name(),
-                key: pair.key.to_string(),
+                key: case.name().to_owned(),
                 source,
             })?;
             self.state().pairs[i].dirs[side.index()] = Some(ran.dir);
@@ -584,22 +512,15 @@ impl Comparison<'_> {
     }
 
     fn difference(&self, i: usize) -> Result<Difference, SameError> {
-        let pair = &self.pairs[i];
+        let case = self.cases[i];
         let (records, dirs) = {
             let state = self.state();
             (state.pairs[i].rec.clone(), state.pairs[i].dirs.clone())
         };
-        let marker = |base: &str, head: &str| Difference {
-            file: "<session>".to_owned(),
-            line: None,
-            base: base.to_owned(),
-            head: head.to_owned(),
-        };
         let [Some(base), Some(head)] = records else {
-            return Ok(if pair.runs[0].is_none() {
-                marker("<missing>", "<present>")
-            } else {
-                marker("<present>", "<missing>")
+            return Err(SameError::Compare {
+                key: case.name().to_owned(),
+                source: journal::JournalError::Missing,
             });
         };
         if base.digest == head.digest {
@@ -612,7 +533,7 @@ impl Comparison<'_> {
         }
         let [Some(base_dir), Some(head_dir)] = dirs else {
             return Err(SameError::Compare {
-                key: pair.key.to_string(),
+                key: case.name().to_owned(),
                 source: journal::JournalError::Missing,
             });
         };
@@ -620,7 +541,7 @@ impl Comparison<'_> {
             .launcher
             .difference(&base_dir, &head_dir)
             .map_err(|source| SameError::Compare {
-                key: pair.key.to_string(),
+                key: case.name().to_owned(),
                 source,
             })?;
         Ok(found.unwrap_or(Difference {
@@ -642,7 +563,7 @@ impl Comparison<'_> {
                     .remove(&dir)
                     .map_err(|source| SameError::Remove {
                         side: side.name(),
-                        key: self.pairs[i].key.to_string(),
+                        key: self.cases[i].name().to_owned(),
                         source,
                     })?;
             }
@@ -654,7 +575,7 @@ impl Comparison<'_> {
     fn remove_unresolved(&self) -> Result<(), SameError> {
         let differing: Vec<usize> = self.state().found.iter().map(|(i, _)| *i).collect();
         let mut first = Ok(());
-        for i in 0..self.pairs.len() {
+        for i in 0..self.cases.len() {
             if !differing.contains(&i)
                 && let Err(error) = self.remove_runs(i)
                 && first.is_ok()

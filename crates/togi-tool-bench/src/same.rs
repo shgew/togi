@@ -1,31 +1,28 @@
-//! `--same`: proves that two trees decide the same on every simulated session.
+//! Compares two trees on a fixed set of scripted sessions.
 //!
-//! Each tree's simulator is built, or given, and each tree's own suite is planned. Sessions pair by scenario, split
-//! and seed. A session is reduced to the digest of its journals, the live one and the archived ones, with the build
-//! stamp taken out ([`journal`]), and to its exit status. A tree whose simulator did not change has its sessions in
-//! the cache ([`DigestCache`]), so only the side that changed runs; when both trees build the same simulator from
-//! the same inputs, nothing runs at all. A difference stops the comparison at the first session that shows one,
-//! unless every differing session is asked for, and is shown as the first differing journal line.
+//! Both trees and their simulators must support the input contract. Comparison uses the live and
+//! archived journals with build stamps removed. Cached records avoid rerunning an unchanged simulator.
 
 mod compare;
 mod digests;
 pub mod journal;
 
-use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use togi_tool_sim::scripted::{CONTRACT_PATH, CONTRACT_VERSION, ScriptedCase};
+
 use crate::cache::Costs;
+pub use crate::error::ScriptedError;
 use crate::error::{Error, RunError};
 use crate::process::Fleet;
 use crate::simulator::{self, Simulator};
-use crate::suite::{RunSpec, Selection, Suite};
 
-use compare::{Config, Key, Launcher, Ran, Side, remove_empty_dirs};
+use compare::{Config, Launcher, Ran, Side, remove_empty_dirs};
 pub use compare::{Found, Outcome, Slow};
 pub use digests::{DigestCache, SideRecord};
 pub use journal::{Difference, JournalError};
@@ -37,9 +34,7 @@ pub struct Options {
     pub base: PathBuf,
     /// The tree under test.
     pub head: PathBuf,
-    /// The suite file; a relative path resolves in each tree.
-    pub suite: PathBuf,
-    /// Compares only the sessions the head's suite lists under `smoke`.
+    /// Compares only the two scripted smoke cases.
     pub smoke: bool,
     /// Retired base-side kinds when comparing semantic rather than raw journals.
     /// Runs both sides freshly and reports every session; never uses raw digest equality.
@@ -53,7 +48,6 @@ pub struct Options {
     pub keep: Option<PathBuf>,
     pub jobs: NonZeroUsize,
     pub timeout: Duration,
-    pub max_boots: NonZeroU32,
     /// The cache directory: the digests, the session costs and the target directory of the base's build. The
     /// run directories live in the temporary directory, or under `keep`.
     pub cache: PathBuf,
@@ -64,17 +58,21 @@ pub struct Options {
 /// Why a comparison could not be made.
 #[derive(Debug, thiserror::Error)]
 pub enum SameError {
-    #[error("load the {side} suite in {}", tree.display())]
-    Suite {
+    #[error(
+        "{side} simulator cannot run the scripted comparison set (requires scripted input contract v{CONTRACT_VERSION})"
+    )]
+    MissingContract { side: &'static str },
+    #[error(
+        "{side} simulator declares scripted input contract {found:?}; expected v{CONTRACT_VERSION}"
+    )]
+    WrongContract { side: &'static str, found: String },
+    #[error("check scripted-contract for the {side} simulator {}", binary.display())]
+    Probe {
         side: &'static str,
-        tree: PathBuf,
+        binary: PathBuf,
         #[source]
-        source: Box<Error>,
+        source: ScriptedError,
     },
-    #[error("suite has no smoke sessions")]
-    NoSmoke,
-    #[error("semantic comparison requires identical machine, facts and replay inputs for {key}")]
-    SemanticInputs { key: String },
     #[error("build the {side} simulator in {}", tree.display())]
     Build {
         side: &'static str,
@@ -100,7 +98,7 @@ pub enum SameError {
         side: &'static str,
         key: String,
         #[source]
-        source: RunError,
+        source: ScriptedError,
     },
     #[error("{side} {key}")]
     Digest {
@@ -120,7 +118,7 @@ pub enum SameError {
         side: &'static str,
         key: String,
         #[source]
-        source: RunError,
+        source: ScriptedError,
     },
     #[error("remove matching {side} {key}")]
     Remove {
@@ -140,11 +138,11 @@ impl SameError {
             self,
             Self::Interrupted
                 | Self::Run {
-                    source: RunError::Interrupted,
+                    source: ScriptedError::Run(RunError::Interrupted),
                     ..
                 }
                 | Self::Rerun {
-                    source: RunError::Interrupted,
+                    source: ScriptedError::Run(RunError::Interrupted),
                     ..
                 }
         )
@@ -174,7 +172,7 @@ impl std::error::Error for Failed {
 /// How long each phase took.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Timings {
-    pub suites: Duration,
+    pub contracts: Duration,
     pub builds: Duration,
     pub keys: Duration,
     pub sessions: Duration,
@@ -184,8 +182,6 @@ pub struct Timings {
 #[derive(Debug)]
 pub struct Report {
     pub outcome: Outcome,
-    /// Whether both trees built the same simulator and read the same inputs, so no session ran.
-    pub identical: bool,
     /// The run directory kept: all of it with `keep`, otherwise what a differing session left.
     pub kept: Option<PathBuf>,
     pub timings: Timings,
@@ -198,15 +194,7 @@ impl Report {
     }
 
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
-        if self.identical {
-            writeln!(
-                w,
-                "same: both trees build the same simulator and read the same inputs; 0 of {} sessions differ",
-                self.outcome.sessions
-            )
-        } else {
-            self.outcome.write(w)
-        }
+        self.outcome.write(w)
     }
 }
 
@@ -216,21 +204,6 @@ pub fn execute(
     options: &Options,
     fleet: &Fleet,
     waiting: &dyn Fn(&Path),
-) -> Result<Report, Failed> {
-    execute_with(options, fleet, &simulator::build_in, waiting)
-}
-
-/// How a tree's simulator is built: in the tree, with the target directory when given, stoppable by the fleet.
-type Build<'a> = &'a dyn Fn(&Fleet, &Path, Option<&Path>) -> Result<PathBuf, Error>;
-
-/// Told once that another comparison holds the lock at the path, before the wait for it.
-type Waiting<'a> = &'a dyn Fn(&Path);
-
-fn execute_with(
-    options: &Options,
-    fleet: &Fleet,
-    build: Build<'_>,
-    waiting: Waiting<'_>,
 ) -> Result<Report, Failed> {
     let started = Instant::now();
     let fail = |error| Failed {
@@ -246,32 +219,32 @@ fn execute_with(
     });
     let [base, head] = trees;
     let trees = [base.map_err(fail)?, head.map_err(fail)?];
-    let runs = load_runs(options, &trees).map_err(fail)?;
+    check_contracts(&trees).map_err(fail)?;
     if fleet.cancelled() {
         return Err(fail(SameError::Interrupted));
     }
     let loaded = started.elapsed();
-    let simulators = simulators(options, &trees, fleet, build, waiting).map_err(fail)?;
+    let simulators =
+        simulators(options, &trees, fleet, &simulator::build_in, waiting).map_err(fail)?;
     if fleet.cancelled() {
         return Err(fail(SameError::Interrupted));
     }
     let built = started.elapsed();
-    let keys = [0, 1].map(|side| digests::key(simulators[side].digest(), options.max_boots.get()));
-    let pairs = compare::pair(runs);
-    if options.semantic.is_some() {
-        check_semantic_inputs(&pairs).map_err(fail)?;
-    }
-    let identical = same_inputs(&keys, &pairs);
+    let keys = simulators
+        .each_ref()
+        .map(|sim| digests::key(sim.digest(), CONTRACT_VERSION));
+    let cases: &[ScriptedCase] = if options.smoke {
+        &ScriptedCase::SMOKE
+    } else {
+        &ScriptedCase::ALL
+    };
     let keyed = started.elapsed();
     let mut timings = Timings {
-        suites: loaded,
+        contracts: loaded,
         builds: built.saturating_sub(loaded),
         keys: keyed.saturating_sub(built),
         sessions: Duration::ZERO,
     };
-    if let Some(report) = identical_report(options, pairs.len(), identical, timings) {
-        return Ok(report);
-    }
     let cache_error = |what, source| SameError::Io {
         what,
         path: options.cache.clone(),
@@ -303,7 +276,6 @@ fn execute_with(
         root: &root,
         fleet,
         timeout: options.timeout,
-        max_boots: options.max_boots,
         semantic: options.semantic.as_deref(),
     };
     let config = Config {
@@ -317,10 +289,10 @@ fn execute_with(
             [Some(&caches[0]), Some(&caches[1])]
         },
         costs: Some(&costs),
-        scopes: [0, 1].map(|side| simulators[side].digest().to_owned()),
+        scopes: keys,
         fleet,
     };
-    let result = compare::run(&pairs, &config, &launcher);
+    let result = compare::run(cases, &config, &launcher);
     let mut warnings = Vec::new();
     if let Err(error) = costs.save() {
         warnings.push(format!("save session costs: {error}"));
@@ -340,7 +312,6 @@ fn execute_with(
             warnings.extend(outcome.warnings.iter().cloned());
             Ok(Report {
                 outcome,
-                identical: false,
                 kept,
                 timings,
                 warnings,
@@ -353,97 +324,36 @@ fn execute_with(
     }
 }
 
-fn identical_report(
-    options: &Options,
-    sessions: usize,
-    identical: bool,
-    timings: Timings,
-) -> Option<Report> {
-    if !identical || options.no_cache || options.keep.is_some() || options.semantic.is_some() {
-        return None;
-    }
-    Some(Report {
-        outcome: Outcome {
-            sessions,
-            differences: Vec::new(),
-            keep_going: options.keep_going,
-            cached: [0; 2],
-            scheduled: [0; 2],
-            total_s: [0.0; 2],
-            slow: Vec::new(),
-            warnings: Vec::new(),
-            semantic: None,
-        },
-        identical: true,
-        kept: None,
-        timings,
-        warnings: Vec::new(),
-    })
-}
-
-fn check_semantic_inputs(pairs: &[compare::Pair]) -> Result<(), SameError> {
-    if let Some(pair) = pairs
-        .iter()
-        .find(|pair| pair.runs.iter().all(Option::is_some) && pair.inputs[0] != pair.inputs[1])
-    {
-        return Err(SameError::SemanticInputs {
-            key: pair.key.to_string(),
-        });
+fn check_contracts(trees: &[PathBuf; 2]) -> Result<(), SameError> {
+    for side in Side::BOTH {
+        let path = trees[side.index()].join(CONTRACT_PATH);
+        let text = fs::read_to_string(&path).map_err(|source| {
+            if source.kind() == io::ErrorKind::NotFound {
+                SameError::MissingContract { side: side.name() }
+            } else {
+                SameError::Io {
+                    what: "read the scripted input contract at",
+                    path,
+                    source,
+                }
+            }
+        })?;
+        let found = text.trim();
+        if found != CONTRACT_VERSION {
+            return Err(SameError::WrongContract {
+                side: side.name(),
+                found: found.to_owned(),
+            });
+        }
     }
     Ok(())
 }
 
-fn same_inputs(keys: &[String; 2], pairs: &[compare::Pair]) -> bool {
-    keys[0] == keys[1]
-        && pairs.iter().all(|pair| {
-            pair.runs[0].is_some() && pair.runs[1].is_some() && pair.inputs[0] == pair.inputs[1]
-        })
-}
+/// How a tree's simulator is built: in the tree, with the target directory when given, stoppable by the fleet.
+type Build<'a> = &'a dyn Fn(&Fleet, &Path, Option<&Path>) -> Result<PathBuf, Error>;
 
-/// Plans each tree's suite, or with `smoke` only the sessions the head's suite lists under `smoke`.
-fn load_runs(options: &Options, trees: &[PathBuf; 2]) -> Result<[Vec<RunSpec>; 2], SameError> {
-    load_runs_with(options, trees, &|path| {
-        Suite::load(path)
-            .map_err(Error::from)
-            .and_then(|suite| suite.plan(Selection::All))
-            .map(|plan| plan.runs)
-    })
-}
-
-fn load_runs_with(
-    options: &Options,
-    trees: &[PathBuf; 2],
-    plan: &dyn Fn(&Path) -> Result<Vec<RunSpec>, Error>,
-) -> Result<[Vec<RunSpec>; 2], SameError> {
-    let mut runs = [Vec::new(), Vec::new()];
-    for side in Side::BOTH {
-        let tree = &trees[side.index()];
-        let suite = if options.suite.is_absolute() {
-            options.suite.clone()
-        } else {
-            tree.join(&options.suite)
-        };
-        runs[side.index()] = plan(&suite).map_err(|source| SameError::Suite {
-            side: side.name(),
-            tree: tree.clone(),
-            source: Box::new(source),
-        })?;
-    }
-    if options.smoke {
-        let smoke: BTreeSet<Key> = runs[Side::Head.index()]
-            .iter()
-            .filter(|spec| spec.smoke)
-            .map(Key::of)
-            .collect();
-        if smoke.is_empty() {
-            return Err(SameError::NoSmoke);
-        }
-        for side in &mut runs {
-            side.retain(|spec| smoke.contains(&Key::of(spec)));
-        }
-    }
-    Ok(runs)
-}
+/// Told once that another comparison holds the lock at the path, before the wait for it.
+type Waiting<'a> = &'a dyn Fn(&Path);
 
 /// Each tree's simulator: the one given, or the one built from the tree. The head builds in its own target
 /// directory, as any build of it does. The base is built in one under the cache directory that every comparison
@@ -467,9 +377,33 @@ fn simulators(
             source: Box::new(source),
         })
     };
-    let one = |side: Side| {
-        if let Some(binary) = &options.simulators[side.index()] {
-            return locate(side, binary);
+    let probe = |side: Side, binary: &Path, sim: Simulator| {
+        sim.check_scripted_contract(fleet, options.timeout)
+            .map_err(|source| {
+                if matches!(source, ScriptedError::Run(RunError::Interrupted)) {
+                    SameError::Interrupted
+                } else {
+                    SameError::Probe {
+                        side: side.name(),
+                        binary: binary.to_path_buf(),
+                        source,
+                    }
+                }
+            })?;
+        Ok(sim)
+    };
+    // Finish all supplied-binary checks before either tree can start a build.
+    let supplied = |side: Side| {
+        options.simulators[side.index()]
+            .as_deref()
+            .map(|binary| probe(side, binary, locate(side, binary)?))
+            .transpose()
+    };
+    let base = supplied(Side::Base)?;
+    let head = supplied(Side::Head)?;
+    let one = |side: Side, supplied: Option<Simulator>| {
+        if let Some(sim) = supplied {
+            return Ok(sim);
         }
         if fleet.cancelled() {
             return Err(SameError::Interrupted);
@@ -477,7 +411,8 @@ fn simulators(
         let tree = &trees[side.index()];
         let built = |target: Option<&Path>| build_for(side, tree, fleet, build, target);
         if side == Side::Head {
-            return locate(side, &built(None)?);
+            let binary = built(None)?;
+            return probe(side, &binary, locate(side, &binary)?);
         }
         let target = std::path::absolute(options.cache.join("same-target")).map_err(|source| {
             SameError::Io {
@@ -486,7 +421,7 @@ fn simulators(
                 source,
             }
         })?;
-        let _held = lock_target(&options.cache, fleet, waiting)?;
+        let held = lock_target(&options.cache, fleet, waiting)?;
         if fleet.cancelled() {
             return Err(SameError::Interrupted);
         }
@@ -495,9 +430,12 @@ fn simulators(
             path: tree.clone(),
             source,
         })?;
-        locate(side, &built(Some(&target))?)
+        let binary = built(Some(&target))?;
+        let sim = locate(side, &binary)?;
+        drop(held);
+        probe(side, &binary, sim)
     };
-    Ok([one(Side::Base)?, one(Side::Head)?])
+    Ok([one(Side::Base, base)?, one(Side::Head, head)?])
 }
 
 fn build_for(
@@ -581,29 +519,23 @@ struct Real<'a> {
     root: &'a Path,
     fleet: &'a Fleet,
     timeout: Duration,
-    max_boots: NonZeroU32,
     semantic: Option<&'a [String]>,
 }
 
 impl Launcher for Real<'_> {
-    fn dir(&self, side: Side, spec: &RunSpec) -> PathBuf {
-        self.root.join(side.name()).join(spec.name())
+    fn dir(&self, side: Side, case: ScriptedCase) -> PathBuf {
+        self.root.join(side.name()).join(case.name())
     }
 
-    fn launch(&self, side: Side, spec: &RunSpec) -> Result<Ran, RunError> {
-        self.simulators[side.index()]
-            .launch(
-                self.fleet,
-                &self.root.join(side.name()),
-                spec,
-                self.max_boots,
-                self.timeout,
-            )
-            .map(|launched| Ran {
-                dir: launched.dir,
-                exit: launched.exit,
-                wall: launched.wall,
-            })
+    fn launch(&self, side: Side, case: ScriptedCase) -> Result<Ran, ScriptedError> {
+        let dir = self.dir(side, case);
+        let finished =
+            self.simulators[side.index()].launch_scripted(self.fleet, &dir, case, self.timeout)?;
+        Ok(Ran {
+            dir,
+            exit: finished.exit,
+            wall: finished.wall,
+        })
     }
 
     fn semantic_comparison(
@@ -639,15 +571,16 @@ mod build_tests {
         fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
             for tree in ["base", "head"] {
-                fs::create_dir_all(dir.path().join(tree)).unwrap();
-                fs::write(
-                    dir.path().join(tree).join("suite.json"),
-                    r#"{"scenarios":[{"name":"s","dev":[1]}]}"#,
-                )
-                .unwrap();
+                let marker = dir.path().join(tree).join(CONTRACT_PATH);
+                fs::create_dir_all(marker.parent().unwrap()).unwrap();
+                fs::write(marker, CONTRACT_VERSION).unwrap();
             }
             let simulator = dir.path().join("sim");
-            fs::write(&simulator, "#!/bin/sh\nexit 0\n").unwrap();
+            fs::write(
+                &simulator,
+                format!("#!/bin/sh\nprintf '%s\\n' '{CONTRACT_VERSION}'\n"),
+            )
+            .unwrap();
             fs::set_permissions(&simulator, fs::Permissions::from_mode(0o755)).unwrap();
             Self { dir, simulator }
         }
@@ -664,7 +597,6 @@ mod build_tests {
             Options {
                 base: self.dir.path().join("base"),
                 head: self.dir.path().join("head"),
-                suite: PathBuf::from("suite.json"),
                 smoke: false,
                 semantic: None,
                 keep_going: false,
@@ -672,7 +604,6 @@ mod build_tests {
                 keep: None,
                 jobs: NonZeroUsize::MIN,
                 timeout: Duration::from_secs(1),
-                max_boots: NonZeroU32::MIN,
                 cache: self.cache(),
                 simulators: [None, None],
             }
@@ -680,7 +611,7 @@ mod build_tests {
     }
 
     #[test]
-    fn real_fs_the_base_builds_with_its_target_directory_locked_and_the_head_without() {
+    fn real_process_the_base_builds_with_its_target_directory_locked_and_the_head_without() {
         let fixture = Fixture::new();
         let lock = fixture.cache().join("same-target.lock");
         let seen = RefCell::new(Vec::new());

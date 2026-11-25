@@ -21,11 +21,66 @@ use togi_render::Renderer;
 use togi_session::ConfigSource;
 use togi_sim::{Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome};
+use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase};
 
 fn command() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-sim"));
     command.env_remove("NO_COLOR").env_remove("JOURNAL_STREAM");
     command
+}
+
+#[test]
+fn real_process_the_scripted_contract_prints_only_its_version() {
+    let output = command().arg("scripted-contract").output().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{:?}", output.stderr);
+    assert_eq!(output.stdout, b"1\n");
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+}
+
+#[test]
+fn real_process_a_wrong_scripted_contract_leaves_state_untouched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let state = tmp.path().join("state");
+    let output = command()
+        .arg("scripted")
+        .args(["--case", "mapping-stop", "--contract", "01"])
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["--max-boots", "1"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("contract"), "{stderr}");
+    assert!(output.stdout.is_empty());
+    assert!(!state.exists());
+}
+
+// A successful child also checks the selected case's required journal milestones. This exercises
+// the actual disk-backed command rather than the substitute children used by the bench tests.
+#[test_case(ScriptedCase::MappingStop, ShutdownReason::Signal; "mapping and stop")]
+#[test_case(ScriptedCase::MceResume, ShutdownReason::Signal; "uncorrected mce and resume")]
+#[test_case(ScriptedCase::PowerButtonReset, ShutdownReason::Signal; "power button and resume")]
+#[test_case(ScriptedCase::ProfilePlacement, ShutdownReason::Signal; "day profile and placement")]
+#[test_case(ScriptedCase::NoNonzeroWork, ShutdownReason::DeadEnd; "dead end")]
+fn real_process_each_script_leaves_a_complete_journal(case: ScriptedCase, reason: ShutdownReason) {
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("state");
+    let output = command()
+        .arg("scripted")
+        .args(["--case", case.name(), "--contract", CONTRACT_VERSION])
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--max-boots")
+        .arg(case.max_boots().to_string())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+    let recording = Recording::read(&state.join("events.jsonl")).unwrap();
+    assert!(recording.torn().is_none());
+    assert!(matches!(&recording.events().last().unwrap().payload,
+        Payload::Shutdown(end) if end.reason == reason));
 }
 
 #[test]

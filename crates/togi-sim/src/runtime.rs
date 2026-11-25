@@ -28,7 +28,7 @@ pub(crate) type Shared = Rc<RefCell<Runtime>>;
 pub const REBOOT_TIME: Duration = Duration::from_secs(90);
 
 /// 2026-01-01T00:00:00Z, the start of a machine with no history.
-const EPOCH: Timestamp = Timestamp::constant(1_767_225_600, 0);
+pub const EPOCH: Timestamp = Timestamp::constant(1_767_225_600, 0);
 
 const BANK_COUNT: u8 = 9;
 const BANKS: [BankType; BANK_COUNT as usize] = [

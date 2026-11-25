@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use togi_journal::MemFs;
 use togi_journal::fs::{Fault, Fs, Op};
-use togi_sim::{MachineDefinition, Model};
+use togi_sim::{MachineDefinition, MachineSource, Model};
 use togi_simrun::{Persistence, ResumeError, SimError, SimOutcome, resume_simulator, simulate};
 
 use crate::common::{Bench, STATE, finish, hunt_machine, input, nz, simulator, until_kind};
@@ -44,9 +44,8 @@ impl Store for MemFs {
 fn resumed(definition: &MachineDefinition, seed: u64, store: &impl Store) -> togi_sim::Simulator {
     resume_simulator(
         &store.persistence(),
-        Model::new(definition, seed).unwrap(),
+        MachineSource::fitted(Model::new(definition, seed).unwrap(), None),
         seed,
-        None,
     )
     .unwrap()
 }
@@ -109,9 +108,8 @@ fn journal_only_resume_refuses_a_timestamp_without_room_for_reboot() {
     bench.fs.put(bench.fs.path("events.jsonl"), journal.clone());
     let error = resume_simulator(
         &bench.fs.persistence(),
-        Model::new(&definition, 1).unwrap(),
+        MachineSource::fitted(Model::new(&definition, 1).unwrap(), None),
         1,
-        None,
     )
     .err()
     .expect("the next boot timestamp cannot be represented");
@@ -208,9 +206,8 @@ fn a_continuation_on_another_machine_is_refused_and_keeps_the_saved_machine() {
     // core count before the session sees a changed topology.
     let Err(ResumeError::Restore(_)) = resume_simulator(
         &split.persistence(),
-        Model::new(&hunt_machine(6), 1).unwrap(),
+        MachineSource::fitted(Model::new(&hunt_machine(6), 1).unwrap(), None),
         1,
-        None,
     ) else {
         panic!("a machine with other cores was resumed");
     };
@@ -225,9 +222,8 @@ fn a_continuation_on_another_machine_is_refused_and_keeps_the_saved_machine() {
 fn unreadable_machine(store: &impl Store) {
     let Err(ResumeError::Read { path, .. }) = resume_simulator(
         &store.persistence(),
-        Model::new(&hunt_machine(2), 1).unwrap(),
+        MachineSource::fitted(Model::new(&hunt_machine(2), 1).unwrap(), None),
         1,
-        None,
     ) else {
         panic!("an unreadable machine was not a read failure");
     };

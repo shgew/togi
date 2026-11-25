@@ -1,5 +1,5 @@
 use std::io::{self, Write as _};
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -15,15 +15,13 @@ use crate::{cancel_on_signals, default_cache, fail};
 #[derive(Debug, Args)]
 pub(crate) struct SameArgs {
     /// The tree to compare against, such as an export of the base revision.
+    /// Both trees must declare support for the same scripted input contract as this command.
     #[arg(value_name = "BASE")]
     base: PathBuf,
     /// The tree under test.
     #[arg(long, value_name = "DIR", default_value = ".")]
     head: PathBuf,
-    /// The suite file; a relative path resolves in each tree.
-    #[arg(long, value_name = "FILE", default_value = "tools/bench/suite.json")]
-    suite: PathBuf,
-    /// Compare only the sessions the suite lists under `smoke`.
+    /// Compare only the mapping-stop and mce-resume scripted cases.
     #[arg(long)]
     smoke: bool,
     #[command(flatten)]
@@ -43,17 +41,14 @@ pub(crate) struct SameArgs {
     /// Hang safety limit per simulator in seconds; exceeding it is a harness error, never a session outcome.
     #[arg(long, value_name = "SECONDS", default_value = "1800")]
     timeout: std::num::NonZeroU64,
-    /// Stop a session after N simulated boots: the run is censored.
-    #[arg(long, value_name = "N", default_value = "1000")]
-    max_boots: NonZeroU32,
     /// The directory of cached digests, session costs and the base's build; default the user cache directory's
     /// togi/bench.
     #[arg(long, value_name = "DIR")]
     cache: Option<PathBuf>,
-    /// Run this simulator for the base instead of building it from the tree.
+    /// Use this contract-compatible simulator instead of building the base's.
     #[arg(long, value_name = "FILE")]
     base_sim: Option<PathBuf>,
-    /// Run this simulator for the head instead of building it from the tree.
+    /// Use this contract-compatible simulator instead of building the head's.
     #[arg(long, value_name = "FILE")]
     head_sim: Option<PathBuf>,
 }
@@ -80,7 +75,6 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
     let options = Options {
         base: args.base,
         head: args.head,
-        suite: args.suite,
         smoke: args.smoke,
         semantic: args.comparison.semantic.then_some(args.comparison.retired),
         keep_going: args.keep_going,
@@ -91,7 +85,6 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
             .or_else(|| thread::available_parallelism().ok())
             .unwrap_or(NonZeroUsize::MIN),
         timeout: Duration::from_secs(args.timeout.get()),
-        max_boots: args.max_boots,
         cache,
         simulators: [args.base_sim, args.head_sim],
     };
@@ -122,17 +115,15 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
     let timings = report.timings;
     let _ = writeln!(
         stderr,
-        "togi-tool-bench: harness overhead: suites {:.0?}, builds {:.0?}, keys {:.0?}; sessions took {:.0?}",
-        timings.suites, timings.builds, timings.keys, timings.sessions
+        "togi-tool-bench: harness overhead: contracts {:.0?}, simulators {:.0?}, keys {:.0?}; sessions took {:.0?}",
+        timings.contracts, timings.builds, timings.keys, timings.sessions
     );
-    if !report.identical {
-        let outcome = &report.outcome;
-        let _ = writeln!(
-            stderr,
-            "togi-tool-bench: base {} cached, {} run; head {} cached, {} run",
-            outcome.cached[0], outcome.scheduled[0], outcome.cached[1], outcome.scheduled[1]
-        );
-    }
+    let outcome = &report.outcome;
+    let _ = writeln!(
+        stderr,
+        "togi-tool-bench: base {} cached, {} run; head {} cached, {} run",
+        outcome.cached[0], outcome.scheduled[0], outcome.cached[1], outcome.scheduled[1]
+    );
     if let Some(kept) = &report.kept {
         let _ = writeln!(
             stderr,
