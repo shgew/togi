@@ -49,8 +49,6 @@ pub enum ReadError {
         /// Where the field sits in the line: `extra` in the envelope, `data.extra` in the payload.
         field: String,
     },
-    #[error("line 1: the first event is {}, not session.start", found.as_str())]
-    FirstEvent { found: EventKind },
     #[error("line {line}: cause {cause} does not precede seq {seq}")]
     Cause { line: u64, seq: Seq, cause: Seq },
 }

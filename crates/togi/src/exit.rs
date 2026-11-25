@@ -43,23 +43,6 @@ pub enum Exit {
 }
 
 impl Exit {
-    /// Every status, in code order.
-    pub const ALL: [Self; 13] = [
-        Self::Ok,
-        Self::Error,
-        Self::Usage,
-        Self::Locked,
-        Self::FailureAtZero,
-        Self::Smu,
-        Self::NoEvidence,
-        Self::BootLoop,
-        Self::Containment,
-        Self::Preflight,
-        Self::Incompatible,
-        Self::Defect,
-        Self::ThermalTrip,
-    ];
-
     /// The status the process exits with.
     #[must_use]
     pub const fn code(self) -> u8 {
