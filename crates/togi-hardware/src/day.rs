@@ -44,6 +44,14 @@ pub trait Observer: Smu {
     ) -> Result<KernelRead, Partial<KernelRead>>;
 }
 
+/// Checks whether PID 1 holds a hardware watchdog with a decreasing countdown.
+///
+/// # Errors
+/// Returns `Error::Cancelled` if `cancel` interrupts countdown sampling.
+pub fn watchdog_state(cancel: &CancellationToken) -> Result<WatchdogState, Error> {
+    crate::watchdog::arming(Path::new("/"), cancel).map_err(|_cancelled| Error::Cancelled)
+}
+
 struct DayHardware<'lock> {
     driver: Driver,
     cores: Vec<CoreInfo>,
@@ -108,7 +116,7 @@ impl Observer for DayHardware<'_> {
     }
 
     fn watchdog(&mut self, cancel: &CancellationToken) -> Result<WatchdogState, Error> {
-        crate::watchdog::arming(Path::new("/"), cancel).map_err(|_cancelled| Error::Cancelled)
+        watchdog_state(cancel)
     }
 
     fn live_faults(

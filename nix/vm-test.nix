@@ -868,6 +868,9 @@ let
         };
         hardware.cpu.amd.ryzen-smu.enable = false;
         boot.initrd.kernelModules = [ "iTCO_wdt" ];
+        # PID 1 can arm the emulated watchdog just after the day service's first start.
+        # Keep the real automatic retry without waiting a minute in the crash-reboot test.
+        systemd.services.togi-day.serviceConfig.RestartSec = pkgs.lib.mkForce "2s";
         users.users.alice.isNormalUser = true;
         users.users.mallory.isNormalUser = true;
         systemd.tmpfiles.rules = [
@@ -908,6 +911,8 @@ let
         # A clean stop zeroes and reads back before the final checkpoint and clean marker.
         machine.succeed("systemctl start togi-day.service")
         machine.wait_until_succeeds(f"grep -q day.boot_start {journal}")
+        watchdog = day("day.boot_start")[0]["data"]["watchdog"]
+        assert watchdog["state"] == "armed", watchdog
         # Even a writer targeting a different state directory cannot take the live service's lock.
         status, output = machine.execute("togi --state-dir /tmp/day-lock-state reset --all 2>&1")
         assert status == 3, (status, output)
