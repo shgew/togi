@@ -1,159 +1,12 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 use togi_machine::{
-    BootId, CancellationToken, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, Error,
-    FrequencyEvent, FrequencyJournal, Machine, Mce, ObservedOffset, Partial, PerCore, Regime,
-    Reporter, Running, Sample, Signal, Stopped, TargetOffset, TrialResult, TrialRole, TrialSpec,
-    Workload, pick_workload,
+    BootId, CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Error, FrequencyEvent,
+    FrequencyJournal, Machine, Mce, ObservedOffset, Partial, PerCore, Regime, Reporter, Running,
+    Sample, Signal, Stopped, TargetOffset, TrialResult, TrialRole, TrialSpec, Workload,
+    pick_workload,
 };
-use togi_sim::definition::{CoreDef, ModelDef, Weights};
-use togi_sim::{
-    History, InvalidMachine, Load, MachineDefinition, Model, RunSettings, ScriptedMachine,
-    ScriptedTopology, Simulator, TrialOutcome, file,
-};
-
-pub(crate) fn machines_dir() -> PathBuf {
-    PathBuf::from("/machines")
-}
-
-const MACHINES: &[(&str, &str)] = &[
-    (
-        "flat-hazard.json",
-        include_str!("../../../../tools/bench/machines/flat-hazard.json"),
-    ),
-    (
-        "idle-limit.json",
-        include_str!("../../../../tools/bench/machines/idle-limit.json"),
-    ),
-    (
-        "late-onset.json",
-        include_str!("../../../../tools/bench/machines/late-onset.json"),
-    ),
-    (
-        "misleading-mce.json",
-        include_str!("../../../../tools/bench/machines/misleading-mce.json"),
-    ),
-    (
-        "shared-voltage.json",
-        include_str!("../../../../tools/bench/machines/shared-voltage.json"),
-    ),
-    (
-        "target-fit-0.json",
-        include_str!("../../../../tools/bench/machines/target-fit-0.json"),
-    ),
-    (
-        "target-fit-1.json",
-        include_str!("../../../../tools/bench/machines/target-fit-1.json"),
-    ),
-    (
-        "target-fit-2.json",
-        include_str!("../../../../tools/bench/machines/target-fit-2.json"),
-    ),
-    (
-        "target-fit-3.json",
-        include_str!("../../../../tools/bench/machines/target-fit-3.json"),
-    ),
-    (
-        "target-fit-4.json",
-        include_str!("../../../../tools/bench/machines/target-fit-4.json"),
-    ),
-    (
-        "target-fit-5.json",
-        include_str!("../../../../tools/bench/machines/target-fit-5.json"),
-    ),
-    (
-        "target-fit-6.json",
-        include_str!("../../../../tools/bench/machines/target-fit-6.json"),
-    ),
-    (
-        "target-fit-7.json",
-        include_str!("../../../../tools/bench/machines/target-fit-7.json"),
-    ),
-    (
-        "target-fit-8.json",
-        include_str!("../../../../tools/bench/machines/target-fit-8.json"),
-    ),
-    (
-        "target-nonmember-mce.json",
-        include_str!("../../../../tools/bench/machines/target-nonmember-mce.json"),
-    ),
-    (
-        "target-r7-request-gap.json",
-        include_str!("../../../../tools/bench/machines/target-r7-request-gap.json"),
-    ),
-    (
-        "target-r7-vf-boost.json",
-        include_str!("../../../../tools/bench/machines/target-r7-vf-boost.json"),
-    ),
-    (
-        "target-shared-voltage.json",
-        include_str!("../../../../tools/bench/machines/target-shared-voltage.json"),
-    ),
-];
-
-pub(crate) fn committed() -> Vec<PathBuf> {
-    MACHINES
-        .iter()
-        .map(|(name, _)| machines_dir().join(name))
-        .collect()
-}
-
-#[derive(Default)]
-pub(crate) struct MemoryFiles(std::cell::RefCell<BTreeMap<PathBuf, String>>);
-
-impl MemoryFiles {
-    pub(crate) fn write(&self, path: &Path, text: &str) -> PathBuf {
-        self.0.borrow_mut().insert(path.to_owned(), text.to_owned());
-        path.to_owned()
-    }
-
-    #[expect(
-        clippy::unused_self,
-        reason = "the memory fixture has a fixed virtual root"
-    )]
-    pub(crate) fn path(&self) -> &Path {
-        Path::new("/fixture")
-    }
-}
-
-impl file::Source for MemoryFiles {
-    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
-        self.0
-            .borrow()
-            .get(path)
-            .cloned()
-            .ok_or_else(|| std::io::ErrorKind::NotFound.into())
-    }
-
-    fn canonicalize(&self, path: &Path) -> std::io::Result<PathBuf> {
-        let mut clean = PathBuf::new();
-        for part in path.components() {
-            match part {
-                std::path::Component::ParentDir => {
-                    clean.pop();
-                }
-                std::path::Component::CurDir => {}
-                part @ (std::path::Component::Prefix(_)
-                | std::path::Component::RootDir
-                | std::path::Component::Normal(_)) => clean.push(part),
-            }
-        }
-        Ok(if clean.is_absolute() {
-            clean
-        } else {
-            Path::new("/fixture").join(clean)
-        })
-    }
-}
-
-pub(crate) fn committed_files() -> MemoryFiles {
-    let files = MemoryFiles::default();
-    for (name, text) in MACHINES {
-        files.write(&machines_dir().join(name), text);
-    }
-    files
-}
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 
 #[derive(Default)]
 pub(crate) struct MemorySamples {
@@ -240,93 +93,12 @@ impl togi_sim::SampleStorage for MemorySamples {
     }
 }
 
-pub(crate) fn core_def(id: i64, alone: i64, together: i64) -> CoreDef {
-    CoreDef {
-        id,
-        alone: [alone; 5],
-        together: [together; 7],
-        flat: 0.0,
-        idle: None,
-        workload: BTreeMap::new(),
-    }
-}
-
-pub(crate) fn flat_cores(cores: i64, alone: i64, together: i64) -> Vec<CoreDef> {
-    (0..cores).map(|id| core_def(id, alone, together)).collect()
-}
-
-pub(crate) fn machine(cores: i64, core: Vec<CoreDef>) -> MachineDefinition {
-    MachineDefinition {
-        cores,
-        core,
-        ..MachineDefinition::default()
-    }
-}
-
-pub(crate) fn model(definition: &MachineDefinition) -> Model {
-    Model::new(definition, 1).expect("a valid machine")
-}
-
-pub(crate) fn invalid(definition: &MachineDefinition) -> InvalidMachine {
-    Model::new(definition, 1).expect_err("an invalid machine")
-}
-
-pub(crate) fn offsets(values: &[i64]) -> Vec<TargetOffset> {
-    values
-        .iter()
-        .map(|&value| TargetOffset::new(value).expect("an offset in range"))
-        .collect()
-}
-
-pub(crate) fn cores(ids: &[i64]) -> CoreSet {
-    ids.iter()
-        .map(|&id| togi_machine::CoreId::new(id).expect("a core ID"))
-        .collect()
-}
-
-pub(crate) fn load<'a>(regime: Regime, workload: &'a str, ids: &[i64], seconds: f64) -> Load<'a> {
-    Load {
-        regime,
-        workload,
-        cores: cores(ids),
-        duration: Duration::from_secs_f64(seconds),
-    }
-}
-
-pub(crate) fn committed_machine(name: &str) -> MachineDefinition {
-    file::load_from(machines_dir().join(name), &committed_files())
-        .expect("a committed machine")
-        .0
-}
-
-pub(crate) fn r7_workload(index: usize) -> &'static str {
-    pick_workload(Regime::R7, index).id
-}
-
-pub(crate) fn machine_dir_text(name: &str) -> String {
-    MACHINES
-        .iter()
-        .find(|(known, _)| *known == name)
-        .expect("a committed machine")
-        .1
-        .to_owned()
-}
-
 pub(crate) fn core(id: i64) -> CoreId {
     CoreId::new(id).expect("a core")
 }
 
 pub(crate) fn offset(value: i64) -> TargetOffset {
     TargetOffset::new(value).expect("an offset in range")
-}
-
-/// A model whose one failure signal fires at once, past any limit.
-pub(crate) fn sharp(signal: Signal) -> ModelDef {
-    ModelDef {
-        past_limit_rate: 1e6,
-        signals: Weights::from([(signal, 1.0)]),
-        ..ModelDef::default()
-    }
 }
 
 #[derive(Default)]
@@ -467,15 +239,6 @@ pub(crate) fn basic(regime: Regime, cores: &[i64], duration: Duration) -> TrialS
     spec("0001", regime, pick_workload(regime, 0), cores, duration)
 }
 
-pub(crate) fn load_of(spec: &TrialSpec) -> togi_sim::Load<'_> {
-    togi_sim::Load {
-        regime: spec.regime,
-        workload: spec.workload.as_str(),
-        cores: spec.cores.iter().copied().collect(),
-        duration: spec.duration,
-    }
-}
-
 pub(crate) type Waited = Result<TrialResult, Partial<TrialResult>>;
 
 pub(crate) fn crashed(waited: &Waited) -> bool {
@@ -496,20 +259,6 @@ pub(crate) struct Rig {
 }
 
 impl Rig {
-    pub(crate) fn new(definition: &MachineDefinition, seed: u64) -> Self {
-        Self::with(
-            model(definition),
-            RunSettings {
-                seed,
-                ..RunSettings::default()
-            },
-        )
-    }
-
-    pub(crate) fn with(model: Model, settings: RunSettings) -> Self {
-        Self::from_simulator(Simulator::new(model, settings).expect("a representable machine"))
-    }
-
     pub(crate) fn scripted(
         topology: ScriptedTopology,
         outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,

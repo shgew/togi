@@ -6,11 +6,11 @@ use togi_machine::{
     TrialResult, TrialSpec,
 };
 use togi_sim::{
-    History, ReportedFailure, RestoreError, ScriptError, ScriptedMachine, ScriptedMce,
-    ScriptedTopology, ScriptedVoltageSamples, Simulator, TrialOutcome, model::Script,
+    History, Persisted, ReportedFailure, ScriptedMachine, ScriptedMce, ScriptedTopology,
+    ScriptedVoltageSamples, Simulator, TrialOutcome,
 };
 
-use crate::common::{Rig, basic, core, machine, offset};
+use crate::common::{Rig, basic, core, offset};
 
 const AFTER: Duration = Duration::from_secs(7);
 const DURATION: Duration = Duration::from_secs(90);
@@ -148,28 +148,17 @@ fn a_scripted_reset_and_its_evidence_survive_restoration(
     }
 }
 
-#[test_case(true, ("fitted", "scripted"); "fitted snapshot with scripted source")]
-#[test_case(false, ("scripted", "fitted"); "scripted snapshot with fitted source")]
-fn restoring_with_a_different_source_kind_is_refused(
-    fitted_snapshot: bool,
-    expected: (&str, &str),
-) {
-    let fitted = Rig::new(&machine(4, vec![]), 1);
-    let scripted = Rig::scripted(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
-    let (original, restoring) = if fitted_snapshot {
-        (&fitted.sim, &scripted.sim)
-    } else {
-        (&scripted.sim, &fitted.sim)
-    };
-    let encoded = serde_json::to_vec(&original.persisted()).expect("encode the original machine");
-    let persisted = serde_json::from_slice(&encoded).expect("decode the original machine");
-    let error = Simulator::restore(restoring.source(), persisted)
-        .err()
-        .expect("a refusal");
-    let RestoreError::SourceMismatch { persisted, given } = error else {
-        panic!("expected a source mismatch: {error}");
-    };
-    assert_eq!((persisted, given), expected);
+#[test]
+fn persisted_snapshots_with_a_fitted_source_are_refused() {
+    let rig = Rig::scripted(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
+    let mut snapshot = serde_json::to_value(rig.sim.persisted()).expect("encode a snapshot");
+    assert_eq!(snapshot["source"], "scripted");
+    assert_eq!(
+        serde_json::from_value::<Persisted>(snapshot.clone()).expect("decode a script snapshot"),
+        rig.sim.persisted()
+    );
+    snapshot["source"] = serde_json::json!("fitted");
+    assert!(serde_json::from_value::<Persisted>(snapshot).is_err());
 }
 
 #[test_case(
@@ -201,22 +190,6 @@ fn an_invalid_scripted_outcome_does_not_complete_the_trial(
     assert_eq!(report.progress.len(), 0);
     assert_eq!(report.signals.len(), 0);
     assert_eq!(rig.sim.persisted(), before);
-}
-
-#[test]
-fn a_scripted_machine_refuses_fitted_trial_overrides() {
-    let rig = Rig::scripted(ScriptedTopology::FourCores, |_, _| TrialOutcome::Pass);
-    let script = Script {
-        signal: Some(Signal::ComputationError),
-        at_s: 7.0,
-        core: core(0),
-        reset: None,
-        then_crash: false,
-    };
-    assert_eq!(
-        rig.sim.script_trial("0001", script),
-        Err(ScriptError::FittedOnly)
-    );
 }
 
 #[test]

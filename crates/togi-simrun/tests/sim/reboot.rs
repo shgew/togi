@@ -1,10 +1,14 @@
 //! A warm simulated reboot keeps the crashed boot's journal and folds instead of reading them back.
 
 use std::path::Path;
+use std::time::Duration;
 
 use togi_journal::{EventKind, MemFs, Payload};
-use togi_sim::{MachineSource, ScriptedTopology, Simulator};
-use togi_simrun::{Persistence, Replay, SimOutcome, events, simulate};
+use togi_machine::{ResetKind, TargetOffset, error_chain};
+use togi_sim::{
+    ArithmeticError, History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome,
+};
+use togi_simrun::{Persistence, Replay, SimError, SimOutcome, events, simulate};
 
 use crate::common::{crash_first, input, nz, passing, scripted_simulator, until_kind};
 
@@ -97,10 +101,10 @@ fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
 #[test_case::test_case(Replay::Warm, 1; "boot cap")]
 fn boot_exhaustion_reaches_the_runner_and_keeps_the_journal(replay: Replay, max_boots: u32) {
     let persistence = Persistence::Memory(MemFs::new());
-    let sim = Simulator::start(
-        MachineSource::Scripted(passing(ScriptedTopology::SixteenCores)),
+    let sim = Simulator::scripted(
+        passing(ScriptedTopology::SixteenCores),
         1,
-        togi_sim::History {
+        History {
             boots: u32::MAX - 1,
             ..Default::default()
         },
@@ -113,12 +117,61 @@ fn boot_exhaustion_reaches_the_runner_and_keeps_the_journal(replay: Replay, max_
     run.max_boots = nz(max_boots);
     assert!(matches!(
         simulate(run),
-        Err(togi_simrun::SimError::Reboot {
+        Err(SimError::Reboot {
             boot: 1,
-            source: togi_sim::ArithmeticError::BootNumber
+            source: ArithmeticError::BootNumber
         })
     ));
     let recorded = events(&persistence).unwrap();
     assert!(!recorded.is_empty());
     assert!(recorded.iter().all(|event| event.boot == boot));
+}
+
+#[test]
+fn a_watchdog_reset_at_the_last_boot_number_reports_the_overflow_chain() {
+    let script = ScriptedMachine::new(
+        ScriptedTopology::FourCores,
+        TargetOffset::ZERO,
+        |spec, registers| {
+            if spec
+                .cores
+                .iter()
+                .any(|core| registers[core.index()] != TargetOffset::ZERO)
+            {
+                TrialOutcome::Reset {
+                    stalled: None,
+                    kind: ResetKind::Watchdog,
+                    at: Duration::from_secs(1),
+                }
+            } else {
+                TrialOutcome::Pass
+            }
+        },
+    );
+    let sim = Simulator::scripted(
+        script,
+        1,
+        History {
+            boots: u32::MAX - 1,
+            ..History::default()
+        },
+    )
+    .unwrap();
+    let mut run = input(sim, Persistence::Memory(MemFs::new()));
+    run.replay = Replay::Cold;
+    run.max_boots = nz(1);
+    let Err(err) = simulate(run) else {
+        panic!("an exhausted boot number did not fail the watchdog reboot");
+    };
+    assert!(matches!(
+        err,
+        SimError::Reboot {
+            boot: 1,
+            source: ArithmeticError::BootNumber,
+        }
+    ));
+    assert_eq!(
+        error_chain(&err),
+        "reboot the simulated machine after boot 1: allocate the next simulated boot number"
+    );
 }

@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use togi_journal::MemFs;
 use togi_journal::fs::{Fault, Fs, Op};
 use togi_machine::{ResetKind, TargetOffset};
-use togi_sim::{
-    MachineSource, RestoreError, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome,
-};
+use togi_sim::{RestoreError, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 use togi_simrun::{Persistence, ResumeError, SimError, SimOutcome, resume_simulator, simulate};
 
 use crate::common::{
@@ -48,7 +46,7 @@ impl Store for MemFs {
 }
 
 fn resumed(script: ScriptedMachine, seed: u64, store: &impl Store) -> Simulator {
-    resume_simulator(&store.persistence(), MachineSource::Scripted(script), seed).unwrap()
+    resume_simulator(&store.persistence(), script, seed).unwrap()
 }
 
 /// The whole night's input: the stop time is the first process's start plus the night, so a continuation that
@@ -212,10 +210,10 @@ fn a_continuation_on_another_machine_is_refused_and_keeps_the_saved_machine() {
     // core count before the session sees a changed topology.
     let Err(ResumeError::Restore(RestoreError::Cores {
         persisted: 4,
-        model: 8,
+        script: 8,
     })) = resume_simulator(
         &split.persistence(),
-        MachineSource::Scripted(passing(ScriptedTopology::EightCores)),
+        passing(ScriptedTopology::EightCores),
         1,
     )
     else {
@@ -230,11 +228,9 @@ fn a_continuation_on_another_machine_is_refused_and_keeps_the_saved_machine() {
 }
 
 fn unreadable_machine(store: &impl Store) {
-    let Err(ResumeError::Read { path, .. }) = resume_simulator(
-        &store.persistence(),
-        MachineSource::Scripted(watchdog_resets()),
-        1,
-    ) else {
+    let Err(ResumeError::Read { path, .. }) =
+        resume_simulator(&store.persistence(), watchdog_resets(), 1)
+    else {
         panic!("an unreadable machine was not a read failure");
     };
     assert_eq!(path, store.path(MACHINE));

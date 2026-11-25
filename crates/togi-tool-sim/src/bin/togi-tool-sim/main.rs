@@ -1,18 +1,16 @@
-//! `togi-tool-sim`: run simulated tuning sessions without hardware or root, or verify the fitted research suite.
+//! `togi-tool-sim`: run simulated tuning sessions without hardware or root.
 
 mod content;
 mod log;
-mod machine;
 mod scripted;
 mod session;
 mod signals;
-mod suite;
 
 #[cfg(test)]
 mod tests;
 
 use std::io::Write as _;
-use std::num::{NonZeroU32, NonZeroUsize};
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -28,7 +26,7 @@ const USAGE: u8 = 2;
 #[command(
     name = "togi-tool-sim",
     version = togi_version::version(),
-    about = "Run a simulated tuning session, a named mechanics script, or the fitted research suite",
+    about = "Run a simulated tuning session or a named mechanics script",
     args_conflicts_with_subcommands = true
 )]
 struct Cli {
@@ -44,10 +42,6 @@ enum Command {
     ScriptedContract,
     /// Run a named deterministic mechanics script.
     Scripted(ScriptedArgs),
-    /// Run every session of one shard of the suite and write the shard's manifest.
-    Suite(SuiteArgs),
-    /// Check that the shards' manifests cover every session of the suite once and that each ended clean.
-    Check(CheckArgs),
 }
 
 #[derive(Debug, Args)]
@@ -66,21 +60,11 @@ pub(crate) struct ScriptedArgs {
     pub(crate) max_boots: NonZeroU32,
 }
 
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent command-line switches, not state-machine flags"
-)]
 #[derive(Debug, Args)]
 struct SessionArgs {
-    /// Seed simulated boot IDs and, for fitted machines, model draws.
+    /// Seed simulated boot IDs.
     #[arg(long, default_value_t = 1)]
     seed: u64,
-    /// Load a fitted research machine from this JSON file; otherwise use the developer mechanics script.
-    #[arg(long, value_name = "FILE")]
-    machine: Option<PathBuf>,
-    /// Answer exact class and profile matches from the machine's same-BIOS facts extract.
-    #[arg(long)]
-    replay_facts: bool,
     /// Report the workload content identities the state directory's journal recorded, not the simulator's
     /// synthetic ones, so a recorded night can be continued without invalidating its evidence. The identities are
     /// assumed, not verified: nothing checks that the executables they name ran. Refused when the journal
@@ -111,41 +95,6 @@ struct SessionArgs {
     cold_boots: bool,
 }
 
-#[derive(Debug, Args)]
-struct SuiteArgs {
-    #[arg(long, value_name = "FILE")]
-    suite: PathBuf,
-    /// The number of shards the suite is split into.
-    #[arg(long, value_name = "N", default_value = "1")]
-    shards: NonZeroUsize,
-    /// The shard to run, counted from 0.
-    #[arg(long, value_name = "I", default_value_t = 0)]
-    shard: usize,
-    /// The directory the shard's manifest, shard-I.jsonl, is written to.
-    #[arg(long, value_name = "DIR")]
-    out: PathBuf,
-    /// Fail a session still running after N simulated boots.
-    #[arg(long, value_name = "N", default_value = "1000")]
-    max_boots: NonZeroU32,
-    /// Run N sessions at once; default the available parallelism. The manifest does not depend on it.
-    #[arg(long, value_name = "N")]
-    jobs: Option<NonZeroUsize>,
-}
-
-#[derive(Debug, Args)]
-struct CheckArgs {
-    #[arg(long, value_name = "FILE")]
-    suite: PathBuf,
-    /// The number of shards the suite was split into; every one must have a manifest.
-    #[arg(long, value_name = "N")]
-    shards: NonZeroUsize,
-    /// Check only this shard's manifest, against exactly the runs the partition gives it.
-    #[arg(long, value_name = "I")]
-    shard: Option<usize>,
-    /// The directory holding the shards' shard-I.jsonl and nothing else.
-    manifests: PathBuf,
-}
-
 /// The build every simulated session records.
 fn build() -> Build {
     let rev = togi_version::rev();
@@ -166,8 +115,6 @@ fn main() -> ExitCode {
             None => session::run(cli.session, &mut log),
             Some(Command::ScriptedContract) => print_scripted_contract(&mut log),
             Some(Command::Scripted(args)) => scripted::run(args, &mut log),
-            Some(Command::Suite(args)) => suite::run(&args, &mut log),
-            Some(Command::Check(args)) => suite::check(&args, &mut log),
         },
         Err(code) => code,
     };

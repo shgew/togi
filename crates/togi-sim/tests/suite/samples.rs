@@ -1,10 +1,10 @@
-// Conditions samples: lazy, strictly before the end, stalled culprit, serialized storage and
-// shared-voltage lanes. Storage failures are injected without files or devices.
+// Conditions samples: lazy timing, stalled culprit, serialized storage and fixed voltage lanes.
+// Storage failures are injected without files or devices.
 
 use std::time::Duration;
 use togi_machine::{
-    CoreId, LEGACY_REGIMES, PerCore, Regime, ResetKind, TargetOffset, TrialConditions, TrialSpec,
-    Workload, workloads,
+    CoreId, LEGACY_REGIMES, PerCore, Regime, ResetKind, Signal, TargetOffset, TrialConditions,
+    TrialSpec, Workload, workloads,
 };
 use togi_sim::{History, ScriptedMachine, ScriptedTopology, ScriptedVoltageSamples, TrialOutcome};
 
@@ -311,6 +311,54 @@ fn a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result(seconds: 
     assert_eq!(io.raw_os_error(), Some(NO_SPACE));
 }
 
+#[test_case(Regime::R2; "together workload")]
+#[test_case(Regime::R7; "all-core workload")]
+fn fixed_telemetry_and_sample_storage_do_not_change_a_trials_outcome(regime: Regime) {
+    static LANES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: [1.25; 16],
+        ccd_mhz: [5400, 5200],
+    };
+    let outcome = |_: &TrialSpec, _: &[TargetOffset]| TrialOutcome::ComputationError {
+        core: core(0),
+        at: Duration::from_secs(3),
+    };
+    let plain = ScriptedMachine::new(ScriptedTopology::SixteenCores, TargetOffset::ZERO, outcome);
+    let with_lanes =
+        ScriptedMachine::sixteen_with_voltage_samples(TargetOffset::ZERO, outcome, &LANES);
+    let run = |inputs, stored| {
+        let mut rig = Rig::with_script(inputs, History::default());
+        if stored {
+            rig.sim
+                .set_sample_storage(std::rc::Rc::new(crate::common::MemorySamples::default()));
+        }
+        let trial = spec(
+            "0001",
+            regime,
+            togi_machine::pick_workload(regime, 0),
+            &[0, 1],
+            Duration::from_secs(5),
+        );
+        let (waited, report) = rig.run(trial);
+        let lanes = collect(&mut rig, "0001");
+        (
+            (waited.expect("a result"), report.signals, rig.sim.now()),
+            lanes,
+        )
+    };
+    let (plain_result, no_lanes) = run(plain, false);
+    let (fixed_result, memory) = run(with_lanes, false);
+    let (stored_result, stored) = run(with_lanes, true);
+    assert_eq!(plain_result.0.ran, Duration::from_secs(3));
+    assert_eq!(plain_result.1, [(core(0), Signal::ComputationError)]);
+    assert_eq!(fixed_result, plain_result);
+    assert_eq!(stored_result, plain_result);
+    assert_eq!(no_lanes.len(), 2);
+    assert!(no_lanes.iter().all(|sample| sample.pm_table.is_none()));
+    assert_eq!(memory.len(), 2);
+    assert!(memory.iter().all(|sample| sample.pm_table.is_some()));
+    assert_eq!(stored, memory);
+}
+
 #[test]
 fn voltage_samples_keep_their_lanes_in_memory_and_in_serialized_storage() {
     const IDLE_V: f32 = 1.0;
@@ -431,7 +479,7 @@ fn the_largest_finite_recorded_idle_voltage_survives_sample_storage(stored: bool
 }
 
 #[test]
-fn a_machine_without_a_rail_has_no_lanes() {
+fn a_machine_without_fixed_voltage_samples_has_no_lanes() {
     let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.pass(spec(
         "0001",

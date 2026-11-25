@@ -6,7 +6,7 @@ use jiff::{SignedDuration, Timestamp};
 use rand::RngExt;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 use togi_machine::{
@@ -15,12 +15,10 @@ use togi_machine::{
 };
 
 use crate::faults::Faults;
-use crate::model::Script;
-use crate::persisted::{Persisted, PersistedBoot, PersistedMce, RestoreError};
+use crate::persisted::{Persisted, PersistedBoot, PersistedMce, PersistedSource, RestoreError};
 use crate::random::{Domain, stream};
-use crate::replay::Replay;
 use crate::samples::LastTrial;
-use crate::source::MachineSource;
+use crate::source::ScriptedMachine;
 
 pub(crate) type Shared = Rc<RefCell<Runtime>>;
 
@@ -30,20 +28,6 @@ pub const REBOOT_TIME: Duration = Duration::from_secs(90);
 /// 2026-01-01T00:00:00Z, the start of a machine with no history.
 pub const EPOCH: Timestamp = Timestamp::constant(1_767_225_600, 0);
 
-const BANK_COUNT: u8 = 9;
-const BANKS: [BankType; BANK_COUNT as usize] = [
-    BankType::LoadStore,
-    BankType::InstructionFetch,
-    BankType::L2Cache,
-    BankType::DecodeUnit,
-    BankType::ExecutionUnit,
-    BankType::FloatingPoint,
-    BankType::L3Cache,
-    BankType::MemoryController,
-    BankType::DataFabric,
-];
-const CORE_LOCAL_BANKS: u8 = 6;
-
 /// What earlier invocations of a simulation left behind, so a resumed machine continues after them.
 #[derive(Clone, Debug, Default)]
 pub struct History {
@@ -51,7 +35,7 @@ pub struct History {
     pub boots: u32,
     /// The wall-clock time of the last recorded event. The machine starts one reboot after it.
     pub last_time: Option<Timestamp>,
-    /// The BIOS context of the last recorded session, used when the machine file declares none.
+    /// The BIOS context of the last recorded session.
     pub bios_context: Option<BiosContext>,
 }
 
@@ -78,15 +62,6 @@ impl From<ArithmeticError> for togi_machine::Error {
     }
 }
 
-/// What differs from one run of a machine to the next, as opposed to the machine itself.
-#[derive(Debug, Default)]
-pub struct RunSettings {
-    /// Seeds every draw of the run: failure times, signals, boot IDs.
-    pub seed: u64,
-    pub history: History,
-    pub replay: Option<Replay>,
-}
-
 object_only! {
     /// A machine check waiting for the next boot to log it.
     #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -100,7 +75,7 @@ object_only! {
 }
 
 pub(crate) struct Runtime {
-    pub source: MachineSource,
+    pub source: ScriptedMachine,
     pub seed: u64,
     epoch: Timestamp,
     /// Virtual time since the simulation began; only moves forward.
@@ -118,7 +93,6 @@ pub(crate) struct Runtime {
     reasons: HashMap<BootId, ResetReason>,
     next_reset: Option<ResetKind>,
     pub bios: BiosContext,
-    pub scripts: BTreeMap<String, Script>,
     pub violations: Vec<String>,
     pub faults: Faults,
     pub samples: LastTrial,
@@ -128,7 +102,7 @@ pub(crate) struct Runtime {
 
 impl Runtime {
     pub(crate) fn new(
-        source: MachineSource,
+        source: ScriptedMachine,
         seed: u64,
         history: History,
     ) -> Result<Self, ArithmeticError> {
@@ -155,7 +129,6 @@ impl Runtime {
             reasons: HashMap::new(),
             next_reset: None,
             bios,
-            scripts: BTreeMap::new(),
             violations: Vec::new(),
             faults: Faults::default(),
             samples: LastTrial::default(),
@@ -168,20 +141,13 @@ impl Runtime {
     }
 
     pub(crate) fn restore(
-        source: MachineSource,
+        source: ScriptedMachine,
         persisted: Persisted,
     ) -> Result<Self, RestoreError> {
         if persisted.regs.len() != source.cores() {
             return Err(RestoreError::Cores {
                 persisted: persisted.regs.len(),
-                model: source.cores(),
-            });
-        }
-        let given = source.persisted_kind();
-        if persisted.source != given {
-            return Err(RestoreError::SourceMismatch {
-                persisted: persisted.source.name(),
-                given: given.name(),
+                script: source.cores(),
             });
         }
         if persisted.boots.is_empty() {
@@ -213,7 +179,6 @@ impl Runtime {
             reasons,
             next_reset: persisted.next_reset,
             bios: persisted.bios,
-            scripts: BTreeMap::new(),
             violations: Vec::new(),
             faults: Faults::default(),
             samples: persisted.samples,
@@ -227,7 +192,7 @@ impl Runtime {
 
     pub(crate) fn persisted(&self) -> Persisted {
         Persisted {
-            source: self.source.persisted_kind(),
+            source: PersistedSource::Scripted,
             seed: self.seed,
             epoch: self.epoch,
             clock: self.clock,
@@ -273,8 +238,7 @@ impl Runtime {
             self.log_mce(&id, pending, clock)?;
         }
         let kind = self.next_reset.take();
-        self.reasons
-            .insert(id, reset_reason(kind, self.source.supports_reset_reasons()));
+        self.reasons.insert(id, reset_reason(kind));
         Ok(())
     }
 
@@ -365,10 +329,6 @@ impl Runtime {
         self.next_reset = Some(kind);
     }
 
-    pub(crate) const fn next_reset_is_set(&self) -> bool {
-        self.next_reset.is_some()
-    }
-
     pub(crate) fn queue_mce(&mut self, pending: PendingMce) {
         self.queued.push(pending);
     }
@@ -405,27 +365,6 @@ impl Runtime {
         });
         Ok(())
     }
-
-    /// The machine check a draw `x` in `[0, 1)` names on `core`: a core-local bank with the model's
-    /// probability, else a shared one.
-    pub(crate) fn mce(local: f64, x: f64, core: CoreId, corrected: bool) -> PendingMce {
-        let (first, count, x) = if x < local {
-            (0, CORE_LOCAL_BANKS, x / local)
-        } else {
-            (
-                CORE_LOCAL_BANKS,
-                BANK_COUNT - CORE_LOCAL_BANKS,
-                (x - local) / (1.0 - local),
-            )
-        };
-        let bank = first + bank_offset(x, count);
-        PendingMce {
-            core,
-            bank: u16::from(bank),
-            bank_type: BANKS[usize::from(bank)],
-            corrected,
-        }
-    }
 }
 
 fn checked_wall_offset(
@@ -433,15 +372,6 @@ fn checked_wall_offset(
     by: SignedDuration,
 ) -> Result<SignedDuration, ArithmeticError> {
     offset.checked_add(by).ok_or(ArithmeticError::OffsetAdvance)
-}
-
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "x is in [0, 1], so the product is a small nonnegative whole number"
-)]
-fn bank_offset(x: f64, count: u8) -> u8 {
-    ((x * f64::from(count)) as u8).min(count - 1)
 }
 
 fn boot_id(seed: u64, number: u32) -> BootId {
@@ -457,15 +387,8 @@ fn boot_id(seed: u64, number: u32) -> BootId {
     ))
 }
 
-/// What a kernel of this age logs about the reset that preceded a boot.
-fn reset_reason(kind: Option<ResetKind>, supported: bool) -> ResetReason {
-    if !supported {
-        return ResetReason {
-            kind: None,
-            raw: Vec::new(),
-            supported: false,
-        };
-    }
+/// What the simulated kernel logs about the reset that preceded a boot.
+fn reset_reason(kind: Option<ResetKind>) -> ResetReason {
     let described = match kind {
         Some(ResetKind::Watchdog) => Some((1, "hardware watchdog timer expired")),
         Some(ResetKind::SyncFlood) => Some((
@@ -492,17 +415,9 @@ fn reset_reason(kind: Option<ResetKind>, supported: bool) -> ResetReason {
 
 #[cfg(test)]
 mod numeric_tests {
-    use super::{ArithmeticError, bank_offset, checked_wall_offset};
+    use super::{ArithmeticError, checked_wall_offset};
     use jiff::SignedDuration;
     use test_case::test_case;
-
-    #[test_case(0.0, 3, 0; "first shared bank")]
-    #[test_case(1.0, 3, 2; "last shared bank")]
-    #[test_case(0.0, 6, 0; "first core-local bank")]
-    #[test_case(1.0, 6, 5; "last core-local bank")]
-    fn bank_draws_stay_inside_the_catalogue(draw: f64, count: u8, expected: u8) {
-        assert_eq!(bank_offset(draw, count), expected);
-    }
 
     #[test_case(SignedDuration::ZERO, SignedDuration::ZERO, Some(SignedDuration::ZERO); "zero")]
     #[test_case(SignedDuration::MAX, SignedDuration::from_nanos(1), None; "positive overflow")]

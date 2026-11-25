@@ -45,7 +45,7 @@ use togi_machine::{
     ResetReason, Signal,
 };
 use togi_sim::faults::SmuOperation;
-use togi_sim::{MachineSource, Persisted, Simulator};
+use togi_sim::{Persisted, ScriptedMachine, Simulator};
 use togi_tuner::day::{Invocation, Pause};
 use togi_tuner::policy::{DayQuery, Params, Projection, State};
 
@@ -827,7 +827,7 @@ impl Snapshot {
     }
 
     /// A bench from `source` in this state, sharing nothing with the one it was taken of.
-    fn bench(&self, source: &MachineSource) -> Bench {
+    fn bench(&self, source: &ScriptedMachine) -> Bench {
         let mem = MemFs::new();
         for (path, bytes) in &self.files {
             match bytes {
@@ -840,7 +840,7 @@ impl Snapshot {
             }
         }
         Bench {
-            sim: Simulator::restore(source.clone(), self.machine.clone()).unwrap(),
+            sim: Simulator::restore(*source, self.machine.clone()).unwrap(),
             mem,
             config: Config::default(),
             defects: togi_defect::KNOWN_DEFECTS,
@@ -932,7 +932,7 @@ fn reference(bench: &Bench, steps: &[Step]) -> Vec<Played> {
 }
 
 /// The uninterrupted scenario and the first phase that commits a mapped unit edge.
-fn scenario() -> (MachineSource, Vec<Played>, usize) {
+fn scenario() -> (ScriptedMachine, Vec<Played>, usize) {
     let bench = bench();
     let played = reference(&bench, SCENARIO);
     assert!(
@@ -1218,7 +1218,7 @@ fn assert_crash_accounted(events: &[Event], after: usize, boot: &BootId) {
 
 /// Plays `played`'s phase from its start with the journal cut after its `after`th event and `fate` befalling the
 /// machine there, and checks that the journal left is resumable. Returns the journal at the phase's end.
-fn resume(played: &Played, source: &MachineSource, after: usize, fate: Fate) -> Vec<Event> {
+fn resume(played: &Played, source: &ScriptedMachine, after: usize, fate: Fate) -> Vec<Event> {
     let bench = played.before.bench(source);
     let (_, mut events) = play(&bench, played.phase, played.start, Some((after, fate)));
     if !matches!(fate, Fate::Killed) {
@@ -1234,7 +1234,7 @@ fn resume(played: &Played, source: &MachineSource, after: usize, fate: Fate) -> 
 }
 
 /// The same phase runner, losing power before or after the selected actual SMU access.
-fn resume_at_smu(played: &Played, source: &MachineSource, at: usize) -> Vec<Event> {
+fn resume_at_smu(played: &Played, source: &ScriptedMachine, at: usize) -> Vec<Event> {
     let bench = played.before.bench(source);
     let boot = bench.sim.seams().host.boot_id().unwrap();
     let sim = bench.sim.clone();
@@ -1279,7 +1279,7 @@ fn resume_at_smu(played: &Played, source: &MachineSource, at: usize) -> Vec<Even
 /// be compared to a run without that evidence. Between night trials, however, all policy decisions must agree.
 fn assert_unchanged_decisions(
     played: &Played,
-    source: &MachineSource,
+    source: &ScriptedMachine,
     events: &[Event],
     after: usize,
     boot: &BootId,
@@ -1379,7 +1379,7 @@ fn projection(events: &[Event]) -> Vec<String> {
 /// can change coverage diagnostics or a queue's next cell. No policy commitment is copied into the control.
 fn charged_kill_control(
     played: &Played,
-    source: &MachineSource,
+    source: &ScriptedMachine,
     after: usize,
     resumed: &[Event],
 ) -> Option<Vec<Event>> {

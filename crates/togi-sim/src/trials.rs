@@ -1,8 +1,6 @@
-//! Simulated trials: answers from a typed mechanics script or the fitted model's facts, scripts
-//! and draws. Both use the same trial, clock, reset and evidence machinery.
+//! Simulated trials: typed outcomes applied to virtual clocks, resets and kernel evidence.
 
 use rand::RngExt;
-use rand::rngs::StdRng;
 use std::io;
 use std::time::Duration;
 use togi_machine::{
@@ -11,14 +9,10 @@ use togi_machine::{
     TrialConditions, TrialFailure, TrialResult, TrialSpec, Trials, WorkloadId,
 };
 
-use crate::Model;
-use crate::hazard::{HazardSource, Load, SourceKind};
-use crate::random::{Domain, stream, text_part};
-use crate::replay::{Replay, ReplayOutcome};
+use crate::random::{Domain, regime_key, stream};
 use crate::runtime::{ArithmeticError, PendingMce, Runtime, Shared};
 use crate::samples::LastTrial;
-use crate::source::{MachineSource, TrialOutcome};
-use crate::vocab::regime_key;
+use crate::source::TrialOutcome;
 
 const BURST: Duration = Duration::from_millis(100);
 const BURST_EVERY: Duration = Duration::from_secs(2);
@@ -33,15 +27,6 @@ fn other(message: impl Into<String>) -> Error {
 )]
 fn confirmed() -> Stopped {
     Stopped::confirmed()
-}
-
-fn load_of(spec: &TrialSpec) -> Load<'_> {
-    Load {
-        regime: spec.regime,
-        workload: spec.workload.as_str(),
-        cores: spec.cores.iter().copied().collect(),
-        duration: spec.duration,
-    }
 }
 
 /// The controller pid a simulated trial reports: fixed, so the same seed journals the same
@@ -298,46 +283,7 @@ struct Outcome {
     persisted: io::Result<()>,
 }
 
-/// What a crash leaves behind as machine-check evidence.
-#[derive(Clone, Copy, Debug)]
-enum Evidence {
-    /// A per-core crash: an uncorrected MCE with the model's probability.
-    Core,
-    /// None: unloaded cores, the shared rail, CCD residuals, background and unnamed joints.
-    Nothing,
-    /// A joint's explicit `crash_mce_core`, whether or not that core is a member or loaded.
-    Named(CoreId),
-}
-
-/// The first failure a trial meets.
-struct Failure {
-    core: CoreId,
-    at: Duration,
-    /// Overrides the signal drawn for the failure, though that draw is still taken.
-    signal: Option<Signal>,
-    evidence: Evidence,
-    background: bool,
-    reset: Option<ResetKind>,
-    then_crash: bool,
-    replayed: bool,
-}
-
-impl Failure {
-    const fn new(core: CoreId, at: Duration) -> Self {
-        Self {
-            core,
-            at,
-            signal: None,
-            evidence: Evidence::Core,
-            background: false,
-            reset: None,
-            then_crash: false,
-            replayed: false,
-        }
-    }
-}
-
-struct PlannedFailure {
+struct TimedEffect {
     at: Duration,
     effect: Effect,
 }
@@ -349,7 +295,6 @@ enum Effect {
     },
     Corrected {
         mce: PendingMce,
-        ran: Duration,
     },
     Crash {
         reset: Option<ResetKind>,
@@ -361,33 +306,27 @@ enum Effect {
 
 enum CrashReport {
     Progress,
-    RecordedProgress,
     Signal(CoreId, Signal),
-    Uncorrected(CoreId, &'static str),
-    Quiet,
+    Uncorrected(CoreId),
 }
 
 impl CrashReport {
     fn report(self, spec: &TrialSpec, result: &TrialResult, events: &mut Vec<Event>) {
         match self {
             Self::Progress => {}
-            Self::RecordedProgress => events.push(Event::Progress(
-                "simulated replayed crash at recorded exposure".to_owned(),
-            )),
             Self::Signal(core, signal) => events.push(Event::Signal(
                 core,
                 signal,
                 format!("simulated {} on core {core}", signal.as_str()),
             )),
-            Self::Uncorrected(core, detail) => {
+            Self::Uncorrected(core) => {
                 events.push(Event::Signal(
                     core,
                     Signal::UncorrectedMce,
-                    detail.to_owned(),
+                    "scripted uncorrected machine check".to_owned(),
                 ));
                 return;
             }
-            Self::Quiet => return,
         }
         progress(spec, result, events);
     }
@@ -410,66 +349,26 @@ const fn condition_index(condition: Condition) -> u64 {
     }
 }
 
-fn exp1(rng: &mut StdRng) -> f64 {
-    -(-rng.random::<f64>()).ln_1p()
-}
-
-/// The words of a draw key: five, or six for an unloaded core. The length is part of the stream, so
-/// only the active words are read.
-struct DrawKey {
-    words: [u64; 6],
-    len: usize,
-}
-
-impl DrawKey {
-    fn words(&self) -> &[u64] {
-        &self.words[..self.len]
-    }
-}
-
 impl Runtime {
-    /// The key of every draw about `core` in a trial. It names the core, regime, condition, the core's
-    /// applied offset and the trial index, but not the trial ID or the other cores' offsets, so a retry
-    /// of the same trial reproduces its class outcome. An unloaded core's draws also name the loaded set,
-    /// as a set, so their order never matters.
-    fn key(&self, spec: &TrialSpec, core: CoreId) -> DrawKey {
-        let mut key = DrawKey {
-            words: [
-                u64::from(core.get()),
-                regime_key(spec.regime),
-                condition_index(spec.condition),
-                self.regs[core.index()].get().cast_unsigned(),
-                spec.index as u64,
-                0,
-            ],
-            len: 5,
-        };
-        let loaded: CoreSet = spec.cores.iter().copied().collect();
-        if !loaded.contains(core) {
-            key.words[5] = loaded_mask(loaded);
-            key.len = 6;
-        }
-        key
-    }
-
     fn run(&mut self, spec: &TrialSpec, escape: bool) -> Result<Outcome, Error> {
-        let load = load_of(spec);
-        let planned = match &self.source {
-            MachineSource::Fitted { model, replay } => self
-                .plan_fitted(model, replay.as_deref(), spec, &load)
-                .map_err(|error| Error::Other(Box::new(error)))?
-                .map(|failure| self.resolve_fitted(model, spec, &failure)),
-            MachineSource::Scripted(script) => {
-                self.resolve_scripted(spec, (script.outcome)(spec, &self.regs))?
-            }
-        };
+        let loaded: CoreSet = spec.cores.iter().copied().collect();
+        let effect = self.resolve_scripted(spec, (self.source.outcome)(spec, &self.regs))?;
         let start = self.clock();
         let mut result = TrialResult {
             ran: spec.duration,
             ..TrialResult::default()
         };
-        if let Some(first) = load.cores.first() {
-            let mut rng = stream(self.seed, Domain::Tctl, self.key(spec, first).words());
+        // Use the lowest loaded core, independent of placement order. The Tctl stream takes
+        // these five words, in this order, even when the trial ends in a reset.
+        if let Some(first) = loaded.first() {
+            let key = [
+                u64::from(first.get()),
+                regime_key(spec.regime),
+                condition_index(spec.condition),
+                self.regs[first.index()].get().cast_unsigned(),
+                spec.index as u64,
+            ];
+            let mut rng = stream(self.seed, Domain::Tctl, &key);
             result.tctl_max_c = Some(62 + rng.random_range(0..15));
             if escape {
                 result.escaped = CpuId::try_from(first.index() + 2 * self.regs.len())
@@ -479,8 +378,8 @@ impl Runtime {
         }
         let mut events = Vec::new();
         let mut stalled = None;
-        let finished = self.conclude(spec, planned, start, result, &mut events, &mut stalled)?;
-        let persisted = self.record_samples(spec, &load, start, stalled);
+        let finished = self.conclude(spec, effect, start, result, &mut events, &mut stalled)?;
+        let persisted = self.record_samples(spec, loaded, start, stalled);
         Ok(Outcome {
             result: finished,
             events,
@@ -491,13 +390,13 @@ impl Runtime {
     fn conclude(
         &mut self,
         spec: &TrialSpec,
-        planned: Option<PlannedFailure>,
+        effect: Option<TimedEffect>,
         start: Duration,
         mut result: TrialResult,
         events: &mut Vec<Event>,
         stalled: &mut Option<CoreId>,
     ) -> Result<Result<TrialResult, TrialResult>, ArithmeticError> {
-        let Some(failure) = planned else {
+        let Some(failure) = effect else {
             self.advance(spec.duration)?;
             count(spec, &mut result);
             progress(spec, &result, events);
@@ -526,12 +425,11 @@ impl Runtime {
                 progress(spec, &result, events);
                 Ok(result)
             }
-            Effect::Corrected { mce, ran } => {
+            Effect::Corrected { mce } => {
                 let boot = self.boot_id().clone();
-                result.ran = ran;
                 self.set_clock(
                     start
-                        .checked_add(ran)
+                        .checked_add(spec.duration)
                         .ok_or(ArithmeticError::ClockAdvance)?,
                 )?;
                 self.log_mce(&boot, mce, at)?;
@@ -566,7 +464,7 @@ impl Runtime {
         &self,
         spec: &TrialSpec,
         outcome: TrialOutcome,
-    ) -> Result<Option<PlannedFailure>, Error> {
+    ) -> Result<Option<TimedEffect>, Error> {
         let (at, core, effect) = match outcome {
             TrialOutcome::Pass => return Ok(None),
             TrialOutcome::ComputationError { core, at } => (
@@ -613,7 +511,6 @@ impl Runtime {
                         bank_type: mce.bank_type,
                         corrected: true,
                     },
-                    ran: spec.duration,
                 },
             ),
             TrialOutcome::Reset { stalled, kind, at } => (
@@ -658,7 +555,7 @@ impl Runtime {
                     reset: Some(ResetKind::SyncFlood),
                     stalled: None,
                     mce: Some(load_store_mce(core)),
-                    report: CrashReport::Uncorrected(core, "scripted uncorrected machine check"),
+                    report: CrashReport::Uncorrected(core),
                 },
             ),
         };
@@ -671,101 +568,23 @@ impl Runtime {
                 spec.id
             )));
         }
-        Ok(Some(PlannedFailure { at, effect }))
-    }
-
-    fn resolve_fitted(&self, model: &Model, spec: &TrialSpec, failure: &Failure) -> PlannedFailure {
-        let core = failure.core;
-        let at = failure.at;
-        let mut rng = stream(self.seed, Domain::Signal, self.key(spec, core).words());
-        let drawn = model.signal_mix(spec.regime).pick(rng.random());
-        let signal = failure.signal.unwrap_or(drawn);
-        if failure.then_crash {
-            return PlannedFailure {
-                at,
-                effect: Effect::Crash {
-                    reset: failure.reset,
-                    stalled: Some(core),
-                    mce: None,
-                    report: if signal == Signal::Crash {
-                        CrashReport::Progress
-                    } else {
-                        CrashReport::Signal(core, signal)
-                    },
-                },
-            };
-        }
-        let local = model.params().core_local_bank;
-        let effect = match signal {
-            Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
-                Effect::Backend { core, signal }
-            }
-            Signal::CorrectedMce => Effect::Corrected {
-                mce: Self::mce(local, rng.random(), core, true),
-                ran: if failure.replayed { at } else { spec.duration },
-            },
-            Signal::Crash => {
-                let reset = if failure.replayed {
-                    Some(ResetKind::Watchdog)
-                } else {
-                    failure.reset.or_else(|| {
-                        (!self.next_reset_is_set()).then(|| model.reset_mix().pick(rng.random()))
-                    })
-                };
-                let mce = if failure.replayed {
-                    None
-                } else {
-                    match failure.evidence {
-                        Evidence::Named(named) => Some(load_store_mce(named)),
-                        Evidence::Nothing => None,
-                        Evidence::Core => (rng.random::<f64>() < model.params().crash_mce)
-                            .then(|| Self::mce(local, rng.random(), core, false)),
-                    }
-                };
-                Effect::Crash {
-                    reset,
-                    stalled: (!failure.background).then_some(core),
-                    mce,
-                    report: if failure.replayed {
-                        CrashReport::RecordedProgress
-                    } else {
-                        CrashReport::Progress
-                    },
-                }
-            }
-            Signal::UncorrectedMce => Effect::Crash {
-                reset: Some(ResetKind::SyncFlood),
-                stalled: None,
-                mce: Some(Self::mce(local, rng.random(), core, false)),
-                report: if failure.replayed {
-                    CrashReport::Uncorrected(core, "simulated replayed uncorrected machine check")
-                } else {
-                    CrashReport::Quiet
-                },
-            },
-        };
-        PlannedFailure { at, effect }
+        Ok(Some(TimedEffect { at, effect }))
     }
 
     fn record_samples(
         &mut self,
         spec: &TrialSpec,
-        load: &Load<'_>,
+        loaded: CoreSet,
         start: Duration,
         stalled: Option<CoreId>,
     ) -> io::Result<()> {
         let snapshot = LastTrial {
             id: Some(spec.id.clone()),
-            cores: load.cores,
+            cores: loaded,
             threads: spec.workload.workload().threads,
             ran: self.clock().saturating_sub(start),
             stalled,
-            voltage: match &self.source {
-                MachineSource::Fitted { model, .. } => {
-                    model.voltage_state(&self.regs, load).ok().flatten()
-                }
-                MachineSource::Scripted(script) => script.voltage_state(load.cores),
-            },
+            voltage: self.source.voltage_state(),
         };
         if let Some(storage) = &self.sample_storage {
             self.samples = LastTrial::default();
@@ -779,207 +598,12 @@ impl Runtime {
             Ok(())
         }
     }
-
-    /// Answers a trial from a matching recorded fact, else its script, else the model's draws. `None`
-    /// is a pass.
-    fn plan_fitted(
-        &self,
-        model: &Model,
-        replay: Option<&Replay>,
-        spec: &TrialSpec,
-        load: &Load<'_>,
-    ) -> Result<Option<Failure>, crate::ShapeError> {
-        if let Some(replay) = replay {
-            let mut rng = stream(
-                self.seed,
-                Domain::Replay,
-                &[
-                    spec.index as u64,
-                    regime_key(spec.regime),
-                    saturating_key_nanos(spec.duration),
-                    text_part(spec.workload.as_str()),
-                ],
-            );
-            if let Some(fact) = replay.answer(&self.bios, load, &self.regs, &mut rng) {
-                return Ok(match &fact.outcome {
-                    ReplayOutcome::Pass => None,
-                    ReplayOutcome::Failure { signal, exposure } => {
-                        fact.cores.first().map(|core| Failure {
-                            signal: Some(*signal),
-                            evidence: Evidence::Nothing,
-                            replayed: true,
-                            ..Failure::new(core, *exposure)
-                        })
-                    }
-                });
-            }
-        }
-        if let Some(script) = self
-            .scripts
-            .get(&spec.id)
-            .or_else(|| model.script(&spec.id))
-        {
-            return Ok(script.signal.map(|signal| Failure {
-                signal: Some(signal),
-                reset: script.reset,
-                then_crash: script.then_crash,
-                ..Failure::new(
-                    script.core,
-                    Duration::from_secs_f64(script.at_s.min(spec.duration.as_secs_f64())),
-                )
-            }));
-        }
-        self.drawn_failure(model, spec, load)
-    }
-
-    /// Draws every source of failure the trial is exposed to and keeps the earliest strictly before the
-    /// intended end. Sources come in the fixed order of `visit_sources`, so a tie goes to the earlier one.
-    fn drawn_failure(
-        &self,
-        model: &Model,
-        spec: &TrialSpec,
-        load: &Load<'_>,
-    ) -> Result<Option<Failure>, crate::ShapeError> {
-        let duration = spec.duration.as_secs_f64();
-        let onset = model.params().onset;
-        let mut best: Option<(f64, Failure)> = None;
-        model.visit_sources(&self.regs, load, |source| {
-            let (core, mut failure) = self.attribute(model, &source, spec, load);
-            let mut rng = stream(self.seed, source.domain(), self.key(spec, core).words());
-            let seconds = onset.failure_time(source.after_s, source.rate, exp1(&mut rng));
-            if seconds < duration && best.as_ref().is_none_or(|(known, _)| seconds < *known) {
-                failure.at = Duration::from_secs_f64(seconds);
-                best = Some((seconds, failure));
-            }
-        })?;
-        Ok(best.map(|(_, failure)| failure))
-    }
-
-    /// The core a source's failure is attributed to, and what the failure looks like. The attribution
-    /// does not depend on the draw, so only winning sources keep it.
-    fn attribute(
-        &self,
-        model: &Model,
-        source: &HazardSource,
-        spec: &TrialSpec,
-        load: &Load<'_>,
-    ) -> (CoreId, Failure) {
-        let unattributed = if model.has_regime_signals() {
-            None
-        } else {
-            Some(Signal::Crash)
-        };
-        let lowest = || load.cores.first();
-        let failure = |core: CoreId| Failure::new(core, Duration::ZERO);
-        match source.kind {
-            SourceKind::Core(core) => (core, failure(core)),
-            SourceKind::Idle(core) => (
-                core,
-                Failure {
-                    signal: Some(Signal::Crash),
-                    evidence: Evidence::Nothing,
-                    ..failure(core)
-                },
-            ),
-            SourceKind::Voltage(core) => (
-                core,
-                Failure {
-                    signal: Some(self.voltage_signal(model, spec, core)),
-                    evidence: Evidence::Nothing,
-                    ..failure(core)
-                },
-            ),
-            SourceKind::Ccd(ccd) => {
-                let core = load
-                    .cores
-                    .iter()
-                    .find(|&core| model.ccd_of(core) == usize::from(ccd))
-                    .or_else(lowest)
-                    .unwrap_or(CoreId::FIRST);
-                (
-                    core,
-                    Failure {
-                        signal: unattributed,
-                        evidence: Evidence::Nothing,
-                        ..failure(core)
-                    },
-                )
-            }
-            SourceKind::Joint(index) => {
-                let joint = &model.joints()[index];
-                let member = joint
-                    .members
-                    .iter()
-                    .map(|member| member.core)
-                    .find(|&core| load.cores.contains(core));
-                let core = member.unwrap_or(joint.members[0].core);
-                (
-                    core,
-                    Failure {
-                        signal: if member.is_none() {
-                            Some(Signal::Crash)
-                        } else {
-                            joint.signal.or(unattributed)
-                        },
-                        evidence: joint
-                            .crash_mce_core
-                            .map_or(Evidence::Nothing, Evidence::Named),
-                        ..failure(core)
-                    },
-                )
-            }
-            SourceKind::Background => {
-                let core = lowest().unwrap_or(CoreId::FIRST);
-                (
-                    core,
-                    Failure {
-                        signal: Some(Signal::Crash),
-                        evidence: Evidence::Nothing,
-                        background: true,
-                        ..failure(core)
-                    },
-                )
-            }
-        }
-    }
-
-    /// A rail failure is a computation error with the weight of that signal among the core's mix, else a
-    /// crash: nothing else is attributed to a core by the rail.
-    fn voltage_signal(&self, model: &Model, spec: &TrialSpec, core: CoreId) -> Signal {
-        let mix = model
-            .voltage()
-            .and_then(|voltage| {
-                voltage.workload(spec.workload.as_str()).cores[core.index()]
-                    .signals
-                    .as_ref()
-            })
-            .unwrap_or_else(|| model.signal_mix(spec.regime));
-        let mut rng = stream(
-            self.seed,
-            Domain::VoltageSignal,
-            self.key(spec, core).words(),
-        );
-        if rng.random::<f64>() < mix.probability(Signal::ComputationError) {
-            Signal::ComputationError
-        } else {
-            Signal::Crash
-        }
-    }
-}
-
-fn loaded_mask(loaded: CoreSet) -> u64 {
-    loaded.iter().fold(0, |mask, core| mask | 1 << core.get())
 }
 
 /// Trial names that do not parse as a u32, including larger numbers, get synthetic PID 1000.
 /// Parsed names add that reserved base and saturate at the recorded PID field's maximum.
 fn saturating_trial_pid(id: &str) -> u32 {
     1000_u32.saturating_add(id.parse().unwrap_or(0))
-}
-
-/// Synthetic replay keys retain the largest nanosecond word for longer durations.
-fn saturating_key_nanos(duration: Duration) -> u64 {
-    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
 /// Synthetic instruction counters saturate at their recorded field's range.
@@ -1026,17 +650,8 @@ fn progress(spec: &TrialSpec, result: &TrialResult, events: &mut Vec<Event>) {
 
 #[cfg(test)]
 mod numeric_tests {
-    use super::{saturating_key_nanos, saturating_trial_count, saturating_trial_pid};
-    use std::time::Duration;
+    use super::{saturating_trial_count, saturating_trial_pid};
     use test_case::test_case;
-
-    #[test_case(Duration::ZERO, 0; "zero")]
-    #[test_case(Duration::from_nanos(u64::MAX), u64::MAX; "largest exact key")]
-    #[test_case(Duration::from_nanos(u64::MAX) + Duration::from_nanos(1), u64::MAX; "first saturated key")]
-    #[test_case(Duration::MAX, u64::MAX; "largest duration")]
-    fn replay_key_nanoseconds_saturate(at: Duration, expected: u64) {
-        assert_eq!(saturating_key_nanos(at), expected);
-    }
 
     #[test_case(0, 0; "zero")]
     #[test_case(usize::from(u16::MAX), u32::from(u16::MAX); "exact count")]

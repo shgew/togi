@@ -1,48 +1,29 @@
 //! A deterministic simulated Zen 5 machine.
 //!
-//! The pure model: the machine-file document ([`definition`]), the validated [`Model`] that
-//! resolves it, the hazard model ([`hazard`], [`voltage`]), seeded randomness ([`random`]), machine files
-//! on disk ([`mod@file`]) and replay facts ([`replay`]).
-//!
-//! The runtime: a [`Simulator`] owns the virtual clocks, boots, registers, kernel logs and armed
-//! [`faults`] of one machine, and hands out its seams as a [`togi_machine::Machine`].
-//! It can also answer from a [`ScriptedMachine`] for mechanics tests, without consulting the model.
+//! A [`Simulator`] owns virtual clocks, boots, registers, kernel logs and armed [`faults`].
+//! It exposes the [`togi_machine::Machine`] seams and takes its trial outcomes from a
+//! [`ScriptedMachine`].
 
 mod adapters;
 mod content;
 mod cores;
-pub mod day_night;
-pub mod definition;
-mod error;
 pub mod faults;
-pub mod file;
-pub mod hazard;
-pub mod model;
 mod persisted;
-pub mod random;
-pub mod replay;
+mod random;
 mod runtime;
 mod samples;
 mod simulator;
 mod source;
 mod trials;
-mod vocab;
-pub mod voltage;
 
 pub use content::content_id;
-pub use definition::MachineDefinition;
-pub use error::{InvalidMachine, Problem, ShapeError};
-pub use hazard::{HazardSource, Load, SourceKind, saturating_count, shared_voltage_applies};
-pub use model::Model;
 pub use persisted::{Persisted, RestoreError};
-pub use runtime::{ArithmeticError, EPOCH, History, REBOOT_TIME, RunSettings};
+pub use runtime::{ArithmeticError, EPOCH, History, REBOOT_TIME};
 pub use samples::SampleStorage;
-pub use simulator::{ScriptError, Simulator};
+pub use simulator::Simulator;
 pub use source::{
-    MachineSource, ReportedFailure, ScriptedMachine, ScriptedMce, ScriptedTopology,
-    ScriptedVoltageSamples, TrialOutcome,
+    DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ, DEFAULT_MICROCODE,
+    ReportedFailure, ScriptedMachine, ScriptedMce, ScriptedTopology, ScriptedVoltageSamples,
+    TrialOutcome,
 };
 pub use trials::CONTROLLER_PID;
-pub use vocab::{
-    RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, limit_index, modeled_as, regime_index,
-};

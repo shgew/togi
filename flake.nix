@@ -43,21 +43,6 @@
           # Each derivation reads the narrowest source its build needs; see nix/sources.nix.
           cargoSources = import ./nix/sources.nix { inherit lib; };
           allCrates = cargoSources.members;
-          # The test fixtures outside `crates/` that each crate's tests read in place.
-          crateFixtures =
-            let
-              bench = ./tools/bench;
-            in
-            {
-              togi-sim = [ (bench + "/machines") ];
-              togi-tool-sim = [
-                (bench + "/machines")
-                (bench + "/suite.json")
-              ];
-              togi-tool-trialfacts = [ (bench + "/facts") ];
-            };
-          # nextest's profiles, and the fixtures the named crates' tests read.
-          testFixtures = crates: [ ./.config ] ++ lib.concatMap (crate: crateFixtures.${crate} or [ ]) crates;
           # Product tests include the shipped closure and the simulator/dashboard support they use.
           productCrates = cargoSources.closureWithDev [
             "togi"
@@ -69,7 +54,6 @@
             "togi-statecopy"
             "togi-tool-audit"
             "togi-tool-bench"
-            "togi-tool-trialfacts"
             "togi-tool-copy-state"
             "togi-tool-replay"
             "togi-tool-sim"
@@ -110,13 +94,16 @@
             code = cargoSources.closureWithDev [ "togi" ];
             files = [ ./crates/togi/tests/vm_recovery.rs ];
           };
-          # Documentation tests need crate-local fixtures, not external benchmark inputs.
+          # Documentation tests need the crate-local fixtures.
           cratesSource = cargoSources.source { full = allCrates; };
           # clippy compiles every crate's tests, which include some fixtures at compile time, and reads the lint
           # configuration; no other derivation does.
           testSource = cargoSources.source {
             full = allCrates;
-            files = testFixtures allCrates ++ [ ./clippy.toml ];
+            files = [
+              ./.config
+              ./clippy.toml
+            ];
           };
           nextestChecks =
             assert validConcerns;
@@ -130,7 +117,7 @@
                   (cargoSources.source {
                     code = cargoSources.closureWithDev crates;
                     full = crates;
-                    files = testFixtures crates;
+                    files = [ ./.config ];
                   })
                   {
                     pname = "togi-${name}";
@@ -189,7 +176,7 @@
                   (cargoSources.source {
                     code = cargoSources.closureWithDev recoveryCrates;
                     full = recoveryCrates;
-                    files = testFixtures recoveryCrates;
+                    files = [ ./.config ];
                   })
                   {
                     pname = "togi-recovery-${toString partition}";

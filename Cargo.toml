@@ -51,7 +51,6 @@ togi-smu = { path = "crates/togi-smu" }
 togi-statecopy = { path = "crates/togi-statecopy" }
 togi-tool-audit = { path = "crates/togi-tool-audit" }
 togi-tool-sim = { path = "crates/togi-tool-sim" }
-togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts" }
 togi-trial = { path = "crates/togi-trial" }
 togi-trialfiles = { path = "crates/togi-trialfiles" }
 togi-tuner = { path = "crates/togi-tuner" }
@@ -125,7 +124,6 @@ togi-tool-bench = { opt-level = 0 }
 togi-tool-replay = { opt-level = 0 }
 togi-tool-sim = { opt-level = 0 }
 togi-tool-stats = { opt-level = 0 }
-togi-tool-trialfacts = { opt-level = 0 }
 togi-trial = { opt-level = 0 }
 togi-ycruncher = { opt-level = 0 }
 

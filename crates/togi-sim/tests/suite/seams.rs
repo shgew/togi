@@ -3,55 +3,16 @@
 use jiff::SignedDuration;
 use std::time::Duration;
 use togi_machine::{
-    BankType, BootId, CancellationToken, CcdId, CoreInfo, CoreRank, CpuId, Error, KernelCursor,
-    Partial, Regime, ResetKind, TargetOffset,
+    BankType, BootId, CancellationToken, CcdId, CoreInfo, CpuId, Error, KernelCursor, Partial,
+    Regime, ResetKind, TargetOffset,
 };
 use togi_sim::{History, ScriptedMachine, ScriptedMce, ScriptedTopology, TrialOutcome};
 
 use test_case::test_case;
 
-use crate::common::{Rig, basic, core, machine, offset};
+use crate::common::{Rig, basic, core, offset};
 
 const MINUTE: Duration = Duration::from_secs(60);
-
-fn two_cores() -> togi_sim::MachineDefinition {
-    machine(2, vec![])
-}
-
-#[test]
-fn ranking_is_unavailable_unless_the_machine_declares_one() {
-    let mut rig = Rig::new(&two_cores(), 1);
-    let Err(Partial { value, error }) = rig.machine.host.ranking() else {
-        panic!("a ranking");
-    };
-    assert!(value.is_empty() && matches!(error, Error::Other(_)));
-
-    let mut definition = two_cores();
-    definition.ranking = Some(vec![11, 22]);
-    let mut rig = Rig::new(&definition, 1);
-    let ranking = rig.machine.host.ranking().expect("a ranking");
-    assert_eq!(
-        ranking,
-        [
-            CoreRank {
-                core: core(0),
-                value: 11
-            },
-            CoreRank {
-                core: core(1),
-                value: 22
-            }
-        ]
-    );
-    rig.sim.crash();
-    assert!(matches!(
-        rig.machine.host.ranking(),
-        Err(Partial {
-            error: Error::Crashed,
-            ..
-        })
-    ));
-}
 
 #[test]
 fn write_faults_start_counting_when_armed() {
@@ -116,24 +77,6 @@ fn a_missing_backend_has_no_simulated_content() {
         rig.machine.trials.content(mprime),
         Err(Error::BackendMissing)
     ));
-}
-
-#[test_case(ResetKind::PowerLoss; "power loss")]
-#[test_case(ResetKind::PowerButton; "power button")]
-#[test_case(ResetKind::ThermalTrip; "thermal trip")]
-fn an_old_kernel_reports_no_reset_reason_whatever_the_reset(kind: ResetKind) {
-    let mut definition = two_cores();
-    definition.old_kernel = true;
-    let mut rig = Rig::new(&definition, 1);
-    rig.sim.next_reset(kind);
-    rig.sim.crash();
-    rig.sim.reboot().expect("a representable reboot");
-    let boot = rig.boot();
-    let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
-    assert!(
-        reason.kind.is_none() && !reason.supported && reason.raw.is_empty(),
-        "{reason:?}"
-    );
 }
 
 #[test_case("cpu"; "cpu")]
