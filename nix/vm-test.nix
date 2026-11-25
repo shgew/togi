@@ -402,6 +402,17 @@ let
         assert "host lock" not in output, output
         assert stat(lock, "%U:%G:%a") == "root:root:600"
         assert stat(lock, "%h") == "1"
+
+        # A foreign entry refuses ordinary access but no longer stops the installed hook
+        # before it reaches hardware checks. This VM still has no supported SMU to zero.
+        machine.succeed(f"chown unrelated {lock}")
+        refused_identity = stat(lock, "%d:%i:%u:%g:%a")
+        output = exits("togi emergency-stop", 1)
+        assert "is owned by another user; attempting zero-only recovery without the lock" in output, output
+        assert "offsets unchanged" in output, output
+        assert "every core read back 0" not in output, output
+        assert stat(lock, "%d:%i:%u:%g:%a") == refused_identity
+        machine.succeed(f"chown root {lock}")
       '';
     };
 

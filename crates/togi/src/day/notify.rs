@@ -568,6 +568,16 @@ mod tests {
             panic!("notify does not open the machine")
         }
 
+        fn recover_without_exclusion(
+            &self,
+            _: &crate::emergency_stop::Authority,
+            _: &togi_hostlock::RefusedEntry,
+            _: &Path,
+            _: &mut dyn FnMut(&str),
+        ) -> Result<togi_hardware::emergency::Recovery, togi_hardware::emergency::Failure> {
+            panic!("notify does not recover offsets")
+        }
+
         fn day_request(&self, request: &Request) -> Result<Reply, SocketError> {
             self.requests.borrow_mut().push(match request {
                 Request::Questions => Seen::Questions,

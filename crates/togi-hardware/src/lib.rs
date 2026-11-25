@@ -7,6 +7,7 @@ mod checks;
 pub mod day;
 mod day_diagnose;
 mod diagnose;
+pub mod emergency;
 mod error;
 mod files;
 mod grub;

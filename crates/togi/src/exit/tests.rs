@@ -9,6 +9,7 @@ use super::Exit;
 #[test_case(Exit::Error, 1 ; "error")]
 #[test_case(Exit::Usage, 2 ; "usage")]
 #[test_case(Exit::Locked, 3 ; "locked")]
+#[test_case(Exit::ZeroedWithoutExclusion, 4 ; "zeroed without exclusion")]
 #[test_case(Exit::FailureAtZero, 10 ; "failure at zero")]
 #[test_case(Exit::Smu, 11 ; "smu")]
 #[test_case(Exit::NoEvidence, 12 ; "no evidence")]

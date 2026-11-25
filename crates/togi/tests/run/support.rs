@@ -530,6 +530,16 @@ impl System for Fake {
         ))
     }
 
+    fn recover_without_exclusion(
+        &self,
+        _: &togi_cli::emergency_stop::Authority,
+        _: &togi_hostlock::RefusedEntry,
+        _: &Path,
+        _: &mut dyn FnMut(&str),
+    ) -> Result<togi_hardware::emergency::Recovery, togi_hardware::emergency::Failure> {
+        panic!("run cannot recover offsets without the host lock")
+    }
+
     fn interactive(&self) -> bool {
         false
     }

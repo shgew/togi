@@ -710,6 +710,26 @@ mod vm_recovery {
     #[derive(Default)]
     struct VmSystem(Real);
 
+    impl VmSystem {
+        fn machine(state_dir: &Path) -> Result<Machine<'static>, HardwareError> {
+            let runner = Runner::new(Options {
+                dir: state_dir.join("trials"),
+                backends: Backends::new().with(Arc::new(Sleeper)),
+                topology: topology(),
+                identity: Some(BackendIdentity::lookup(ACCOUNT).unwrap()),
+                pm_table: None,
+            })
+            .map_err(HardwareError::TrialRunner)?;
+            Ok(Machine {
+                clock: Box::new(VmClock),
+                smu: Box::new(FileSmu),
+                host: Box::new(VmHost),
+                trials: Box::new(VmTrials(runner)),
+                kernel: Box::new(VmKernel),
+            })
+        }
+    }
+
     impl System for VmSystem {
         fn check_platform(&self) -> Result<(), HardwareError> {
             self.0.check_platform()
@@ -813,21 +833,22 @@ mod vm_recovery {
             state_dir: &Path,
             _: &'lock HostLock,
         ) -> Result<Machine<'lock>, HardwareError> {
-            let runner = Runner::new(Options {
-                dir: state_dir.join("trials"),
-                backends: Backends::new().with(Arc::new(Sleeper)),
-                topology: topology(),
-                identity: Some(BackendIdentity::lookup(ACCOUNT).unwrap()),
-                pm_table: None,
-            })
-            .map_err(HardwareError::TrialRunner)?;
-            Ok(Machine {
-                clock: Box::new(VmClock),
-                smu: Box::new(FileSmu),
-                host: Box::new(VmHost),
-                trials: Box::new(VmTrials(runner)),
-                kernel: Box::new(VmKernel),
-            })
+            Self::machine(state_dir)
+        }
+
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the VM fake stands in for the zero-only recovery on its simulated machine"
+        )]
+        fn recover_without_exclusion(
+            &self,
+            _: &togi_cli::emergency_stop::Authority,
+            refused: &togi_hostlock::RefusedEntry,
+            state_dir: &Path,
+            swept: &mut dyn FnMut(&str),
+        ) -> Result<togi_hardware::emergency::Recovery, togi_hardware::emergency::Failure> {
+            assert_eq!(refused.path(), self.host_lock().0);
+            togi_hardware::emergency::stop_locked(&mut Self::machine(state_dir)?, swept)
         }
 
         fn day_observer<'lock>(

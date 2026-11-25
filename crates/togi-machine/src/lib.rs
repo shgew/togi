@@ -7,6 +7,7 @@ mod content;
 mod controller;
 mod core_set;
 mod cpufreq;
+pub mod emergency;
 mod error;
 mod evidence;
 mod ids;
@@ -31,6 +32,7 @@ pub use cpufreq::{
     CpuFrequency, FrequencyAction, FrequencyDiscarded, FrequencyEvent, FrequencyIntent,
     FrequencyJournal, FrequencyPolicy, FrequencyPolicyId, FrequencyReadback,
 };
+pub use emergency::{Readback, Zeroed};
 pub use error::{Error, Partial, error_chain};
 pub use evidence::{
     EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount, SleepMode,

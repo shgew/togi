@@ -35,7 +35,7 @@ impl Privilege {
         matches!(self, Self::Root)
     }
 
-    fn require(self, operation: &'static str) -> Result<(), Error> {
+    pub(crate) fn require(self, operation: &'static str) -> Result<(), Error> {
         match self {
             Self::Root => Ok(()),
             Self::User(uid) => Err(Error::NeedsRoot { operation, uid }),

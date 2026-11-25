@@ -22,8 +22,9 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use rustix::time::{ClockId, clock_gettime};
 use togi_config::Config;
+use togi_hardware::emergency::{Failure as EmergencyFailure, Recovery, UnexcludedStop};
 use togi_hardware::{Diagnosis, Grub, RebootError, StopError};
-use togi_hostlock::{HostLock, Policy};
+use togi_hostlock::{HostLock, Policy, RefusedEntry};
 use togi_journal::fs::Fs;
 use togi_journal::{Build, DirError, FileError, LockError, Recording, StateDir};
 use togi_machine::{BiosContext, BootId, CancellationToken, Clock, Error, Machine};
@@ -31,6 +32,8 @@ use togi_render::OutputFacts;
 use togi_tuningboot::{Bootloader, RETRY_MARKER};
 
 use rustix::termios::{QueueSelector, tcflush};
+
+use crate::emergency_stop::Authority;
 
 /// What a command needs from the host.
 pub trait System {
@@ -190,6 +193,15 @@ pub trait System {
         state_dir: &Path,
         lock: &'lock HostLock,
     ) -> Result<Machine<'lock>, togi_hardware::Error>;
+
+    /// Zero-only abnormal-exit recovery when the installed host lock's final entry was refused.
+    fn recover_without_exclusion(
+        &self,
+        authority: &Authority,
+        refused: &RefusedEntry,
+        state_dir: &Path,
+        swept: &mut dyn FnMut(&str),
+    ) -> Result<Recovery, EmergencyFailure>;
 
     /// Opens daily hardware and observation under the held host lock.
     fn day_observer<'lock>(
@@ -374,6 +386,20 @@ impl System for Real {
         lock: &'lock HostLock,
     ) -> Result<Machine<'lock>, togi_hardware::Error> {
         togi_hardware::open(config, state_dir, lock)
+    }
+
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "only emergency-stop passes the installed host lock's refusal to zero-only recovery"
+    )]
+    fn recover_without_exclusion(
+        &self,
+        _authority: &Authority,
+        refused: &RefusedEntry,
+        state_dir: &Path,
+        swept: &mut dyn FnMut(&str),
+    ) -> Result<Recovery, EmergencyFailure> {
+        UnexcludedStop::open(refused, state_dir)?.recover(swept)
     }
 
     fn day_observer<'lock>(

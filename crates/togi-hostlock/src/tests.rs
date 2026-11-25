@@ -368,16 +368,11 @@ fn real_fs_host_policy_refuses_a_nonroot_owner() {
 
     drop(acquire(&path).unwrap());
     let refused = HostLock::acquire(&path, Policy::Host).unwrap_err();
-    assert!(
-        matches!(
-            refused,
-            Error::UnsafeLock {
-                problem: LockProblem::ForeignOwner,
-                ..
-            }
-        ),
-        "{refused}"
-    );
+    let Error::RefusedEntry(refused) = refused else {
+        panic!("unexpected {refused}");
+    };
+    assert_eq!(refused.path(), path);
+    assert_eq!(refused.problem(), LockProblem::ForeignOwner);
 }
 
 #[test]
