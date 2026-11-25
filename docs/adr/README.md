@@ -40,10 +40,10 @@ Historical vocabulary is translated by [0034](0034-one-vocabulary-from-screen-to
 - [0007](0007-suspect-backoffs.md) Unattributed failures back off as suspects; depth is regained only on request — superseded by [0011](0011-blame-by-load-and-automatic-regain.md).
 - [0010](0010-development-programs-in-tools.md) Development programs live in tools/ — historical: [Development, Crates and toolchain](../development.md#crates-and-toolchain).
 - [0011](0011-blame-by-load-and-automatic-regain.md) Blame unattributed failures by load and regain depth automatically — superseded by [0015](0015-avx-512-first-in-confirmation.md), [0020](0020-hunt-and-refine.md) and [0038](0038-self-sufficient-cores.md).
-- [0012](0012-release-by-push.md) Releases open with a push and publish from CI — historical: [Development, Releases and changelog](../development.md#releases-and-changelog).
-- [0014](0014-release-from-a-workflow.md) Releases are made by a workflow started by hand — historical: [Development, Releases and changelog](../development.md#releases-and-changelog) and [Releasing, Releasing](../releasing.md#releasing).
+- [0012](0012-release-by-push.md) Releases open with a push and publish from CI — historical: [pre-1.0 delivery](../../AGENTS.md#keeping-docs-current).
+- [0014](0014-release-from-a-workflow.md) Releases are made by a workflow started by hand — historical: [pre-1.0 delivery](../../AGENTS.md#keeping-docs-current).
 - [0015](0015-avx-512-first-in-confirmation.md) Run mprime AVX-512 first in confirmation — superseded by [0020](0020-hunt-and-refine.md).
-- [0016](0016-every-pull-request-runs-every-check.md) Every pull request runs every flake check; the release trusts `main` — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
+- [0016](0016-every-pull-request-runs-every-check.md) Every pull request runs every flake check; the release trusts `main` — historical: [Development, CI checks](../development.md#ci-checks).
 - [0018](0018-crashes-are-not-a-cost.md) Crashes are not a cost — superseded by [0052](0052-crashes-are-a-cost.md); surviving exclusion: [Benchmarking, Crash cost and stray-crash exclusion](../benchmarking.md#crash-cost-and-stray-crash-exclusion).
 - [0021](0021-cache-check-outputs-on-cachix.md) Cache check outputs on Cachix — historical: [Development, Check cache](../development.md#check-cache).
 - [0022](0022-run-the-race-detector-in-ci.md) Run the race detector in CI — historical: [Development, Rust test execution](../development.md#rust-test-execution).
@@ -54,7 +54,7 @@ Historical vocabulary is translated by [0034](0034-one-vocabulary-from-screen-to
 - [0030](0030-coverage-is-a-review-signal.md) Coverage is a review signal, not a target — historical: [REVIEW.md, Coverage](../../REVIEW.md#coverage).
 - [0031](0031-pull-requests-under-the-owners-account.md) Pull requests under the owner's account — historical: [Review command, GitHub identity](../../.omp/commands/review-pr.md#github-identity).
 - [0032](0032-coverage-lists-uncovered-changed-lines.md) Coverage lists uncovered changed lines — historical: [REVIEW.md, Coverage](../../REVIEW.md#coverage).
-- [0033](0033-changelog-fragments.md) Changelog entries are per-pull-request fragments — historical: [Development, Releases and changelog](../development.md#releases-and-changelog) and [Changes, Pending changelog entries](../../changes/README.md#pending-changelog-entries).
+- [0033](0033-changelog-fragments.md) Changelog entries are per-pull-request fragments — historical: [pre-1.0 delivery](../../AGENTS.md#keeping-docs-current).
 - [0036](0036-flake-checks-stay-hermetic.md) Flake checks stay hermetic — historical: [Development, Check cache](../development.md#check-cache).
 - [0038](0038-self-sufficient-cores.md) Self-sufficient cores under shared voltage — superseded by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md) (Ruleset 13); honest partial-load generation remains.
 - [0039](0039-remind-only-the-main-session.md) Remind only the main session — historical: [Review command, Review trigger](../../.omp/commands/review-pr.md#review-trigger).
@@ -64,7 +64,7 @@ Historical vocabulary is translated by [0034](0034-one-vocabulary-from-screen-to
 - [0043](0043-record-work-that-waits-on-the-target-machine.md) Record work that waits on the target machine — historical: [Development, Work that waits on the target machine](../development.md#work-that-waits-on-the-target-machine).
 - [0044](0044-write-flagged-target-fits.md) Write flagged target fits — historical: [Benchmarking, Flagged target fits](../benchmarking.md#flagged-target-fits).
 - [0045](0045-the-tight-loop-reuses-cached-test-results.md) The tight loop reuses cached test results — historical: [Development, Rust test execution](../development.md#rust-test-execution).
-- [0046](0046-macos-checks-the-package-on-main.md) macOS checks only the package, on `main` — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
+- [0046](0046-macos-checks-the-package-on-main.md) macOS checks only the package, on `main` — historical: [Development, CI checks](../development.md#ci-checks).
 - [0047](0047-gate-before-every-push.md) Gate before every push — historical: [Development, Shell and checks](../development.md#shell-and-checks).
 - [0048](0048-rust.md) Rust as the implementation language — superseded by [0092](0092-rust-native-implementation.md).
 - [0049](0049-count-self-sufficiency-per-core-and-workload.md) Count self-sufficiency per core and workload — superseded by [0080](0080-per-ccd-first.md) and [0081](0081-margin-from-measured-slope.md) (Ruleset 13).
@@ -78,7 +78,7 @@ Historical vocabulary is translated by [0034](0034-one-vocabulary-from-screen-to
 - [0058](0058-native-rust-rewrite.md) A native Rust rewrite, not a byte-compatible port — superseded by [0092](0092-rust-native-implementation.md).
 - [0059](0059-the-tuner-folds-and-never-queries-history.md) The tuner folds the journal and never queries its history — superseded by [0093](0093-journal-fold-and-snapshots.md).
 - [0060](0060-bench-children-keep-temporary-journals.md) Bench children keep temporary journals — historical: [Development, Temporary journals for research children](../development.md#temporary-journals-for-research-children).
-- [0061](0061-no-macos-ci.md) No CI job runs on macOS — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
+- [0061](0061-no-macos-ci.md) No CI job runs on macOS — historical: [Development, CI checks](../development.md#ci-checks).
 - [0062](0062-checks-need-no-race-detector-or-test-result-cache.md) Checks need no race detector or test-result cache — historical: [Development, Rust test execution](../development.md#rust-test-execution).
 - [0063](0063-only-shared-hardware-tests-are-serialized.md) Only shared-hardware tests are serialized — historical: [Development, Rust test execution](../development.md#rust-test-execution).
 - [0064](0064-locate-when-passes-clear-the-loaded-cores.md) Locate a multi-core R7 failure at once when passes clear its loaded cores — superseded by [0080](0080-per-ccd-first.md) and [0084](0084-a-fresh-ruleset-transition.md) (Ruleset 13).
@@ -91,7 +91,7 @@ Historical vocabulary is translated by [0034](0034-one-vocabulary-from-screen-to
 - [0071](0071-no-go-in-the-repository.md) No Go in the repository — superseded by [0092](0092-rust-native-implementation.md).
 - [0072](0072-agents-share-a-host-without-locks.md) Agents share a host without locks — historical: host scheduling is outside the repository.
 - [0073](0073-tests-and-simulations-run-in-memory.md) Tests and simulations run in memory — historical: [Development, Tests and simulations in memory](../development.md#tests-and-simulations-in-memory).
-- [0074](0074-pull-request-ci-gates-landing-on-main.md) Pull request CI gates landing on main — historical: [Development, CI and release gates](../development.md#ci-and-release-gates).
+- [0074](0074-pull-request-ci-gates-landing-on-main.md) Pull request CI gates landing on main — historical: [Development, CI checks](../development.md#ci-checks).
 - [0075](0075-nextest-runs-in-dependency-layer-groups.md) Nextest runs in dependency-layer groups — historical: [Development, Nextest by concern](../development.md#nextest-by-concern).
 - [0077](0077-verified-folded-state-snapshots.md) Verified folded-state snapshots are a cache, never authority — superseded by [0093](0093-journal-fold-and-snapshots.md).
 - [0079](0079-day-observer-night-tester.md) Days observe; nights test — historical: retained and consolidated in [0094](0094-two-ends-bounded-exploration.md).

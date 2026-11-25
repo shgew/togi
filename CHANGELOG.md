@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
+All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The versions below are historical; there are no further releases before 1.0, and subsequent behavior changes are recorded in the history of [the model](docs/model.md) and in the pull requests.
 
 ## [0.13.1] - 2026-10-31
 

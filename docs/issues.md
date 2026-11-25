@@ -15,8 +15,6 @@ Record each owed hardware result in the tracking issue or a deferred issue with 
 
 [Hardware first](../AGENTS.md#testing) governs execution: the owner chooses when to update from main and runs `togi night`; afterwards an agent session on the target desktop reads its journal read-only. Agents never run, reset or write togi's state there. A tuning-behavior result blocks designing the next tuning change, not landing unrelated work. A retrospective is optional and owner-invoked.
 
-The old release workflow still refuses publication while any open or closed issue has `needs-hardware`, until R23 removes release tooling. This is not a gate on updating from main; do not start a release to obtain a hardware fix ([releasing](releasing.md)).
-
 ## The tech debt register
 
 The pinned Tech debt register (#1281) indexes deferred findings that no feature owns; earlier audits and decisions are in #492. Schedule findings only when useful, and run audits when the owner asks. Retrospectives do not require a triage or debt-analytics round.
