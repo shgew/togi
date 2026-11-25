@@ -59,8 +59,8 @@ A finding that holds beyond one run moves to where the next change reads it: how
 sudo nix develop --command just sql                       # target machine, interactive, as root
 sudo cp -R /var/lib/togi <copy> && sudo chown -R "$(id -u):$(id -g)" <copy>
 just sql <copy> -c 'from trials limit 5'                  # a copy you own
-just sim --samples --machine tools/bench/machines/target-shared-voltage.json --state-dir <dir>
-just sql <dir>                                            # a simulated session with PM-table lanes
+just sim --samples --state-dir <dir>
+just sql <dir>                                            # simulated samples without PM-table lanes
 ```
 
 | View | One row per | Columns |
@@ -94,7 +94,7 @@ order by core, "offset" desc;
 
 ## Inspecting a transition on recorded state
 
-A copy of the target machine's journals shows what the next real run would archive and import. `togi-tool-sim --state-dir` with an explicit `--machine` matching the recording's topology resumes the copy under the current build. A journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make ([Simulating](simulating.md)): it archives the source journal unchanged and imports only its raw day records ([Transitions](spec/journal.md#transitions)). `togi events --kind session.imported,day.imported` lists what it imported, each record with the session and sequence it came from. Run it only on a copy: preparation archives the live journal.
+For a recording compatible with the four-core developer script, a dry run on a copy exercises the current build's real session preparation. A journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make ([Simulating](simulating.md)): it archives the source journal unchanged and imports only its raw day records ([Transitions](spec/journal.md#transitions)). `togi events --kind session.imported,day.imported` lists what it imported, with each record's source session and sequence. Run it only on a copy: preparation archives the live journal. The simulator is not a topology-matched stand-in for the target desktop; use read-only journal tools to inspect recordings the script cannot resume.
 
 From a checkout on the target machine, copy the journals and the archive markers with [`just copy-state`](benchmarking.md#copying-a-real-state-directory) (the sources are read-only), while togi is not running a trial:
 
@@ -103,7 +103,7 @@ copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
 sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-just sim --state-dir "$copy" --recorded-content --machine tools/bench/machines/target-shared-voltage.json
+just sim --state-dir "$copy" --recorded-content
 just togi --state-dir "$copy" events --kind session.imported,day.imported
 just togi --state-dir "$copy" events --kind stock.attested,trial.intent
 ```
@@ -124,7 +124,7 @@ there must be no all-zero trial or stock-control queue. Old consent is never
 imported into the new session. The simulator supplies an operator answer; it
 does not establish that the real machine is stable at stock.
 
-What the transition archives and imports is in [Fact eligibility](spec/journal.md#fact-eligibility). What the simulated session does after the transition draws outcomes from the simulator, not from hardware measurements.
+What the transition archives and imports is in [Fact eligibility](spec/journal.md#fact-eligibility). The script supplies outcomes after the transition; `--recorded-content` only supplies workload identities and never uses recorded outcomes as answers.
 
 The transition reads no trial samples, so a copy without `trials/` and the archived `<session>-trials/` directories is enough. To query request telemetry from older trial ends with [`just sql`](#querying-journals-and-samples-just-sql), copy the whole state directory instead.
 

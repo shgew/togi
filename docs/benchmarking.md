@@ -2,7 +2,7 @@
 
 Use `just same` and `just smoke` to [compare versioned mechanics scripts](#proving-unchanged-decisions), or `just audit` to [check a recorded journal](#auditing-journals). These development tools are not shipped and cannot establish a profile's daily-use safety.
 
-The ordinary metric bench, baseline generation and fitted-facts refresh were retired by R25 in [#1559](https://github.com/shgew/togi/issues/1559). The [original bench and its inputs](https://github.com/shgew/togi/tree/archive/pre-cut/tools/bench) remain in source history. The separate [session suite](#the-session-suite) still runs its frozen research inputs.
+The metric bench, fitted models, historical outcome oracle and long simulator suite were retired in [#1559](https://github.com/shgew/togi/issues/1559). The [original bench and its inputs](https://github.com/shgew/togi/tree/archive/pre-cut/tools/bench) remain in source history. The [decision record](decisions.md#rejected) rejects predictive simulation as evidence for tuning policy.
 
 ## Methodology
 
@@ -14,7 +14,7 @@ The annotated historical-source tag [`archive/pre-cut`](https://github.com/shgew
 
 ### Flagged target fits
 
-The committed machines retain their original provenance, constraints and model-check flags unchanged. Those flags are historical evidence. The [historical explanation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#flagged-target-fits) records their limitations; retirement neither validates a flagged fit nor supplies a target-machine claim.
+The archived machines retain their original provenance, constraints and model-check flags. The [historical explanation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#flagged-target-fits) records their limitations; retirement neither validates a flagged fit nor supplies a target-machine claim.
 
 ### Crash cost and stray-crash exclusion
 
@@ -22,44 +22,7 @@ A crash is evidence like another failure, and a cost beside time when choosing t
 
 Exclude stray crashes from this tuner-rule cost: no togi offset was in force, either before any offset was applied in the boot or after the baseline was restored. The tuner cannot act on them; stray-crash streaks remain a recovery concern ([tuner spec](spec/tuner.md)). This exclusion survives the earlier decision to count only reboot time.
 
-Rejected: weighing a crash only by reboot time leaves the goal of fewer crashes unmeasured and ungated. A runtime crash budget, daily cap or cool-off is not adopted: it gives up depth or idles the machine merely to save reboots. Crash cost enters rule choice and its registered gate, not a new session limit.
-
-## The suite
-
-`tools/bench/suite.json` lists scenarios in a top-level `scenarios` array. Each scenario names a simulator `machine` JSON file in `tools/bench/machines/` (none means the seeded default machine), or an ensemble in `machines`, and two sets of seeds, `dev` and `holdout`. Ensemble seeds select successive members round-robin by their position within each split, not by the seed value. `"replay": true` enables the same-BIOS replay oracle over the selected fitted member:
-
-|Scenario|Models|
-|---|---|
-|`default`|the seeded default machine|
-|`target`|real-fact replay over the all-facts target fit and eight bootstrap refits, all historically flagged by the retired model check and the refits unconstrained ([flagged target fits](#flagged-target-fits)), including CCD0 and CCD1 R7 joints|
-|`flat-hazard`|rare failures at any nonzero offset on two cores (issue #105)|
-|`late-onset`|R7 joint failures that start only after four minutes of load; the cores' own limits have no delay|
-|`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
-|`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
-|`target-nonmember-mce`|synthetic conclusion guard of the archived Ruleset 11 gate, not an admitted adversary and with no adversary admission: CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114). It makes no hazard or time claim.|
-|`shared-voltage`|hand-set shared-rail R7 model with workload-dependent requests, clocks and per-core voltage demand; no facts or replay|
-|`target-shared-voltage`|real-fact replay over the all-facts shared-voltage anchor; an in-sample fit, not forward-validated|
-|`target-r7-vf-boost`|overlay of the anchor: AVX2 core-5 required voltage rises faster than its request as partial CCD0 loads boost; in-sample, not forward-validated|
-|`target-r7-request-gap`|overlay of the anchor: AVX-512 required-voltage curves leave core 11 dependent on core 10's rail support: full CCD1 loads pass but partial loads without core 10 can fail; requests unchanged; in-sample, not forward-validated|
-
-The failure sources are separate from the signals they produce:
-
-| Scenarios | Failure sources |
-|---|---|
-| `default` | Seeded loaded-core limits. No unloaded-core hazard or joint. |
-| `flat-hazard`, `idle-limit`, `late-onset`, `misleading-mce` | Loaded-core limits, plus respectively nonzero-offset flat hazards on loaded or unloaded cores, unloaded-core idle limits, delayed R7 joints, or R7 joints with misleading MCE attribution. |
-| `target` | Exact real-fact answers where matched; otherwise fitted loaded-core limits, any fitted flat hazards, R7 joints and the residual `[ccd]` hazard where no joint applies. |
-| `target-nonmember-mce` | Exact real-fact answers where matched; otherwise a frozen copy of an older target-fit-4 limit/joint fit whose CCD0 joint crashes name nonmember core 15. Synthetic, not tracked against the current fit. |
-| `shared-voltage` | Loaded-core voltage-margin hazards for multi-core R7; loaded-core limits elsewhere. No replay, unloaded-core hazard or platform background rate. |
-| `target-shared-voltage`, `target-r7-vf-boost`, `target-r7-request-gap` | Exact real-fact answers where matched; otherwise loaded-core voltage-margin hazards and a CO-independent platform background rate for multi-core R7, and fitted loaded-core limits elsewhere. No unloaded-core hazard. The two adversaries are overlays of the anchor and inherit everything else from it. |
-
-On `target-shared-voltage`, changing only unloaded cores' offsets cannot change the fitted multi-core R7 hazard. All `flat` rates are zero and no core has an `idle` limit; the voltage model computes power, clocks and the rail from loaded cores only. The same is true of its two shared-voltage adversaries. Parking unloaded cores can still change which real facts match, since replay matches the **whole** profile. A failure during a parked locate on this anchor is therefore not proof of an unloaded-core voltage dependency: it can come from a loaded core, the background rate or replay. This is a limitation of these scenarios, not a statement about hardware ([simulator model](simulating.md#shared-voltage-r7-model)).
-
-Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
-
-### Gates
-
-The legacy session suite registers no gate: a session's conclusion cannot measure a profile's daily-use safety. Earlier rulesets' gates are historical records, kept under [`tools/bench/gates/`](../tools/bench/gates/) and not re-scored.
+Rejected: weighing a crash only by reboot time leaves the goal of fewer crashes unmeasured. That trade-off belongs in rule choice; the retired simulated gate is not a current acceptance criterion. Runtime crash limits, where applicable, are specified in the [tuner spec](spec/tuner-ruleset14.md).
 
 ### Day/night gate
 
@@ -71,7 +34,7 @@ Ruleset 13's gate was not met: the [reduced development read](https://github.com
 
 ### Successor day/night run path
 
-The external run and score commands are retired. The calendar runner, policy reports and physical-core truth libraries remain for their existing callers; they are not a surviving scoring interface.
+The calendar runner, policy reports and physical-core truth catalog are also retired. Read-only journal replay and the scripted session driver are separate tools and remain available.
 
 #### Successor registration
 
@@ -81,19 +44,11 @@ The [archived registration](https://github.com/shgew/togi/blob/archive/pre-cut/t
 
 The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements.
 
-The [#493 measurement record](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) identifies the tuner, simulator and regenerated anchor used for its comparison. Earlier measurements of `target-r7-vf-boost` and `target-r7-request-gap` describe frozen copies, not today's overlays. See [reproducing an older ruleset](#reproducing-an-older-ruleset) before comparing historical builds.
-
-A scenario may also list legacy `smoke` seeds, each one of its dev or holdout seeds. They are no longer inputs to `just smoke`.
-
-A scenario may set `night_hours` (a positive whole number, default 8), the simulated hours after which the operator ends each of its nights, and `night_end` (`"operator"`, the default, `"dead_end"`, or `"operator_or_stock"`, which also passes a stock dead end), how the sim suite expects the night to end ([the session suite](#the-session-suite)). Every scenario of `tools/bench/suite.json` sets `night_hours` to 48, so a night reaches mapping and the crashes a hunt produces.
-
-`--suite FILE` runs another scenario file instead, with machine paths relative to it. The [historical adversarial-search protocol](../tools/bench/adversary.md) used this interface; its removed model-check gate is not a current instruction.
-
-The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble member in each split. Its oracle draws uniformly from decisive facts matching the entire applied profile and trial class (regime, workload, sorted loaded cores and intended duration). Draws are deterministic per seed and trial ID/index. Condition, phase, source ruleset and evidence epoch do not restrict a class match; BIOS context does. The oracle never uses facts from another BIOS context or records without one. Non-matching trials and trial-less failures use the fitted machine. The tuner sees only the resulting journal evidence, not the oracle or its extract.
+The [#493 measurement record](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) identifies the tuner, simulator and regenerated anchor used for its comparison. Earlier measurements of `target-r7-vf-boost` and `target-r7-request-gap` describe frozen copies, not later overlays. See [reproducing an older ruleset](#reproducing-an-older-ruleset) before comparing historical builds.
 
 ### Reproducing an older ruleset
 
-**Historical.** Rulesets 9 and 10 ran on the Go build. The paths below (`internal/sim`, `tools/sim`, `internal/simrun`, `.toml` machines) exist only at those revisions, and the recipe runs that revision's own tools in its own dev shell. No current crate reproduces these runs: the current simulator's seeds and streams differ ([Simulating](simulating.md#the-simulator-togi-sim)).
+**Historical.** Rulesets 9 and 10 ran on the Go build. The paths below (`internal/sim`, `tools/sim`, `internal/simrun`, `.toml` machines) exist only at those revisions, and the recipe runs that revision's own tools in its own dev shell. No current crate reproduces these runs: the current simulator's seeds and streams differ ([Simulating](https://github.com/shgew/togi/blob/archive/pre-cut/docs/simulating.md#the-simulator-togi-sim)).
 
 Pin the tuner, simulator, machine and facts separately. These are the commits used by the [#493 measurements](https://github.com/shgew/togi/issues/493#issuecomment-6040930168), not a claim that an arbitrary later `main` gives the same numbers:
 
@@ -138,7 +93,7 @@ just audit COPY-OF-STATE-DIR OTHER-STATE-DIR   # audit of current and archived j
 
 ### The audit (`togi-tool-audit`)
 
-The `togi-tool-audit` library supplies the checks for both `togi-tool-sim suite` and the `togi-tool-audit` command. `just audit` runs the command:
+`just audit` runs `togi-tool-audit`:
 
 - Each directory is audited as a run that may still be in progress, so its live journal need not end in a conclusion.
 - The report is JSON Lines on stdout, one object per violation with `directory`, `journal` (`live` or an archived session id), `seq`, `check` and `reason`; `check` is a journal check of [Invariants](spec/tuner.md#invariants), or `unreadable` (a directory that cannot be opened or a journal that cannot be read, with neither `journal` nor `seq`). The summary line `directories= journals= violations=` goes to stderr. Exit status 1 means a violation, 2 a usage error, such as no directory.
@@ -153,7 +108,7 @@ The audit checks SMU intent/write/readback ordering, the offset range ([Invarian
 
 `just same [base]` compares normalized live and archived journals from both trees over the [same five versioned mechanics scripts](simulating.md#bounded-comparisons). `just smoke [base]` uses only the mapping/stop and uncorrected-MCE/resume cases. Neither compares the earlier research corpus, predicts a target CPU, or exercises the hardware, detection, and backends that the simulator replaces.
 
-The base defaults to `origin/main` and is exported locally without fetching or registering a worktree. Both trees must declare the supported scripted input version, and both simulator executables must affirm it. A base lacking it is refused before any build or equality verdict. The exact comparison removes only the build version, revision, and corresponding build description from `session.start` and `config.loaded`; ruleset, schema, fixes, and evidence epoch still have to match.
+The base defaults to `origin/main` and is exported locally without fetching or registering a worktree. The base is the committed export; the head is the current source tree, including local edits. Both trees must declare scripted input contract v1, and both simulator executables must affirm it. A base lacking it is refused before any build or equality verdict. The exact comparison removes only the build version, revision, and corresponding build description from `session.start` and `config.loaded`; ruleset, schema, fixes, and evidence epoch still have to match.
 
 A difference cancels the remaining work and prints the first differing journal path, line number and normalized lines. `--keep-going` counts every difference. Differing run directories are kept, reconstructing them with fresh runs where needed. A child that fails to complete its script, or does not write a journal, is a harness error and never counts as equality.
 
@@ -191,22 +146,6 @@ The target, schedule, permission, outcome and replay evidence summaries compare 
 
 Each summary reports `identical`, `different` or `absent` with record and differing counts. These are journal-evidence comparisons, not an independent replay execution, a `state.json` comparison, or proof about unexercised paths or physical hardware. Every other record class still participates in the equality verdict.
 
-
-<a id="the-suite-gate"></a>
-
-## The session suite
-
-The session suite is a research and development tool, not a correctness check ([research policy](development.md#simulations-and-research)). No flake check, `just gate`, `just push-fix`, `just check`, pull request CI or the release's full check runs it; ordinary nextest tests are the correctness checks. Run it on demand when a change to the tuner, the session or the simulator raises a question about how simulated sessions end.
-
-`just sim-suite` runs every session of `tools/bench/suite.json`, dev and holdout alike, on the simulator (`togi-tool-sim`, [Simulating](simulating.md#the-simulator-command-togi-tool-sim)) in one shard with one session per core, then checks its manifest against exactly the run ids the partition gives that shard. A session passes only when it is `clean`:
-
-- its simulated night ended the way its scenario expects: by the simulated operator, who ends every night at the scenario's `night_hours` (default 8; every scenario of `tools/bench/suite.json` sets 48) of simulated time, or, for a scenario with `night_end: "dead_end"`, at a dead end its machine produces, or, for `night_end: "operator_or_stock"` (set for every scenario whose machine has a hazard at stock: a `flat` limit or a shared rail), at a conclusive failure at CO 0 whose cited exposure ran every core at zero; never the 1000-boot cap, and never a dead end where the operator's end was expected;
-- its resume state matched a fresh fold of the journal after every crash and at the end;
-- the Ruleset 13 fold (`togi_session::ReadState::replay`: the journal fold and the tuner's policy fold) accepts its whole journal;
-- `togi-tool-audit` finds no violation in any journal of its state directory.
-
-A scenario that expects a dead end says so with `night_end: "dead_end"` in `suite.json`; no dead end is to be invented to make a session pass. The suite proves that every session concludes cleanly, not that a tuner change concludes sooner. [`togi-tool-sim`](simulating.md#the-simulator-command-togi-tool-sim) also has a test that splits one session across processes by `--max-boots` and requires the same journal as an uninterrupted run.
-
 ## What each check proves
 
 Cite a check as evidence only for the packages it exercises. `just gate` runs local checks, except `package` and cargo-deny's advisory audit, and keeps incremental Cargo Clippy and doctests. `just push-fix` runs local review-fix checks. Both publish check outputs already in the local store to Cachix when a push token is present; CI counts those as passed without a build job. `just check` builds every local-tier flake check. Derivations carrying `passthru.tier = "ci"`, including VM, tool and recovery checks, are skipped by all three commands on every host ([check tiers and safety-evidence ledger](development.md#safety-evidence-ledger)). `just vm [names]` opts into VM builds. PR CI and the release's dispatched full check still select every Linux flake check, including CI-tier checks, and build every output absent from Cachix. CI's VM-specific setup and the opt-in recipe discover VM checks by their `driver` attribute.
@@ -216,7 +155,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` runs lo
 | Check | Runs | Exercises | Does not prove |
 |---|---|---|---|
 | `nextest`, `just test`, `just cover <base>` | Nextest on the shipped closure plus simulator and dashboard test support | Product ordinary tests: the tuner, session and journal directly, and trial, detect, smu, hardware and the backends against fakes, fake file trees and fake package trees | Unshipped tool tests, exhaustive recovery campaigns, real systemd scopes, kernel logs or SMU access |
-| `nextest-tools`, `just focus <crate>` | CI-tier nextest on unshipped tool/research crates and their tool-only libraries; `focus` runs any named crate locally | The selected crates' ordinary tests; tool and research tests remain PR and release gates | That a research run completed, or physical hardware behavior |
+| `nextest-tools`, `just focus <crate>` | CI-tier nextest on unshipped tool crates and their tool-only libraries; `focus` runs any named crate locally | The selected crates' ordinary tests, including scripted CLI and journal-tool tests | Physical hardware behavior |
 | `nextest-recovery-1` … `nextest-recovery-8`, `just recovery` | One CI-tier check per paired crash/SMU and kill shard; partition 1 also runs the four warm/cold cases and proves the scheduled test union exactly once | Every durable-event, dual-kind trial-event and SMU cut in the full recovery window, with unchanged recovery, projection and commitment assertions; warm/cold journal and state equality | Physical power-loss behavior, real firmware or kernel behavior |
 | `quality` board member, `just board-test` | Nushell assertions with fixed GitHub JSON and time, in `just gate`, `just push-fix` and the flake bundle | Coordination-board readiness, grouping, links, overlaps, interaction expiry, failures and golden text | Live GitHub API availability or authentication, any togi runtime code or hardware |
 | `quality` coverage-selection member, `just cover-test` | Nushell assertions over fixed `cargo metadata` JSON, in `just gate`, `just push-fix` and the flake bundle | The package arguments `just cover BASE [CRATE ...]` builds: the product set retained, named workspace packages added once, unknown and non-workspace names refused before any argument is printed | That the product set matches the `nextest` check, that the named tests reach changed lines, any togi runtime code or hardware |
@@ -230,8 +169,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` runs lo
 | `vm-runtime` | Linux only: one NixOS VM with four cores, run as two sequential configuration cohorts as named subtests. Only moving between cohorts activates the next complete generation and reboots. In the first, the host-lock scenario and the root trial-scope scenario (`togi-trial-tests`) share an installed module configuration with the shipped package. In the second, a combined configuration with the persistent fake SMU runs the day-observer scenario first (the `togi-day` observer on the normal boot), then, after an explicit reset of the units, state files and fake SMU, the emergency-stop scenario (the production emergency-stop CLI and sleeping helper workloads, which boots the tuning entry). Each scenario keeps the crashes and reboots its own proof needs (`nix/vm-test.nix`) | **Host lock:** NixOS creates a root-only lock at boot; an unrelated user cannot open it or create files in its parent. The installed `togi` refuses a foreign-owned lock and a held lock without changing the inode or contents, tightens a legacy mode to 0600 on the same inode, and `emergency-stop` recreates a deleted lock as root 0600. **Trial scope:** the real-systemd scope tests run as root with helper backends and leave no `togi-*` scope behind; the installed unprivileged `doctor` still skips the scope probe. **Emergency stop:** killing the controller mid-trial, every-core zero readback and removal of real systemd trial scopes before the unchanged 60-second restart; controller affinity during the trial, clean-stop behavior and emergency validation/sweep/readback failures. **Day observer:** the shipped service excluding a second writer while it holds the lock and releasing the same inode on stop; refusal without a session and without creating a journal; a clean stop ending in a final checkpoint of positive active time and the clean stop; a hard reset leaving an end the next boot records as unclean; a `day.users` member answering the pending question without root over `/run/togi/day.sock` while a user outside the group is refused; and the module's group, directory and notifier unit as installed. The observer never writes nonzero offsets to the fake SMU | Host lock: `togi-trial-tests` or the tuning boot. Trial scope: real stress programs or SMU access. Emergency stop: real SMU access, real stress programs or the production session's tuning decisions. Day observer: real SMU access or a real session's tuning decisions |
 | `vm-display` | Linux only: a NixOS VM with the tuning specialisation booted into the tuning entry (`nix/vm-test.nix`), as its own single-scenario VM with the plain Linux console | The installed watcher on tty1 as root with `TERM=linux`, its readable preflight screen through `/dev/vcs1`, quit keys leaving the watcher running, Alt F2/F3 reaching login and logs and Alt F1 returning, a killed watcher restarting without changing the tuner or boot, and F10 cancellation followed by confirmation returning to the day | A physical display, real keyboard, real SMU access or a successful tuning session; Rust frame tests pin the palette and rendered layouts |
 | `vm-recovery-tests` | Linux only: builds `togi`'s `vm_recovery` integration-test executable as `togi-vm-recovery` | That the production CLI recovery path and its persistent-fake-machine fixture compile | Runtime recovery or real SMU access: `vm-runtime` runs the executable |
-| `just sim-suite` | Every suite session on `togi-tool-sim` in one shard, then its manifest check, as [above](#the-session-suite) | The session, tuner, journal and simulator on the paths the suite reaches: each session concludes, resumes warm state equal to a cold fold, replays through the tuner and passes the invariant audit | Better or equal tuning, or anything about the packages the simulator replaces |
-| `just same` | Five named scripts on each tree's `togi-tool-sim`, comparing normalized live and archived journals | The session, tuner and journal behavior at those scripted mapping, stop, recovery, day-application and dead-end seams | The fitted research corpus, hardware or supported paths not reached by these cases |
+| `just same` | Five named scripts on each tree's `togi-tool-sim`, comparing normalized live and archived journals | The session, tuner and journal behavior at those scripted mapping, stop, recovery, day-application and dead-end seams | Tuning quality, hardware or supported paths not reached by these cases |
 | `just smoke` | `mapping-stop` and `mce-resume`, compared as `just same` does | Mapping, signal shutdown and uncorrected-MCE resume behavior on those journals | The other three cases or anything `just same` does not prove |
 | `package` | Builds the release `togi` with the revision `dev` and runs it: `togi --version` and `togi completion` for bash, zsh, fish and nushell, as [below](#the-package) | That the package builds and installs, prints `togi <version.txt>+dev` and generates a completion script that names `togi` for each shell | What any command does, the set of commands, or that a completion script loads in its shell |
 | `just hardware` | On the Linux target machine as root: `cargo test --features hardware --test hardware` on `togi-smu`, `togi-detect`, `togi-trial` and `togi-hardware`, one binary and one test at a time, every binary even after one fails. The unprivileged `--no-run` form only compiles | The hardware tests: smu's sixteen distinct nonzero offsets written, read back as one vector and returned to verified stock, and its PM table lanes, detect reading the real kernel log, trial's real systemd scopes and workload checks, and hardware's diagnosis leaving offsets unchanged | The host's full preflight, ranking or a tuning session. `vm-runtime` runs trial's scope fixture as root in NixOS without testing real stress programs, the SMU or cpufreq |
@@ -269,17 +207,17 @@ Cached runs bind the input contract, simulator binary digest and case, and are w
 
 ## Checking a machine against real evidence
 
-A fitted machine may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to its JSON file. The target fits still use the committed extract as a [read-only replay oracle](simulating.md#replaying-real-answers). No current tool regenerates it or scores the fit against it. The [historical extraction and model check](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#checking-a-machine-against-real-evidence), and the [2026-10-17 frozen score](#the-2026-10-17-frozen-score), document its provenance.
+The [archived trial corpus](https://github.com/shgew/togi/blob/archive/pre-cut/tools/bench/facts/target.jsonl.gz) is historical evidence. No current tool regenerates the extract, uses it as an outcome oracle or scores a fitted machine against it. The [historical extraction and model check](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#checking-a-machine-against-real-evidence) and the [2026-10-17 frozen score](#the-2026-10-17-frozen-score) document its provenance.
 
 ## Fitting the target machine
 
 `togi-tool-fit` and `togi-tool-modelcheck` are retired. `just fit`, `just fit-artifact` and `just forward-compare` are absent, with no replacement commands. The [approved decision](decisions.md#rejected) rejects fitted forecasts as a way to decide tuning policy.
 
-The [original fitting instructions and implementation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#fitting-the-target-machine) remain under the annotated historical-source tag `archive/pre-cut`. The retained [model research program](../tools/fit/program.md) is historical, not an executable current gate. Machine files, facts, provenance and original evidence remain unchanged.
+The [original fitting instructions and implementation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#fitting-the-target-machine) and [model research program](../tools/fit/program.md) are historical, not executable current gates. The original [machine files](https://github.com/shgew/togi/tree/archive/pre-cut/tools/bench/machines), facts and provenance are preserved in source history.
 
 ### In-sample shared-voltage anchor
 
-The anchor-generation mode is retired with the fitter. The committed anchor and overlays remain historical simulator inputs, not forward-validated hardware failure rates. Their [original methodology](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#in-sample-shared-voltage-anchor) and [#563 measurements](https://github.com/shgew/togi/issues/563) remain historical evidence.
+The archived anchor and overlays are historical artifacts, not forward-validated hardware failure rates. Their [original methodology](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#in-sample-shared-voltage-anchor) and [#563 measurements](https://github.com/shgew/togi/issues/563) remain historical evidence.
 
 ### Forward-chained check
 
@@ -293,7 +231,7 @@ The refreshed extract preserves the original research artifact's rows. That is e
 
 ### The fit tool (`togi-tool-fit`)
 
-The Rust fitting tool and its artifact and forward-comparison modes are retired. Their [source and original documentation](https://github.com/shgew/togi/tree/archive/pre-cut/crates/togi-tool-fit) remain at `archive/pre-cut`; the committed `tools/bench/machines/target-fit-*.json` and `target-shared-voltage.json` remain unchanged historical outputs.
+The Rust fitting tool and its artifact and forward-comparison modes are retired. Their [source and original documentation](https://github.com/shgew/togi/tree/archive/pre-cut/crates/togi-tool-fit) remain at `archive/pre-cut`.
 
 ### The package
 

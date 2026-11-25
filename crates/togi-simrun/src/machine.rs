@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use togi_journal::StateDir;
 use togi_journal::fs::Fs;
-use togi_sim::{MachineSource, Persisted, RestoreError, Simulator};
+use togi_sim::{Persisted, RestoreError, ScriptedMachine, Simulator};
 
 use crate::input::Persistence;
 use crate::simulate::lock;
@@ -38,9 +38,9 @@ pub enum ResumeError {
     Construct(#[from] togi_sim::ArithmeticError),
 }
 
-/// The simulator a later process continues a simulation in `persistence` with: the machine a capped simulation
-/// left there, which keeps its own seed, else a fresh machine from `source` and `seed` that starts after the boots and
-/// wall time the journals recorded.
+/// The simulator a later process continues a simulation in `persistence` with: use its saved machine
+/// and seed if present; otherwise run `script` with `seed` after the boot count and wall time recorded
+/// in the journals.
 ///
 /// # Errors
 ///
@@ -48,7 +48,7 @@ pub enum ResumeError {
 /// machine.
 pub fn resume_simulator(
     persistence: &Persistence,
-    source: MachineSource,
+    script: ScriptedMachine,
     seed: u64,
 ) -> Result<Simulator, ResumeError> {
     let dir = lock(persistence).map_err(HistoryError::from)?;
@@ -61,9 +61,9 @@ pub fn resume_simulator(
         Some(bytes) => {
             let persisted = serde_json::from_slice(&bytes)
                 .map_err(|source| ResumeError::Decode { path, source })?;
-            Ok(Simulator::restore(source, persisted)?)
+            Ok(Simulator::restore(script, persisted)?)
         }
-        None => Ok(Simulator::start(source, seed, history_in(&dir)?)?),
+        None => Ok(Simulator::scripted(script, seed, history_in(&dir)?)?),
     }
 }
 

@@ -1,10 +1,10 @@
 use std::fmt::Write as _;
 
 use sha2::{Digest as _, Sha256};
-use togi_sim::definition::{
-    DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ, DEFAULT_MICROCODE,
+use togi_sim::{
+    DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ, DEFAULT_MICROCODE, EPOCH,
+    REBOOT_TIME,
 };
-use togi_sim::{EPOCH, REBOOT_TIME};
 
 use super::CONTRACT_VERSION;
 
@@ -38,7 +38,7 @@ const INPUTS: [(&str, &[u8]); 5] = [
 /// The contract version and the digest of [`INPUTS`], the BIOS defaults and the clock it was declared for.
 const PINNED: (&str, &str) = (
     "1",
-    "a298b3142e3e5ddaa1e662e8b3e1d8fdc186dac65085b55918b1ee93e03ab0ea",
+    "8356b4640408853b30351967effe9f23a05de2cc0a69dca5c7f51be26ba5d860",
 );
 
 #[test]

@@ -12,8 +12,8 @@ use togi_machine::{
 use togi_render::Renderer;
 use togi_session::ConfigSource;
 use togi_sim::{
-    History, MachineSource, ScriptedMachine, ScriptedMce, ScriptedTopology, ScriptedVoltageSamples,
-    Simulator, TrialOutcome,
+    History, ScriptedMachine, ScriptedMce, ScriptedTopology, ScriptedVoltageSamples, Simulator,
+    TrialOutcome,
 };
 use togi_simrun::{
     Finished, Observe, Observer, Persistence, Replay, SimInput, SimOutcome, events, simulate,
@@ -57,7 +57,7 @@ pub(crate) fn passing(topology: ScriptedTopology) -> ScriptedMachine {
 }
 
 pub(crate) fn scripted_simulator(script: ScriptedMachine, seed: u64) -> Simulator {
-    Simulator::start(MachineSource::Scripted(script), seed, History::default()).unwrap()
+    Simulator::scripted(script, seed, History::default()).unwrap()
 }
 
 pub(crate) fn four_core_simulator(seed: u64) -> Simulator {
@@ -165,7 +165,7 @@ impl Bench {
     pub(crate) fn reopened(&self, seed: u64) -> Self {
         let history = togi_simrun::history_in(&self.dir()).unwrap();
         Self {
-            sim: Simulator::start(self.sim.source(), seed, history).unwrap(),
+            sim: Simulator::scripted(self.sim.source(), seed, history).unwrap(),
             fs: self.fs.clone(),
         }
     }

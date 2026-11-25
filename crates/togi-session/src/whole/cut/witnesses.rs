@@ -287,7 +287,7 @@ fn an_interrupted_no_nonzero_work_stop_is_recovered(fate: Fate, boundary: togi_j
 }
 
 /// A short tuning history with a known reset reported only by a day boot, followed by a fresh tuning boot.
-fn tuning_after_observed_days() -> (MachineSource, Played) {
+fn tuning_after_observed_days() -> (ScriptedMachine, Played) {
     let bench = Bench::new(4);
     let mut phases = Vec::new();
     step(&bench, &mut phases, Phase::Run { trials: 1 });

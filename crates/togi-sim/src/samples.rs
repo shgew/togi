@@ -9,7 +9,15 @@ use std::time::Duration;
 use togi_machine::{CoreId, CoreSet, PerCore, PmTable, ReadSamples, TrialConditions, object_only};
 use togi_trialfiles::TrialFile;
 
-use crate::voltage::VoltageState;
+object_only! {
+    /// Fixed per-core voltage requests and CCD clocks captured for the last trial.
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub(crate) struct VoltageState {
+        pub requests: [f32; 16],
+        pub clocks: [u32; 2],
+    }
+}
 
 const TICK: Duration = Duration::from_secs(1);
 /// A culprit's worker stops this long before the reset when the trial ran long enough.

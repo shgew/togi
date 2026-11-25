@@ -4,4 +4,3 @@ mod inputs;
 mod resume;
 mod scripted;
 mod session;
-mod suite;

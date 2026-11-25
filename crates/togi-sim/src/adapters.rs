@@ -271,14 +271,7 @@ impl Host for SimHost {
             error,
         };
         runtime.alive().map_err(fail)?;
-        let ranking = runtime
-            .source
-            .ranking()
-            .ok_or_else(|| fail(other("simulated preferred-core ranking unavailable")))?;
-        Ok(ids(ranking.len())
-            .zip(ranking)
-            .map(|(core, &value)| CoreRank { core, value })
-            .collect())
+        Err(fail(other("simulated preferred-core ranking unavailable")))
     }
 
     fn preflight(&mut self) -> Vec<Check> {

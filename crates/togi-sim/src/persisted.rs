@@ -15,17 +15,7 @@ use crate::samples::LastTrial;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PersistedSource {
-    Fitted,
     Scripted,
-}
-
-impl PersistedSource {
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::Fitted => "fitted",
-            Self::Scripted => "scripted",
-        }
-    }
 }
 
 object_only! {
@@ -33,8 +23,7 @@ object_only! {
     /// [`Simulator::restore`](crate::Simulator::restore): its source kind, seed, clocks, boots with their
     /// reset reasons and kernel logs, the machine checks and reset waiting for the next boot, its registers,
     /// BIOS context and the last trial's samples. Draws are keyed by seed and typed parts, so no generator
-    /// state is kept. Armed faults, scripts added with [`Simulator::script_trial`](crate::Simulator::script_trial),
-    /// recorded violations and the samples directory are not kept.
+    /// state is kept. Armed faults, recorded violations and sample storage are not kept.
     #[derive(Clone, Debug, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Persisted {
@@ -58,13 +47,8 @@ object_only! {
 /// A machine that cannot continue from a [`Persisted`] state.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum RestoreError {
-    #[error("the persisted machine has {persisted} cores, the machine file {model}")]
-    Cores { persisted: usize, model: usize },
-    #[error("the persisted machine ran a {persisted} source, the restoring machine is {given}")]
-    SourceMismatch {
-        persisted: &'static str,
-        given: &'static str,
-    },
+    #[error("the persisted machine has {persisted} cores, the script has {script}")]
+    Cores { persisted: usize, script: usize },
     #[error("the persisted machine has no boot")]
     NoBoot,
     #[error("restore the simulated clock")]

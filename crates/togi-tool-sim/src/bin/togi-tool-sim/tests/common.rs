@@ -10,13 +10,10 @@ use jiff::tz::TimeZone;
 use togi_journal::{Event, MemFs};
 use togi_machine::{CancellationToken, ControllerMode, ResetKind, TargetOffset};
 use togi_render::Renderer;
-use togi_sim::file::Source;
-use togi_sim::{MachineSource, ScriptedMachine, ScriptedTopology, TrialOutcome};
+use togi_sim::{ScriptedMachine, ScriptedTopology, TrialOutcome};
 use togi_simrun::{Persistence, SimInput, SimOutcome};
-use togi_tool_sim::{Suite, SuiteError};
-use togi_tool_trialfacts::Extracts;
 
-use crate::{Command, SessionArgs, log::Log, machine, session, suite};
+use crate::{Command, SessionArgs, log::Log, session};
 
 pub(crate) struct Ran {
     pub code: Option<i32>,
@@ -39,39 +36,8 @@ impl Write for Shared {
 
 #[derive(Default)]
 pub(crate) struct Host {
-    pub files: BTreeMap<PathBuf, String>,
     pub states: BTreeMap<PathBuf, MemFs>,
 }
-
-struct Texts(BTreeMap<PathBuf, String>);
-
-impl Source for Texts {
-    fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        self.0
-            .get(path)
-            .cloned()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
-    }
-    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
-        if self.0.contains_key(path) || self.0.keys().any(|entry| entry.starts_with(path)) {
-            Ok(path.to_path_buf())
-        } else {
-            Err(io::ErrorKind::NotFound.into())
-        }
-    }
-}
-
-/// Fitted input for the research suite and input-parser tests, stored as `/hunt.json`.
-pub(crate) const HUNT: &str = r#"{
-  "cores": 4,
-  "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
-  "core": [
-    {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-    {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-    {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-    {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]}
-  ]
-}"#;
 
 /// Preserve the watchdog cuts after each workload prefix needed by the cap and resume tests.
 pub(super) const WATCHDOG_MACHINE: ScriptedMachine = ScriptedMachine::new(
@@ -95,17 +61,6 @@ pub(super) const WATCHDOG_MACHINE: ScriptedMachine = ScriptedMachine::new(
 );
 
 impl Host {
-    /// A host holding [`HUNT`] as `/hunt.json`.
-    pub(super) fn hunting() -> Self {
-        let mut host = Self::default();
-        host.put("/hunt.json", HUNT);
-        host
-    }
-
-    pub(super) fn put(&mut self, path: impl Into<PathBuf>, text: impl Into<String>) {
-        self.files.insert(path.into(), text.into());
-    }
-
     pub(super) fn run<S: AsRef<OsStr>>(&mut self, args: impl IntoIterator<Item = S>) -> Ran {
         self.execute(args, togi_simrun::simulate)
     }
@@ -127,12 +82,7 @@ impl Host {
         self.execute(args, |mut input| {
             // Only the trial outcomes change: the CLI's prepared machine state must be what this
             // script resumes from, so a preparation regression cannot be repaired here.
-            let simulator = togi_simrun::resume_simulator(
-                &input.persistence,
-                MachineSource::Scripted(script),
-                1,
-            )
-            .unwrap();
+            let simulator = togi_simrun::resume_simulator(&input.persistence, script, 1).unwrap();
             assert_eq!(simulator.persisted(), input.simulator.persisted());
             input.simulator = simulator;
             execute(input)
@@ -148,29 +98,12 @@ impl Host {
         let mut log = Log::buffered(output.clone());
         let args = std::iter::once(OsString::from("togi-tool-sim"))
             .chain(args.into_iter().map(|arg| arg.as_ref().to_owned()));
-        let source = Texts(self.files.clone());
-        let read_machine = |path: &Path| {
-            togi_sim::file::load_from(path, &source).map(|(definition, _)| definition)
-        };
-        let load = |path: Option<&Path>, seed, replay, extracts: &mut Extracts| {
-            machine::load_with(path, seed, replay, extracts, read_machine)
-        };
-        let load_suite = |path: &Path| {
-            let text = source
-                .read_to_string(path)
-                .map_err(|source| SuiteError::Read {
-                    path: path.to_owned(),
-                    source,
-                })?;
-            Suite::parse(&text, path.parent().unwrap_or_else(|| Path::new("")))
-        };
         let code = match crate::parse(args, &mut log) {
             Err(code) => code,
             Ok(cli) => match cli.command {
                 None => session::run_with(
                     cli.session,
                     &mut log,
-                    read_machine,
                     |args: SessionArgs, log| {
                         let path = args
                             .state_dir
@@ -193,59 +126,6 @@ impl Host {
                     },
                     execute,
                 ),
-                Some(Command::Suite(mut args)) => {
-                    args.jobs.get_or_insert(std::num::NonZeroUsize::MIN);
-                    let result = load_suite(&args.suite)
-                        .map_err(suite::Error::from)
-                        .and_then(|loaded| {
-                            suite::run_shard_with(
-                                &args,
-                                &mut log,
-                                &loaded,
-                                &CancellationToken::new(),
-                                |run, extracts| {
-                                    load(run.machine.as_deref(), run.seed, run.replay, extracts)
-                                },
-                                |path, text| {
-                                    self.files.insert(path.to_owned(), text);
-                                    Ok(())
-                                },
-                            )
-                        });
-                    match result {
-                        Ok(true) => 0,
-                        Ok(false) => 1,
-                        Err(error) => {
-                            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
-                            1
-                        }
-                    }
-                }
-                Some(Command::Check(args)) => {
-                    let result = load_suite(&args.suite)
-                        .map_err(suite::Error::from)
-                        .and_then(|loaded| {
-                            let entries: Vec<_> = self
-                                .files
-                                .keys()
-                                .filter(|path| path.parent() == Some(args.manifests.as_path()))
-                                .cloned()
-                                .collect();
-                            suite::check_with(
-                                &args,
-                                &loaded,
-                                || Ok(entries.into_iter().map(Ok)),
-                                |path| source.read_to_string(path),
-                            )
-                        });
-                    match result {
-                        Ok(()) => 0,
-                        Err(error) => {
-                            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
-                            1
-                        }
-                    }
-                }
                 Some(Command::ScriptedContract | Command::Scripted(_)) => {
                     panic!("the named scripts' CLI protocol is exercised by the process tests")
                 }

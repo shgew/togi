@@ -6,23 +6,17 @@ use togi_machine::{
     BankType, BiosContext, CancellationToken, Check, CpuId, Error, ObservedOffset, Partial, Regime,
     ResetKind, Signal, TargetOffset, TrialSpec, pick_workload,
 };
-use togi_sim::definition::{ModelDef, Weights};
 use togi_sim::{
-    History, MachineSource, RunSettings, ScriptedMachine, ScriptedMce, ScriptedTopology, Simulator,
+    DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ, DEFAULT_MICROCODE, History,
+    ScriptedMachine, ScriptedMce, ScriptedTopology, ScriptedVoltageSamples, Simulator,
     TrialOutcome,
 };
 
 use test_case::test_case;
 
-use crate::common::{Rig, basic, core, crashed, flat_cores, machine, model, sharp, spec};
+use crate::common::{Rig, basic, core, crashed, spec};
 
 const NINETY: Duration = Duration::from_secs(90);
-
-fn two_cores(model: ModelDef) -> togi_sim::MachineDefinition {
-    let mut definition = machine(2, flat_cores(2, -10, -10));
-    definition.model = model;
-    definition
-}
 
 #[test]
 fn r6_progress_counts_the_bursts_of_the_whole_trial() {
@@ -53,47 +47,6 @@ fn an_r6_failure_before_the_transition_reports_only_its_bursts() {
     let result = waited.expect("a result");
     assert!(result.ran < NINETY / 2, "failed at {:?}", result.ran);
     assert_eq!(recorder.progress, ["bursts: 0 continues, 1 stops"]);
-}
-
-fn transcript(seed: u64) -> Vec<String> {
-    let mut rig = Rig::new(&machine(4, vec![]), seed);
-    let mut out = Vec::new();
-    let boot = rig.boot();
-    let MachineSource::Fitted { model, .. } = rig.sim.source() else {
-        panic!("the transcript uses a fitted model");
-    };
-    out.push(format!("boot {boot} limits {:?}", model.limits()));
-    for index in 0..4 {
-        let limit = model.alone_limit(core(index));
-        for value in [limit - 2, limit, limit + 1] {
-            for regime in [Regime::R1, Regime::R3, Regime::R4] {
-                let waited = rig.alone(index, TargetOffset::clamped(value).get(), regime, 0);
-                out.push(format!(
-                    "core {index} offset {value} {regime}: {waited:?} at {}",
-                    rig.sim.now()
-                ));
-                if crashed(&waited) {
-                    rig.sim.reboot().expect("a representable reboot");
-                }
-            }
-        }
-    }
-    let first = rig.boot();
-    rig.sim.crash();
-    rig.sim.reboot().expect("a representable reboot");
-    let second = rig.boot();
-    for boot in [boot, first, second] {
-        out.push(format!("boot {boot} mces {:?}", rig.mces(&boot)));
-    }
-    out
-}
-
-#[test]
-fn the_same_seed_makes_the_same_observations_and_another_seed_does_not() {
-    let a = transcript(7);
-    assert_eq!(a, transcript(7));
-    assert!(a.len() > 36);
-    assert_ne!(a[0], transcript(8)[0], "limits and boot ID follow the seed");
 }
 
 #[test_case(false; "fresh")]
@@ -201,70 +154,6 @@ fn each_signal_has_its_result_shape(
             assert_eq!(mces[0].monotonic, Duration::ZERO, "{signal}");
         }
         Signal::UncorrectedMce => unreachable!("the crash case logs an uncorrected check"),
-    }
-}
-
-#[test_case(0.0; "unset")]
-#[test_case(1e6; "set")]
-fn the_near_limit_rate_fails_a_core_at_its_limit_only_when_it_is_set(rate: f64) {
-    let definition = two_cores(ModelDef {
-        near_limit_rate: rate,
-        ..sharp(Signal::ComputationError)
-    });
-    let mut rig = Rig::new(&definition, 2);
-    for index in 0..100 {
-        let result = rig.alone(1, -10, Regime::R1, index).expect("a result");
-        assert_eq!(result.failure.is_some(), rate > 0.0, "trial {index}");
-    }
-}
-
-#[test]
-fn a_nonzero_outsider_switches_a_trial_to_the_together_limit() {
-    let mut definition = machine(2, flat_cores(2, -20, -15));
-    definition.model = sharp(Signal::ComputationError);
-    let mut rig = Rig::new(&definition, 3);
-    assert!(
-        rig.alone(0, -18, Regime::R1, 0)
-            .expect("a result")
-            .failure
-            .is_none()
-    );
-    rig.set(1, -1).expect("set");
-    let result = rig.pass(basic(Regime::R1, &[0], NINETY));
-    assert_eq!(
-        result.failure.map(|failure| failure.signal),
-        Some(Signal::ComputationError)
-    );
-}
-
-#[test_case(1.0; "core local")]
-#[test_case(0.0; "shared")]
-fn machine_checks_name_a_bank_of_the_kind_the_model_chooses(local: f64) {
-    const BANKS: [BankType; 9] = [
-        BankType::LoadStore,
-        BankType::InstructionFetch,
-        BankType::L2Cache,
-        BankType::DecodeUnit,
-        BankType::ExecutionUnit,
-        BankType::FloatingPoint,
-        BankType::L3Cache,
-        BankType::MemoryController,
-        BankType::DataFabric,
-    ];
-    let definition = two_cores(ModelDef {
-        core_local_bank: local,
-        ..sharp(Signal::CorrectedMce)
-    });
-    let mut rig = Rig::new(&definition, 4);
-    for index in 0..20 {
-        rig.alone(0, -15, Regime::R2, index).expect("a result");
-    }
-    let boot = rig.boot();
-    let mces = rig.mces(&boot);
-    assert_eq!(mces.len(), 20);
-    for mce in mces {
-        assert_eq!(mce.bank_type.core_local(), local > 0.5);
-        assert_eq!(BANKS[usize::from(mce.bank)], mce.bank_type);
     }
 }
 
@@ -489,93 +378,6 @@ fn a_trial_is_waited_on_once() {
 }
 
 #[test]
-fn signal_weights_pick_in_proportion_and_skip_zero_weights() {
-    let model_with = |weights: &[(Signal, f64)]| {
-        let mut definition = machine(2, vec![]);
-        definition.model.signals = Weights(weights.iter().copied().collect());
-        model(&definition)
-    };
-    assert_eq!(
-        model_with(&[(Signal::Crash, 0.25)])
-            .signal_mix(Regime::R1)
-            .pick(0.5),
-        Signal::Crash
-    );
-    assert_eq!(
-        model_with(&[(Signal::Crash, 0.0), (Signal::Stall, 0.25)])
-            .signal_mix(Regime::R1)
-            .pick(0.5),
-        Signal::Stall
-    );
-    let even = model_with(&[(Signal::Stall, 1.0), (Signal::Crash, 1.0)]);
-    let mix = even.signal_mix(Regime::R1);
-    assert_eq!(mix.pick(0.0), Signal::Stall);
-    assert_eq!(mix.pick(0.49), Signal::Stall);
-    assert_eq!(mix.pick(0.5), Signal::Crash);
-    assert_eq!(mix.pick(0.999), Signal::Crash);
-}
-
-#[test]
-fn the_simulator_continues_after_its_history() {
-    let last = jiff::Timestamp::from_second(1_800_000_000).expect("a time");
-    let history = History {
-        boots: 7,
-        last_time: Some(last),
-        bios_context: Some(BiosContext {
-            bios_version: "RECORDED".to_owned(),
-            ..BiosContext::default()
-        }),
-    };
-    let settings = RunSettings {
-        seed: 1,
-        history,
-        replay: None,
-    };
-    let mut rig = Rig::with(model(&machine(2, vec![])), settings);
-    assert_eq!(
-        rig.sim.now().duration_since(last),
-        SignedDuration::from_secs(90)
-    );
-    assert_eq!(
-        rig.machine
-            .host
-            .bios_context()
-            .expect("a context")
-            .bios_version,
-        "RECORDED",
-        "a machine file that declares no context follows the history"
-    );
-    let first = rig.boot();
-    let fresh = Rig::new(&machine(2, vec![]), 1).boot();
-    assert_ne!(first, fresh, "boot IDs continue from the recorded boots");
-    let declared = {
-        let mut definition = machine(2, vec![]);
-        definition.bios_context = Some(togi_sim::definition::BiosContextDef {
-            bios_version: Some("DECLARED".to_owned()),
-            ..Default::default()
-        });
-        definition
-    };
-    let settings = RunSettings {
-        seed: 1,
-        history: History {
-            bios_context: Some(BiosContext::default()),
-            ..History::default()
-        },
-        replay: None,
-    };
-    let mut rig = Rig::with(model(&declared), settings);
-    assert_eq!(
-        rig.machine
-            .host
-            .bios_context()
-            .expect("a context")
-            .bios_version,
-        "DECLARED"
-    );
-}
-
-#[test]
 fn a_scripted_machine_continues_after_its_history() {
     let last = jiff::Timestamp::from_second(1_800_000_000).expect("a time");
     let history = History {
@@ -608,11 +410,27 @@ fn a_scripted_machine_continues_after_its_history() {
 }
 
 #[test]
-fn a_simulator_can_be_built_without_run_settings() {
-    let simulator = Simulator::new(model(&machine(2, vec![])), RunSettings::default())
-        .expect("a representable machine");
-    let mut machine = simulator.seams();
-    assert!(machine.host.boot_id().is_ok());
+fn a_fresh_scripted_machine_has_the_default_bios_context() {
+    let mut rig = Rig::scripted(ScriptedTopology::SixteenCores, |_, _| TrialOutcome::Pass);
+    assert_eq!(
+        (
+            DEFAULT_BIOS_VERSION,
+            DEFAULT_BOARD,
+            DEFAULT_MICROCODE,
+            DEFAULT_BOOST_LIMIT_MHZ
+        ),
+        ("SIM.1", "togi simulator", "0x0", 5700)
+    );
+    assert_eq!(
+        rig.machine.host.bios_context().expect("a context"),
+        BiosContext {
+            bios_version: DEFAULT_BIOS_VERSION.into(),
+            board: DEFAULT_BOARD.into(),
+            cpu_model: "Simulated Zen 5 16-Core Processor".into(),
+            microcode: DEFAULT_MICROCODE.into(),
+            boost_limit_mhz: DEFAULT_BOOST_LIMIT_MHZ,
+        }
+    );
 }
 
 #[test]
@@ -675,7 +493,7 @@ fn a_persisted_machine_for_other_cores_is_refused() {
         error,
         togi_sim::RestoreError::Cores {
             persisted: 2,
-            model: 4
+            script: 4
         }
     ));
 }
@@ -718,31 +536,23 @@ fn refuses_positional(machine: &serde_json::Value, pointer: &str, fields: &[&str
 }
 
 #[test]
-fn a_persisted_machine_decodes_only_from_objects() {
-    let definition = two_cores(ModelDef {
-        crash_mce: 1.0,
-        ..sharp(Signal::Crash)
-    });
-    let mut rig = Rig::new(&definition, 1);
-    assert_persisted_machine_decodes_only_from_objects(&mut rig);
-}
-
-#[test]
 fn a_scripted_persisted_machine_decodes_only_from_objects() {
-    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| {
-        TrialOutcome::UncorrectedMce {
+    static LANES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: [1.0; 16],
+        ccd_mhz: [4000, 4100],
+    };
+    let inputs = ScriptedMachine::sixteen_with_voltage_samples(
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::UncorrectedMce {
             core: core(0),
             at: Duration::from_secs(7),
-        }
-    });
-    assert_persisted_machine_decodes_only_from_objects(&mut rig);
-}
-
-fn assert_persisted_machine_decodes_only_from_objects(rig: &mut Rig) {
+        },
+        &LANES,
+    );
+    let mut rig = Rig::with_script(inputs, History::default());
     rig.boot();
     assert!(crashed(&rig.alone(0, -12, Regime::R2, 0)));
-    let mut crashed_machine =
-        serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
+    let crashed_machine = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
     refuses_positional(
         &crashed_machine,
         "",
@@ -779,17 +589,15 @@ fn assert_persisted_machine_decodes_only_from_objects(rig: &mut Rig) {
         "/samples",
         &["id", "cores", "threads", "ran", "stalled", "voltage"],
     );
-    crashed_machine["samples"]["voltage"] = serde_json::json!({
-        "requests": vec![1.0; 16],
-        "clocks": [4000, 0],
-        "rail": 1.0,
-        "rates": vec![0.0; 16],
-    });
     refuses_positional(
         &crashed_machine,
         "/samples/voltage",
-        &["requests", "clocks", "rail", "rates"],
+        &["requests", "clocks"],
     );
+    let mut legacy_voltage = crashed_machine;
+    legacy_voltage["samples"]["voltage"]["rail"] = serde_json::json!(1.0);
+    legacy_voltage["samples"]["voltage"]["rates"] = serde_json::json!([0.0; 16]);
+    assert!(serde_json::from_value::<togi_sim::Persisted>(legacy_voltage).is_err());
 
     rig.sim.reboot().expect("a representable reboot");
     let rebooted = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");

@@ -1698,7 +1698,6 @@ version = "0.0.0"
 dependencies = [
  "flate2",
  "jiff",
- "proptest",
  "rand",
  "serde",
  "serde_json",
@@ -1715,7 +1714,6 @@ name = "togi-simrun"
 version = "0.0.0"
 dependencies = [
  "jiff",
- "serde",
  "serde_json",
  "tempfile",
  "test-case",
@@ -1873,7 +1871,6 @@ dependencies = [
  "clap",
  "jiff",
  "nix",
- "serde",
  "serde_json",
  "sha2",
  "tempfile",
@@ -1887,8 +1884,6 @@ dependencies = [
  "togi-session",
  "togi-sim",
  "togi-simrun",
- "togi-tool-audit",
- "togi-tool-trialfacts",
  "togi-tuner",
  "togi-version",
 ]
@@ -1910,21 +1905,6 @@ dependencies = [
  "togi-render",
  "togi-requests",
  "togi-tuner",
-]
-
-[[package]]
-name = "togi-tool-trialfacts"
-version = "0.0.0"
-dependencies = [
- "flate2",
- "serde",
- "serde_json",
- "tempfile",
- "test-case",
- "thiserror",
- "togi-journal",
- "togi-machine",
- "togi-sim",
 ]
 
 [[package]]

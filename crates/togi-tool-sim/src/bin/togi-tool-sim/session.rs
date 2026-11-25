@@ -11,13 +11,13 @@ use togi_journal::{Event, Payload, Seq};
 use togi_machine::CancellationToken;
 use togi_render::{OutputFacts, Renderer, Style};
 use togi_session::{ConfigSource, Stop};
-use togi_sim::{MachineDefinition, file};
 use togi_simrun::{Finished, Persistence, Replay, ResumeError, SimInput, SimOutcome};
+use togi_tool_sim::scripted::developer_machine;
 use togi_tuner::policy::{FoldError, Params, State};
 
 use crate::content::{RecordedContent, RecordedContentError};
 use crate::log::Log;
-use crate::{SessionArgs, build, machine, signals};
+use crate::{SessionArgs, build, signals};
 
 const FAILED: u8 = 1;
 const CAPPED: u8 = 3;
@@ -29,7 +29,6 @@ pub(crate) fn run(args: SessionArgs, log: &mut Log) -> u8 {
     run_with(
         args,
         log,
-        |path| file::load(path),
         |args, log| {
             let dir = if let Some(dir) = args.state_dir.filter(|dir| !dir.as_os_str().is_empty()) {
                 dir
@@ -66,12 +65,11 @@ pub(crate) struct Context {
 pub(crate) fn run_with(
     args: SessionArgs,
     log: &mut Log,
-    read_machine: impl FnOnce(&Path) -> Result<MachineDefinition, file::LoadError>,
     persistence: impl FnOnce(SessionArgs, &mut Log) -> Result<Persistence, Error>,
     context: impl FnOnce() -> Result<Context, Error>,
     execute: impl FnOnce(SimInput) -> Result<SimOutcome, togi_simrun::SimError>,
 ) -> u8 {
-    match simulate(args, log, read_machine, persistence, context, execute) {
+    match simulate(args, log, persistence, context, execute) {
         Ok(code) => code,
         Err(error) => {
             let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
@@ -82,8 +80,6 @@ pub(crate) fn run_with(
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error(transparent)]
-    Machine(#[from] machine::LoadError),
     #[error("create the state directory")]
     TempDir(#[source] io::Error),
     #[error("read the state directory's configuration")]
@@ -103,7 +99,6 @@ pub(crate) enum Error {
 fn simulate(
     args: SessionArgs,
     log: &mut Log,
-    read_machine: impl FnOnce(&Path) -> Result<MachineDefinition, file::LoadError>,
     persistence: impl FnOnce(SessionArgs, &mut Log) -> Result<Persistence, Error>,
     context: impl FnOnce() -> Result<Context, Error>,
     execute: impl FnOnce(SimInput) -> Result<SimOutcome, togi_simrun::SimError>,
@@ -113,12 +108,6 @@ fn simulate(
         renderer,
         zone,
     } = context()?;
-    let machine = machine::load_session(
-        args.machine.as_deref(),
-        args.seed,
-        args.replay_facts,
-        read_machine,
-    )?;
     let seed = args.seed;
     let cold_boots = args.cold_boots;
     let verify_every = args.verify_every;
@@ -128,7 +117,7 @@ fn simulate(
     let recorded_content = args.recorded_content;
     let persistence = persistence(args, log)?;
     let config = togi_simrun::recorded_config(&persistence, Config::default())?;
-    let simulator = togi_simrun::resume_simulator(&persistence, machine, seed)?;
+    let simulator = togi_simrun::resume_simulator(&persistence, developer_machine(), seed)?;
     // The night ends a fixed time after it started, however many processes the machine's boots span. A night a
     // completed stop already closed is over; a rerun opens a fresh one at the simulator's clock.
     let events = togi_simrun::events(&persistence)?;

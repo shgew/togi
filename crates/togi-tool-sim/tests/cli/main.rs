@@ -19,10 +19,7 @@ use togi_journal::{Build, EventKind, FixStamp, Payload, Recording, SCHEMA, Shutd
 use togi_machine::{CancellationToken, TargetOffset};
 use togi_render::Renderer;
 use togi_session::ConfigSource;
-use togi_sim::{
-    History, MachineDefinition, Model, RunSettings, ScriptedMachine, ScriptedTopology, Simulator,
-    TrialOutcome,
-};
+use togi_sim::{EPOCH, History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome};
 use togi_tool_sim::scripted::{CONTRACT_VERSION, ScriptedCase, developer_machine};
 
@@ -213,27 +210,15 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
     }
 }
 
-#[test_case("boot_number", serde_json::json!(u32::MAX), "allocate the next simulated boot number"; "boot exhaustion")]
-#[test_case("clock", serde_json::json!({"secs": u64::MAX, "nanos": 0}), "add elapsed time to the simulated epoch"; "elapsed overflow")]
-#[test_case("wall_offset", serde_json::to_value(jiff::SignedDuration::from_secs(-1)).unwrap(), "apply the simulated wall-clock offset"; "lower timestamp overflow")]
+#[test_case("clock", serde_json::json!({"secs": u64::MAX, "nanos": 0}), "add elapsed time to the simulated epoch", EPOCH.checked_add(std::time::Duration::from_secs(u64::MAX)).unwrap_err(); "elapsed overflow")]
+#[test_case("wall_offset", serde_json::to_value(SignedDuration::from_secs(-1)).unwrap(), "apply the simulated wall-clock offset", jiff::Timestamp::MIN.checked_add(SignedDuration::from_secs(-1)).unwrap_err(); "lower timestamp overflow")]
 fn real_process_simulator_arithmetic_errors_are_reported(
     field: &str,
     value: serde_json::Value,
     operation: &str,
+    cause: jiff::Error,
 ) {
-    let definition = (field == "boot_number").then(boot_exhaustion_machine);
-    let sim = if let Some(definition) = &definition {
-        Simulator::new(
-            Model::new(definition, 1).unwrap(),
-            RunSettings {
-                seed: 1,
-                ..Default::default()
-            },
-        )
-    } else {
-        Simulator::scripted(developer_machine(), 1, History::default())
-    }
-    .unwrap();
+    let sim = Simulator::scripted(developer_machine(), 1, History::default()).unwrap();
     let mut persisted = serde_json::to_value(sim.persisted()).unwrap();
     persisted[field] = value;
     if field == "wall_offset" {
@@ -245,34 +230,20 @@ fn real_process_simulator_arithmetic_errors_are_reported(
         serde_json::to_vec(&persisted).unwrap(),
     )
     .unwrap();
-    let mut run = command();
-    run.arg("--state-dir").arg(tmp.path());
-    if let Some(definition) = definition {
-        let machine = tmp.path().join("hunt.json");
-        std::fs::write(&machine, serde_json::to_vec(&definition).unwrap()).unwrap();
-        run.arg("--machine").arg(&machine);
-    }
-    let output = run.args(["--max-boots", "1"]).output().unwrap();
+    let output = command()
+        .arg("--state-dir")
+        .arg(tmp.path())
+        .args(["--max-boots", "1"])
+        .output()
+        .unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(output.status.code(), Some(1), "{stderr}");
-    assert!(stderr.contains(operation), "{stderr}");
+    let cause = togi_machine::error_chain(&cause);
+    assert_eq!(
+        stderr,
+        format!(
+            "sim: resume the simulated machine: restore the simulated machine: restore the simulated clock: {operation}: {cause}\n"
+        )
+    );
     assert!(!stderr.contains("panicked"), "{stderr}");
-}
-
-// A restored crashed machine cannot answer the boot-ID probe. The CLI needs a live
-// machine that resets during the run; the default script never does.
-fn boot_exhaustion_machine() -> MachineDefinition {
-    serde_json::from_str(
-        r#"{
-          "cores": 4,
-          "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
-          "core": [
-            {"id": 0, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-            {"id": 1, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-            {"id": 2, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]},
-            {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]}
-          ]
-        }"#,
-    )
-    .unwrap()
 }

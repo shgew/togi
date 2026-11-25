@@ -5,34 +5,14 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
-use togi_machine::{Backend, BiosContext, CoreId, Machine, ResetKind, Signal};
+use togi_machine::{Backend, BiosContext, CoreId, Machine, ResetKind};
 
 use crate::adapters::{SimClock, SimHost, SimKernel, SimSmu};
 use crate::faults::SmuHook;
-use crate::model::{Model, Script, failure_signal};
 use crate::persisted::{Persisted, RestoreError};
-use crate::runtime::{ArithmeticError, History, RunSettings, Runtime, Shared};
-use crate::source::{MachineSource, ScriptedMachine};
+use crate::runtime::{ArithmeticError, History, Runtime, Shared};
+use crate::source::ScriptedMachine;
 use crate::trials::SimTrials;
-
-/// A script refused by [`Simulator::script_trial`].
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
-pub enum ScriptError {
-    #[error("script trial {trial} core {core} outside the machine's {cores} cores")]
-    Core {
-        trial: String,
-        core: CoreId,
-        cores: usize,
-    },
-    #[error("script trial {trial} at_s {at_s} must be finite and nonnegative")]
-    At { trial: String, at_s: f64 },
-    #[error("script trial {trial} signal {signal:?} is only supported by replay")]
-    Signal { trial: String, signal: Signal },
-    #[error(
-        "trial overrides by ID belong to the fitted machine; use the scripted machine's outcome function"
-    )]
-    FittedOnly,
-}
 
 /// A deterministic virtual machine. Cloning the handle shares the machine. [`seams`](Self::seams) hands the session its adapters; every adapter and
 /// this handle share one runtime, so a fault armed here shows in the next seam call.
@@ -42,19 +22,6 @@ pub struct Simulator {
 }
 
 impl Simulator {
-    /// Starts the machine one reboot after its recorded history.
-    ///
-    /// # Errors
-    ///
-    /// The next boot number or resumed timestamp cannot be represented.
-    pub fn new(model: Model, settings: RunSettings) -> Result<Self, ArithmeticError> {
-        Self::start(
-            MachineSource::fitted(model, settings.replay),
-            settings.seed,
-            settings.history,
-        )
-    }
-
     /// Starts the scripted machine one reboot after its recorded history.
     ///
     /// # Errors
@@ -65,21 +32,8 @@ impl Simulator {
         seed: u64,
         history: History,
     ) -> Result<Self, ArithmeticError> {
-        Self::start(MachineSource::Scripted(script), seed, history)
-    }
-
-    /// Starts either machine source one reboot after its recorded history.
-    ///
-    /// # Errors
-    ///
-    /// The next boot number or resumed timestamp cannot be represented.
-    pub fn start(
-        source: MachineSource,
-        seed: u64,
-        history: History,
-    ) -> Result<Self, ArithmeticError> {
         Ok(Self {
-            shared: Rc::new(RefCell::new(Runtime::new(source, seed, history)?)),
+            shared: Rc::new(RefCell::new(Runtime::new(script, seed, history)?)),
         })
     }
 
@@ -95,8 +49,8 @@ impl Simulator {
     }
 
     /// The inputs to supply again when restoring this machine.
-    pub fn source(&self) -> MachineSource {
-        self.shared.borrow().source.clone()
+    pub fn source(&self) -> ScriptedMachine {
+        self.shared.borrow().source
     }
 
     /// The wall clock, which [`jump_wall`](Self::jump_wall) can move.
@@ -216,38 +170,6 @@ impl Simulator {
         self.shared.borrow_mut().bios = context;
     }
 
-    /// Pins the outcome of one trial of a fitted machine, replacing any file-defined script.
-    pub fn script_trial(&self, trial: &str, script: Script) -> Result<(), ScriptError> {
-        let mut runtime = self.shared.borrow_mut();
-        let MachineSource::Fitted { model, .. } = &runtime.source else {
-            return Err(ScriptError::FittedOnly);
-        };
-        let cores = model.cores();
-        if let Some(signal) = script.signal
-            && failure_signal(Some(signal)).is_err()
-        {
-            return Err(ScriptError::Signal {
-                trial: trial.to_owned(),
-                signal,
-            });
-        }
-        if script.core.index() >= cores {
-            return Err(ScriptError::Core {
-                trial: trial.to_owned(),
-                core: script.core,
-                cores,
-            });
-        }
-        if !(script.at_s.is_finite() && script.at_s >= 0.0) {
-            return Err(ScriptError::At {
-                trial: trial.to_owned(),
-                at_s: script.at_s,
-            });
-        }
-        runtime.scripts.insert(trial.to_owned(), script);
-        Ok(())
-    }
-
     /// Calls `hook` before and after every actual SMU access. See [`SmuHook`].
     pub fn interrupt_smu(&self, hook: impl SmuHook + 'static) {
         self.shared.borrow_mut().faults.hook = Some(Box::new(hook));
@@ -287,9 +209,8 @@ impl Simulator {
     ///
     /// # Errors
     ///
-    /// A persisted state with a different source kind or core count, one without a boot, or an
-    /// unrepresentable wall clock.
-    pub fn restore(source: MachineSource, persisted: Persisted) -> Result<Self, RestoreError> {
+    /// A persisted state with a different core count, one without a boot, or an unrepresentable wall clock.
+    pub fn restore(source: ScriptedMachine, persisted: Persisted) -> Result<Self, RestoreError> {
         Ok(Self {
             shared: Rc::new(RefCell::new(Runtime::restore(source, persisted)?)),
         })

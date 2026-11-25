@@ -182,7 +182,7 @@ recovery: _dev-shell
     read -r -a checks <<< "$names"
     just check-one "${checks[@]}"
 
-# Run a real simulated session with the developer script (`--machine FILE` selects a fitted research machine)
+# Run a real simulated session with the deterministic developer script
 [group('run')]
 sim *args: _dev-shell
     cargo run --release --locked -p togi-tool-sim -- "$@"
@@ -191,11 +191,6 @@ sim *args: _dev-shell
 [group('run')]
 togi *args: _dev-shell
     cargo run --release --locked -p togi -- "$@"
-
-# Run every session of the simulator suite on demand for research and check that each ended clean
-[group('run')]
-sim-suite *args: _dev-shell
-    out=$(mktemp -d); cargo run --release --locked -p togi-tool-sim -- suite --suite tools/bench/suite.json --out "$out" "$@" && cargo run --release --locked -p togi-tool-sim -- check --suite tools/bench/suite.json --shards 1 "$out"
 
 # Play a recorded journal through the dashboard on a fast-forward clock
 [group('run')]
