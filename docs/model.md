@@ -2,12 +2,14 @@
 
 The design being built, agreed with the owner on 2026-11-10. It is not yet what the code does. Numbers marked "start" are starting values the machine will correct.
 
+The first version runs CCD nights only. A night finds, soaks and measures the day profile it proposes, but the desktop stays at stock and counts no clean time. Until day tuning lands, Return boots the desktop at stock, the Day section's moves and their notifications do not happen, and the proposed profile's measurements are not gain, which compares stock with the profile in use. This paragraph goes when day tuning lands.
+
 ## Words
 
 - **Offset**: a core's Curve Optimizer value, 0 (stock) down to -50. Deeper means more negative.
 - **Profile**: one offset for every core.
 - **Unit**: what is being tuned. A CCD in stage one, a core in stage two.
-- **Edge**: the deepest offset of a unit that passes the night tests.
+- **Edge**: the deepest offset at which a unit passed the night tests; offsets between steps are not tried.
 - **Margin**: one number. By day every unit runs at its edge backed off by the margin.
 - **Clean time**: hours the desktop has been on with the day profile applied and no crash. It is the only clock togi uses; idle hours count.
 - **Crash**: any unclean end while a nonzero profile is applied. togi does not ask why.
@@ -16,24 +18,24 @@ The design being built, agreed with the owner on 2026-11-10. It is not yet what 
 
 ## Night
 
-The owner starts it with `togi night`. The first time, the command states the risk and asks once; after that it reboots at once. The machine reboots into the tuning boot and togi runs everything from there. A night ends when its work is done or the owner ends it; there is no time limit. A crash during a night is expected: the watchdog resets the machine, the tuning boot comes back and the night continues.
+The owner starts it with `togi night`. The first time, the command states the risk and asks once; after that it reboots at once. Once means once per journal: after a `togi reset` it asks again. The machine reboots into the tuning boot and togi runs everything from there. A night ends when its work is done or the owner ends it; there is no time limit. A crash during a night is expected: the watchdog resets the machine, the tuning boot comes back and the night continues. If togi fails to start three times within 30 minutes, the night ends at stock and says so; a crash during a test is not a failed start.
 
-1. **Self-check** (first night only). A profile known to freeze this desktop is run through each shape for up to 10 minutes (start). At least one shape must fail. If none does, togi stops and says its tests cannot see that failure. A shape that did not fail is recorded as not seeing it.
-2. **Baseline** (first night only). Measure the three shapes at stock: power, temperature, clock speed.
-3. **Find edges.** The first probes move every core together until one fails; that gives every unit a value that is not stock. Then each unit is probed on its own: step deeper with short probes until one fails. A probe loads only the cores of the unit under test. Every other core sits idle at its day value (its edge backed off by the margin), so a probe sees the neighbours the day will have. The whole-profile soak is the test of all edges together.
-4. **Soak.** Run the whole edge profile through all three shapes for longer. A failure that names a core moves that unit's edge back; a reset moves every edge back.
-5. **Measure.** Run the three shapes on the profile the day will use and record power, temperature and clock speed.
+1. **Self-check** (first night only). A profile known to freeze this desktop is run through each shape for up to 10 minutes (start). At least one shape must fail. If none does, togi stops and says its tests cannot see that failure. A shape that did not fail is recorded as not seeing it. On hardware with no such profile on record, togi refuses the first night before writing any offset.
+2. **Baseline** (first night only). Run the three shapes at stock and measure power, temperature and clock speed. This is a measurement, not a test of an offset. A shape that fails at stock ends the night: no offset can be trusted on a machine that fails at stock. A setup problem or a missing sensor is not a failure.
+3. **Find edges.** The first probes move every core together, 5 deeper each step (start), until one fails; the last step that passed is where each CCD's search starts, stock if the first step fails. Then each unit is probed on its own: step deeper, 2 each step (start), with short probes until one fails. Each step runs all three shapes. A probe loads only the cores of the unit under test. Every other core sits idle at its day value (its edge backed off by the margin), so a probe sees the neighbours the day will have. The whole-profile soak is the test of all edges together.
+4. **Soak.** Run the whole edge profile through all three shapes for longer: twice the probe length (start). A failure that names a core moves that unit's edge back one unit step, the step each unit is probed with; a reset moves every edge back one unit step. A changed profile is soaked again.
+5. **Measure.** Run the three shapes on the profile the day will use and record power, temperature and clock speed. A profile that fails here is not proposed: its edges move back as after a soak failure and it is soaked again.
 6. **Return.** Boot back into the desktop. The day profile is applied and idle hours count as clean time.
 
-Every night ends the same way, whatever ended it: work done, the owner (F10 or the power button), or a safety stop (failed self-check, lost watchdog, failed journal, failed readback). The CPU goes to stock and the machine boots into the desktop at once. `togi status` then leads with why the night ended. The desktop applies the day profile only if its own checks pass (watchdog armed, journal writable, readback matches); otherwise it stays at stock and says why.
+Every night ends the same way, whatever ended it: work done, the owner (F10 or the power button), or a safety stop (failed self-check, failed shape at stock, three failed starts, lost watchdog, failed journal, failed readback). The CPU goes to stock and the machine boots into the desktop at once. `togi status` then leads with why the night ended. The desktop applies the day profile only if its own checks pass (watchdog armed, journal writable, readback matches); otherwise it stays at stock and says why.
 
 Three test shapes, named after what the desktop is used for:
 
-- **build**: every core loaded.
+- **build**: every core under test loaded at once.
 - **game**: one or a few cores at full boost.
 - **idle**: mostly idle, with short bursts hopping between cores.
 
-togi's own supervising process runs on a core that is not loaded when there is one and shares a loaded core when there is none; it never needs a core at stock. A test passes only when every loaded core returned verified results. Wrong result, error, hang or reset is a failure. Probe length is a multiple of how long the self-check took to fail under that shape; a shape that did not fail there runs for the self-check's full time.
+togi's own supervising process runs on a core that is not loaded when there is one and shares a loaded core when there is none; it never needs a core at stock. A test passes only when every loaded core returned verified results. Wrong result, error, hang or reset is a failure. Probe length is twice (start) how long the self-check took to fail under that shape, never more than the self-check's full time and never less than the shape needs to verify every loaded core; a shape that did not fail there runs for the self-check's full time.
 
 ## Day
 

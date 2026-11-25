@@ -403,11 +403,11 @@ Self-check: done          Baseline: done            Find edges: NOW           So
 Current probe: CCD 0, cores 0-7 loaded                                            CCD edges: 0 of 2 found; 2 left.                                              
                                                                                                                                                                 
 Offset ladder                                                                     CCD 0  left                                                                   
-  Passed:       -18   -20                                                         CCD 1  left                                                                   
-  Now trying:   -22                                                                                                                                             
-                                                                                  All cores together: passed -2 through -16, step 2                             
+  Passed:       -22                                                               CCD 1  left                                                                   
+  Now trying:   -24                                                                                                                                             
+                                                                                  All cores together: passed -5 through -20, step 5                             
 Shapes: build passed; game running; idle left.                                                                                                                  
-Game probe (minutes:seconds): 2:10 of 5:00                                        Other cores held at their day value: CCD 1 -6.                                
+Game probe (minutes:seconds): 2:10 of 5:00                                        Other cores held at their day value: CCD 1 -10.                               
                                                                                                                                                                 
                                                                                                                                                                 
 Gain (this night): not measured yet.                                                                                                                            
@@ -420,7 +420,7 @@ Gain (this night): not measured yet.
                                                                                                                                                                 
 Recent events (newest first)                                                                                                                                    
 01:50  Individual CCD probing began.                                                                                                                            
-01:47  All cores together failed at -18: idle, wrong result on core 12.                                                                                         
+01:47  All cores together failed at -25: idle, wrong result on core 12.                                                                                         
 22:57  Tuning boot returned after the self-check hang.                                                                                                          
 22:55  Watchdog reset the machine.                                                                                                                              
                                                                                                                                                                 
@@ -439,7 +439,7 @@ F10 or the power button: end the night now (CPU to stock, boot into the desktop)
 
 Colours:
 - muted: `Time`; `Night started`; `Elapsed`.
-- good: `-18   -20`; `build passed`.
+- good: `-22`; `build passed`.
 
 Rationale: The ladder alone owns the tested offset; the right column counts found and remaining CCD edges, marks both unfinished edges left, and shows other cores held at day values.
 
