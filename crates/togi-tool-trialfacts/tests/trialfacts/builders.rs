@@ -1,18 +1,11 @@
 use std::collections::BTreeMap;
 
-use jiff::Timestamp;
-use togi_facts::{Decisive, TrialClass};
-use togi_journal::{
-    Activity, ArchiveKind, Build, FixStamp, Journal, MemFs, Outcome, Payload, SCHEMA, Seq,
-    SessionContext, SessionStart, Stamp, StateDir, TrialEnd, TrialId, TrialIntent,
-};
+use serde_json::{Value, json};
+use togi_journal::{FixStamp, SCHEMA, Seq, TrialId};
 use togi_machine::{
-    BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime,
-    Signal, TargetOffset, WorkloadId,
+    BiosContext, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
 };
-use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact};
-
-pub(crate) const BOOT: &str = "private-boot";
+use togi_tool_trialfacts::{BuildStamp, Class, Decisive, Phase, Profile, TrialClass, TrialFact};
 
 pub(crate) fn core(n: i64) -> CoreId {
     CoreId::new(n).unwrap()
@@ -26,19 +19,6 @@ pub(crate) fn offsets(values: &[i64]) -> Vec<TargetOffset> {
     values
         .iter()
         .map(|&value| TargetOffset::new(value).unwrap())
-        .collect()
-}
-
-pub(crate) fn per_core(values: &[i64]) -> PerCore<TargetOffset> {
-    values
-        .iter()
-        .enumerate()
-        .map(|(n, &value)| {
-            (
-                core(i64::try_from(n).unwrap()),
-                TargetOffset::new(value).unwrap(),
-            )
-        })
         .collect()
 }
 
@@ -100,188 +80,54 @@ pub(crate) fn crash(core: Option<i64>) -> Decisive {
     }
 }
 
-pub(crate) fn lock(fs: &MemFs) -> StateDir {
-    StateDir::simulated(fs.clone()).unwrap()
+/// Builds fixture input, not a facts exporter. Keep callers independent of the reader's wire type.
+pub(crate) fn row(fact: &TrialFact) -> Value {
+    let (kind, workload, cores, duration) = match fact.class {
+        Class::Trial(class) => (
+            "trial",
+            Some(class.workload),
+            class.loaded,
+            class.duration_s,
+        ),
+        Class::Idle { loaded } => ("idle", None, loaded, 0),
+    };
+    let (outcome, signal, core, stalled_core) = match fact.outcome {
+        Decisive::Pass => ("pass", None, None, None),
+        Decisive::Failure {
+            signal,
+            core,
+            stalled,
+        } => ("failure", Some(signal), core, stalled),
+    };
+    json!({
+        "session": fact.session,
+        "build": fact.build,
+        "ruleset": fact.build.ruleset,
+        "context": fact.context,
+        "seq": fact.seq,
+        "trial": fact.trial,
+        "kind": kind,
+        "class": {
+            "regime": fact.class.regime(), "workload": workload, "cores": cores, "duration_s": duration
+        },
+        "condition": fact.condition,
+        "phase": fact.phase,
+        "record_only": fact.record_only,
+        "profile": fact.profile.as_slice(),
+        "outcome": outcome,
+        "signal": signal,
+        "duration_s": fact.duration_s,
+        "stalled_core": stalled_core,
+        "core": core,
+        "voltage_requests_v": fact.voltage_requests_v,
+        "top_requesters": fact.top_requesters,
+        "ccd_mhz": fact.ccd_mhz,
+    })
 }
 
-/// Writes session journals into an in-memory state directory.
-pub(crate) struct Writer {
-    journal: Journal,
-    second: i64,
-    boot: u32,
-}
-
-impl Writer {
-    pub(crate) fn open(fs: &MemFs) -> Self {
-        Self::reopen(lock(fs), 1, 0)
-    }
-
-    fn reopen(dir: StateDir, boot: u32, second: i64) -> Self {
-        let journal = dir.open(BootId::from(format!("{BOOT}-{boot}"))).unwrap();
-        Self {
-            journal,
-            second,
-            boot,
-        }
-    }
-
-    pub(crate) fn add(&mut self, payload: impl Into<Payload>) -> Seq {
-        self.second += 1;
-        let stamp = Stamp {
-            time: Timestamp::from_second(1_700_000_000 + self.second).unwrap(),
-            mono: None,
-        };
-        self.journal.append(stamp, payload.into(), &[]).unwrap().seq
-    }
-
-    /// `session.start` of `cores` under the `fixture` BIOS context, then its `session.context`.
-    pub(crate) fn begin(&mut self, session: &str, ruleset: u32, cores: &[i64]) {
-        self.begin_with(session, cores, |build| build.ruleset = ruleset);
-    }
-
-    /// [`Self::begin`] with the recorded build adjusted by `adjust`.
-    pub(crate) fn begin_with(
-        &mut self,
-        session: &str,
-        cores: &[i64],
-        adjust: impl FnOnce(&mut Build),
-    ) {
-        let mut build = Build {
-            version: "fixture".into(),
-            rev: Some("abc".into()),
-            ruleset: 1,
-            schema: SCHEMA,
-            fixes: FixStamp::none(),
-            evidence: 1,
-        };
-        adjust(&mut build);
-        self.add(SessionStart {
-            build,
-            session: session.parse().unwrap(),
-            cores: cores
-                .iter()
-                .map(|&n| CoreInfo {
-                    core: core(n),
-                    ccd: CcdId::new(0).unwrap(),
-                    cpus: vec![CpuId::from(u16::try_from(n).unwrap())],
-                })
-                .collect(),
-        });
-        self.add(SessionContext::from(bios("fixture")));
-    }
-
-    pub(crate) fn trial(&mut self, intent: TrialIntent, end: TrialEnd) -> Seq {
-        self.add(intent);
-        self.add(end)
-    }
-
-    pub(crate) fn close(self) -> StateDir {
-        self.journal.close().unwrap()
-    }
-
-    /// Archives the session and starts an empty journal for the next one.
-    pub(crate) fn archive(self) -> Self {
-        let Self {
-            journal,
-            second,
-            boot,
-        } = self;
-        let stamp = Stamp {
-            time: Timestamp::from_second(1_700_000_000 + second + 1).unwrap(),
-            mono: None,
-        };
-        let dir = journal
-            .archive(
-                stamp,
-                ArchiveKind::Transition {
-                    destination: "20260101T000100Z".parse().unwrap(),
-                },
-                &[],
-            )
-            .unwrap();
-        Self::reopen(dir, boot + 1, second + 2)
-    }
-}
-
-pub(crate) fn alone(id: &str, core_n: i64, value: i64, profile: &[i64]) -> TrialIntent {
-    TrialIntent {
-        task_start: None,
-        core: Some(core(core_n)),
-        offset: Some(TargetOffset::new(value).unwrap()),
-        ..together(id, Regime::R1, &[], profile, Condition::Alone)
-    }
-}
-
-pub(crate) fn together(
-    id: &str,
-    regime: Regime,
-    cores: &[i64],
-    profile: &[i64],
-    condition: Condition,
-) -> TrialIntent {
-    TrialIntent {
-        task_start: None,
-        night: None,
-        task: None,
-        content: Vec::new(),
-        placement: None,
-        tested: None,
-        trial: TrialId::from(id.to_owned()),
-        kernel_cursor: None,
-        kernel_error: None,
-        profile: per_core(profile),
-        core: None,
-        cores: set(cores),
-        offset: None,
-        regime,
-        workload: workload(regime, 0),
-        duration_s: 90,
-        condition,
-        activity: Some(Activity::Search),
-        retry: false,
-        cycle: None,
-        step: None,
-        hunt: None,
-        group: None,
-        round: None,
-        rerun: false,
-    }
-}
-
-pub(crate) fn end(id: &str, outcome: Outcome, duration_s: u32) -> TrialEnd {
-    TrialEnd {
-        trial: TrialId::from(id.to_owned()),
-        kernel_cursor: None,
-        kernel_error: None,
-        excluded: Vec::new(),
-        outcome,
-        signal: None,
-        core: None,
-        duration_s,
-        tctl_max_c: None,
-        voltage_request_median_v: None,
-        voltage_request_min_v: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: CoreSet::default(),
-        ccd_mhz: BTreeMap::new(),
-        last_sample_s: None,
-        last_sample_tctl_c: None,
-        last_sample_min_mhz: None,
-        last_sample_max_mhz: None,
-        stalled_core: None,
-        worker_stalled_ms: None,
-        reason: None,
-        interrupted: false,
-        last_evidence: false,
-        escaped: Vec::new(),
-        backend_missing: false,
-        containment_error: None,
-    }
-}
-
-pub(crate) fn failed(id: &str, signal: Signal, duration_s: u32) -> TrialEnd {
-    TrialEnd {
-        signal: Some(signal),
-        ..end(id, Outcome::Failure, duration_s)
-    }
+pub(crate) fn gz(text: &str) -> Vec<u8> {
+    use std::io::Write as _;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(text.as_bytes()).unwrap();
+    encoder.finish().unwrap()
 }

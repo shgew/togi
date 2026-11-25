@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-/// Copy the live journal and its archived journals and markers for facts and replay.
+/// Copy the live journal and its archived journals and markers for inspection and replay.
 /// Trial directories are left out. Take the copy while no trial runs.
 #[derive(Debug, Parser)]
 #[command(name = "togi-tool-copy-state")]

@@ -1,28 +1,13 @@
 use std::collections::BTreeMap;
-use std::io::{self, Write};
+use std::io;
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use test_case::test_case;
-use togi_facts::{Decisive, TrialClass};
-use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
-use togi_tool_trialfacts::{
-    Class, Phase, ReadError, TrialFact, WriteError, decode, encode, read, write_unsynced,
-};
+use togi_machine::{CcdId, Condition, Regime, Signal};
+use togi_tool_trialfacts::{Class, Decisive, Phase, ReadError, TrialClass, TrialFact, decode};
 
-use crate::builders::{core, crash, fact, set, workload};
+use crate::builders::{core, crash, fact, gz, row, set, workload};
 
 const FIRST: &str = "20260101T000000Z";
-
-fn gz(text: &str) -> Vec<u8> {
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(text.as_bytes()).unwrap();
-    encoder.finish().unwrap()
-}
-
-fn line(fact: &TrialFact) -> String {
-    serde_json::to_string(fact).unwrap()
-}
 
 fn sample() -> Vec<TrialFact> {
     let mut telemetry = fact(
@@ -57,114 +42,6 @@ fn sample() -> Vec<TrialFact> {
     idle.trial = None;
     idle.duration_s = 0;
     vec![fact(FIRST, 4, &[-10, 0], Decisive::Pass), telemetry, idle]
-}
-
-struct Failing {
-    accepted: usize,
-}
-
-impl Write for Failing {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if self.accepted == 0 {
-            return Err(io::Error::other("destination rejected write"));
-        }
-        self.accepted -= 1;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-struct Counting(usize);
-
-impl Write for Counting {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0 += 1;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-#[test]
-fn an_extract_round_trips_through_its_bytes() {
-    let facts = sample();
-    let mut first = Vec::new();
-    encode(&mut first, &facts).unwrap();
-    assert_eq!(decode(first.as_slice()).unwrap(), facts);
-    let mut second = Vec::new();
-    encode(&mut second, &facts).unwrap();
-    assert_eq!(first, second);
-}
-
-#[test]
-fn an_empty_extract_changes_nothing() {
-    let mut bytes = Vec::new();
-    assert!(matches!(encode(&mut bytes, &[]), Err(WriteError::Empty)));
-    assert!(bytes.is_empty());
-
-    bytes.extend_from_slice(b"existing output");
-    assert!(matches!(encode(&mut bytes, &[]), Err(WriteError::Empty)));
-    assert_eq!(bytes, b"existing output");
-}
-
-#[test]
-fn real_fs_a_new_extract_replaces_the_old_one_and_leaves_no_temporary_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("facts.gz");
-    std::fs::write(&path, "old").unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the kernel publication test deliberately writes a disposable unsynced extract"
-    )]
-    write_unsynced(&path, &sample()).unwrap();
-    assert_eq!(read(&path).unwrap(), sample());
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-}
-
-#[test]
-fn real_fs_a_destination_that_cannot_be_replaced_is_an_error_and_leaves_nothing_behind() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("occupied");
-    std::fs::create_dir(&path).unwrap();
-    std::fs::write(path.join("keep"), "kept").unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the kernel replacement failure test must not sync its disposable temporary file"
-    )]
-    let result = write_unsynced(&path, &sample());
-    assert!(matches!(result, Err(WriteError::Replace { .. })));
-    assert_eq!(std::fs::read_to_string(path.join("keep")).unwrap(), "kept");
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-
-    let missing = dir.path().join("absent").join("facts.gz");
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the kernel creation failure test uses the non-durable disk adapter"
-    )]
-    let result = write_unsynced(&missing, &sample());
-    assert!(matches!(result, Err(WriteError::Io(_))));
-    assert!(!missing.exists());
-    assert!(matches!(read(&missing), Err(ReadError::Open { .. })));
-}
-
-#[test]
-fn a_write_failure_at_any_step_is_reported() {
-    let facts = sample();
-    let mut counting = Counting(0);
-    encode(&mut counting, &facts).unwrap();
-    assert!(counting.0 >= 2);
-    for accepted in 0..counting.0 {
-        let error = encode(Failing { accepted }, &facts).unwrap_err();
-        assert!(
-            matches!(&error, WriteError::Io(source) if source.to_string().contains("rejected")),
-            "after {accepted} writes: {error}"
-        );
-    }
 }
 
 const WIRE_KEYS: [&str; 20] = [
@@ -206,30 +83,8 @@ fn positional(object: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
 }
 
 #[test]
-fn a_fact_that_would_not_read_back_is_refused_and_leaves_the_destination_unchanged() {
-    let mut facts = sample();
-    facts[2].outcome = Decisive::Pass;
-    let mut bytes = b"existing output".to_vec();
-    assert!(matches!(
-        encode(&mut bytes, &facts),
-        Err(WriteError::Invalid { index: 2, .. })
-    ));
-    assert_eq!(bytes, b"existing output");
-}
-
-#[test]
-fn a_voltage_request_that_is_not_finite_is_refused() {
-    let mut facts = sample();
-    facts[1].voltage_requests_v = [(core(0), f64::NAN)].into_iter().collect::<PerCore<_>>();
-    assert!(matches!(
-        encode(Vec::new(), &facts),
-        Err(WriteError::NotFinite { index: 1 })
-    ));
-}
-
-#[test]
 fn a_truncated_gzip_is_an_unexpected_end() {
-    let valid = line(&sample()[0]);
+    let valid = row(&sample()[0]);
     let mut truncated = gz(&format!("{valid}\n"));
     truncated.truncate(truncated.len() - 8);
     let error = decode(truncated.as_slice()).unwrap_err();
@@ -244,7 +99,7 @@ fn not_gzip() -> Vec<u8> {
 }
 
 fn trailing_garbage() -> Vec<u8> {
-    let mut trailing = gz(&format!("{}\n", line(&sample()[0])));
+    let mut trailing = gz(&format!("{}\n", row(&sample()[0])));
     trailing.extend_from_slice(b"not a gzip member");
     trailing
 }
@@ -261,7 +116,7 @@ fn an_unreadable_extract_is_an_error_and_never_a_partial_result(bytes: fn() -> V
 #[test_case(|valid| format!("{valid}{valid}\n"), 1; "two records on one line")]
 #[test_case(|valid| format!("[{valid}]\n"), 1; "a record array")]
 fn an_extract_is_one_valid_record_per_line(text: fn(&str) -> String, bad_line: u64) {
-    let valid = line(&sample()[0]);
+    let valid = row(&sample()[0]).to_string();
     match decode(gz(&text(&valid)).as_slice()) {
         Err(ReadError::Line { line, .. }) => assert_eq!(line, bad_line),
         other => panic!("{other:?}"),
@@ -270,7 +125,7 @@ fn an_extract_is_one_valid_record_per_line(text: fn(&str) -> String, bad_line: u
 
 #[test]
 fn the_last_line_needs_no_newline() {
-    let valid = line(&sample()[0]);
+    let valid = row(&sample()[0]);
     assert_eq!(
         decode(gz(&format!("{valid}\n{valid}")).as_slice())
             .unwrap()
@@ -337,7 +192,7 @@ fn a_record_that_contradicts_itself_or_the_vocabulary_is_refused(
     base: usize,
     change: fn(&mut serde_json::Value),
 ) {
-    let mut value = serde_json::to_value(&sample()[base]).unwrap();
+    let mut value = row(&sample()[base]);
     change(&mut value);
     let text = format!("{value}\n");
     assert!(matches!(
@@ -349,23 +204,7 @@ fn a_record_that_contradicts_itself_or_the_vocabulary_is_refused(
 #[test]
 fn a_pass_a_failure_and_an_idle_record_read_back() {
     let facts = sample();
-    let [pass, failure, idle] =
-        [PASS, FAILURE, IDLE].map(|index| serde_json::to_value(&facts[index]).unwrap());
+    let [pass, failure, idle] = [PASS, FAILURE, IDLE].map(|index| row(&facts[index]));
     let ok = format!("{pass}\n{failure}\n{idle}\n");
     assert_eq!(decode(gz(&ok).as_slice()).unwrap(), facts);
-}
-
-#[expect(
-    dead_code,
-    reason = "compile-only negative control for the durability tripwire"
-)]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "removing the unsynced writer entry must leave this expectation unfulfilled"
-)]
-fn the_unsynced_writer_keeps_its_durability_tripwire(
-    path: &std::path::Path,
-    facts: &[TrialFact],
-) -> Result<(), togi_tool_trialfacts::WriteError> {
-    write_unsynced(path, facts)
 }

@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, ErrorKind, Write as _};
@@ -7,133 +6,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use togi_journal::fs::Fs;
 use togi_machine::object_only;
 
-use crate::record::Record;
-use crate::suite::{RunSpec, hex};
-
-const FORMAT: &str = "togi-bench-runs-v1";
-const KEPT_TREES: usize = 8;
 const KEPT_COST_SCOPES: usize = 8;
 const TOUCH_ATTEMPTS: u32 = 3;
-
-/// The key of the sessions a cache holds: the format, the boot cap, the simulator's bytes, which carry the code
-/// that ran them, and the bench's own bytes, which carry the code that measured them. A change to either binary
-/// or to a flag that shapes a session opens a new cache; the rest of a run's inputs are checked per record
-/// ([`inputs`]).
-pub fn tree_key(simulator: &str, bench: &str, max_boots: u32) -> String {
-    let mut hash = Sha256::new();
-    hash.update(format!(
-        "{FORMAT} boots={max_boots}\nsimulator {simulator}\nbench {bench}\n"
-    ));
-    hex(&hash.finalize())
-}
-
-/// The digest of what one run reads besides the two binaries: the suite file, the run's identity and replay
-/// setting, and every file of its machine, its facts extract included.
-pub fn inputs(suite: &str, spec: &RunSpec) -> String {
-    let mut hash = Sha256::new();
-    hash.update(format!(
-        "suite {suite}\nrun {} replay={}\nmachine {}\n",
-        spec.name(),
-        spec.replay.is_some(),
-        spec.machine.as_ref().map_or_else(
-            || "default".to_owned(),
-            |machine| format!("{} {}", machine.name, machine.digest()),
-        ),
-    ));
-    hex(&hash.finalize())
-}
-
-/// The SHA-256 of the running executable, in lower-case hex: the bench's own build.
-pub fn current_exe_digest() -> io::Result<String> {
-    let bytes = fs::read(std::env::current_exe()?)?;
-    Ok(hex(&Sha256::digest(bytes)))
-}
-
-object_only! {
-    #[derive(Debug, Serialize)]
-    #[serde(deny_unknown_fields)]
-    struct Entry {
-        inputs: String,
-        record: Record,
-    }
-}
-
-/// One tree's records of finished sessions, each under the digest of its inputs.
-#[derive(Debug)]
-pub struct RunCache {
-    dir: PathBuf,
-    fs: Option<Arc<dyn Fs>>,
-}
-
-impl RunCache {
-    /// The cache for `key` under `root`: marked recently used, the least recently used others beyond
-    /// `KEPT_TREES` removed.
-    pub fn open(root: &Path, key: &str) -> io::Result<Self> {
-        let parent = root.join("runs");
-        let dir = parent.join(key);
-        touch(&dir)?;
-        let mut others = Vec::new();
-        for entry in fs::read_dir(&parent)? {
-            let entry = entry?;
-            if entry.file_name() != key
-                && let Ok(modified) = entry.metadata().and_then(|meta| meta.modified())
-                && entry.file_type()?.is_dir()
-            {
-                others.push((modified, entry.file_name()));
-            }
-        }
-        others.sort_by_key(|entry| Reverse(entry.clone()));
-        for (_, name) in others.into_iter().skip(KEPT_TREES - 1) {
-            let _ = fs::remove_dir_all(parent.join(name));
-        }
-        Ok(Self { dir, fs: None })
-    }
-
-    /// Opens an already selected namespace through an injected filesystem, without disk LRU bookkeeping.
-    pub fn with_fs(root: &Path, key: &str, fs: Arc<dyn Fs>) -> Self {
-        Self {
-            dir: root.join("runs").join(key),
-            fs: Some(fs),
-        }
-    }
-
-    fn path(&self, spec: &RunSpec) -> PathBuf {
-        self.dir
-            .join(&spec.scenario)
-            .join(format!("{}-{}.json", spec.split, spec.seed))
-    }
-
-    /// The record kept for `spec` if it was made from the same `inputs`.
-    pub fn get(&self, spec: &RunSpec, inputs: &str) -> Option<Record> {
-        let path = self.path(spec);
-        let bytes = match &self.fs {
-            Some(fs) => fs.read(&path),
-            None => fs::read(&path),
-        }
-        .ok()?;
-        let entry: Entry = serde_json::from_slice(&bytes).ok()?;
-        let same_run = entry.record.scenario == spec.scenario
-            && entry.record.seed == spec.seed
-            && entry.record.split == spec.split;
-        (entry.inputs == inputs && same_run).then_some(entry.record)
-    }
-
-    pub fn put(&self, spec: &RunSpec, inputs: &str, record: &Record) -> io::Result<()> {
-        let entry = Entry {
-            inputs: inputs.to_owned(),
-            record: record.clone(),
-        };
-        let bytes = serde_json::to_vec(&entry)?;
-        match &self.fs {
-            Some(fs) => write_in(fs.as_ref(), &self.path(spec), &bytes),
-            None => write_atomic(&self.path(spec), &bytes),
-        }
-    }
-}
 
 pub(crate) fn write_in(fs: &dyn Fs, path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
@@ -168,8 +45,8 @@ fn create_dirs(fs: &dyn Fs, path: &Path) -> io::Result<()> {
     }
 }
 
-/// Creates `dir` and marks it used now. Another bench pruning its least recently used caches may remove `dir`
-/// between the two, so a directory found missing is created again, a few times at most.
+/// Creates `dir` and marks it used now. Another comparison may prune it between the two operations,
+/// so a directory found missing is created again, a few times at most.
 pub(crate) fn touch(dir: &Path) -> io::Result<()> {
     touch_with(dir, |dir| File::open(dir)?.set_modified(SystemTime::now()))
 }

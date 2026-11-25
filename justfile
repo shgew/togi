@@ -212,12 +212,7 @@ stats *args: _dev-shell
 sql dir="/var/lib/togi" *args: _dev-shell
     tools/sql/sql.sh "$@"
 
-# Benchmark simulated session conclusions, building and running the simulator (`just bench --split dev --baseline tools/bench/baseline.jsonl`, or `just bench sanity --records records.jsonl` against the recorded baseline)
-[group('run')]
-bench *args: _dev-shell
-    cargo run --release --locked -p togi-tool-bench -- "$@"
-
-# Audit the current and archived journals of state directories; `just bench` audits its own runs (`just audit COPY-OF-STATE-DIR`)
+# Audit the current and archived journals of state directories (`just audit COPY-OF-STATE-DIR`)
 [group('run')]
 audit *args: _dev-shell
     cargo run --release --locked -p togi-tool-audit -- "$@"
@@ -258,17 +253,7 @@ _scripted-comparison mode base *args:
     esac
     cargo run --release --locked -p togi-tool-bench -- same "$dir" "$@"
 
-# Re-record the committed bench baseline over all seeds, without wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
-[group('run')]
-bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
-    cargo run --release --locked -p togi-tool-bench -- --split all --baseline-out "$1"
-
-# Regenerate privacy-safe real facts from a copied state directory
-[group('run')]
-facts state_dir: _dev-shell
-    cargo run --release --locked -p togi-tool-facts -- "$1" tools/bench/facts/target.jsonl.gz
-
-# Copy a state directory's live journal and archived journals and markers for facts and replay, leaving out trials; as root it builds under root's home (`sudo nix develop --command just copy-state /var/lib/togi DIR`, then chown DIR; docs/benchmarking.md)
+# Copy the live journal, archived journals and markers for audit, stats or replay, leaving out trials; see docs/benchmarking.md
 [group('run')]
 copy-state src dst: _dev-shell
     [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/copy-state-target; cargo run --release --locked -p togi-tool-copy-state -- "$1" "$2"

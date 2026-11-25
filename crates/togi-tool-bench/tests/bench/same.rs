@@ -6,6 +6,9 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use rustix::process::{Pid, test_kill_process};
+use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+
 use togi_tool_sim::scripted::{CONTRACT_PATH, CONTRACT_VERSION};
 
 use crate::session;
@@ -73,6 +76,10 @@ impl Trees {
 
     /// A simulator that leaves `journal` in its state directory and exits with `exit`.
     fn simulator(&self, name: &str, journal: &str, exit: i32) -> PathBuf {
+        self.simulator_running(name, journal, exit, "")
+    }
+
+    fn simulator_running(&self, name: &str, journal: &str, exit: i32, before: &str) -> PathBuf {
         let journal_path = self.path(&format!("{name}.jsonl"));
         fs::write(&journal_path, journal).unwrap();
         self.script(
@@ -91,6 +98,7 @@ case "$3:$9" in
   mapping-stop:1|mce-resume:2|power-button-reset:2|profile-placement:3|no-nonzero-work:3) ;;
   *) exit 8 ;;
 esac
+{before}
 printf '%s\n' "$3" >> '{cases}'
 cp '{journal}' "$7/events.jsonl" || exit 8
 exit {exit}
@@ -158,14 +166,18 @@ fn command(trees: &Trees) -> Command {
 }
 
 fn command_with_cache(trees: &Trees, cache: &Path) -> Command {
+    let mut command = command_using_defaults(trees);
+    command.arg("--cache").arg(cache);
+    command
+}
+
+fn command_using_defaults(trees: &Trees) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
     command
         .arg("same")
         .arg(trees.path("base"))
         .arg("--head")
-        .arg(trees.path("head"))
-        .arg("--cache")
-        .arg(cache);
+        .arg(trees.path("head"));
     command
 }
 
@@ -311,6 +323,151 @@ fn real_process_a_termination_during_the_build_fails_the_command_instead_of_repo
     );
     let left: Vec<_> = fs::read_dir(&temporary).unwrap().collect();
     assert!(left.is_empty(), "{left:?}");
+}
+
+#[test_case::test_case(Some("xdg"); "XDG_CACHE_HOME takes precedence")]
+#[test_case::test_case(None; "HOME fallback")]
+fn real_process_the_comparison_uses_the_user_cache_directory(xdg: Option<&str>) {
+    let trees = Trees::new();
+    let sim = trees.simulator("sim", &recorded(None), 0);
+    let home = trees.path("home");
+    let mut command = command_using_defaults(&trees);
+    command.env("HOME", &home).env_remove("XDG_CACHE_HOME");
+    let location = if let Some(xdg) = xdg {
+        let root = trees.path(xdg);
+        command.env("XDG_CACHE_HOME", &root);
+        root
+    } else if cfg!(target_os = "macos") {
+        home.join("Library/Caches")
+    } else {
+        home.join(".cache")
+    };
+    let output = command
+        .arg("--base-sim")
+        .arg(&sim)
+        .arg("--head-sim")
+        .arg(&sim)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert!(location.join("togi/bench/same").is_dir());
+}
+
+#[test]
+fn real_process_no_user_cache_directory_is_an_error_without_an_override() {
+    let trees = Trees::new();
+    let output = command_using_defaults(&trees)
+        .env_remove("HOME")
+        .env_remove("XDG_CACHE_HOME")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stderr).contains("no cache directory"));
+}
+
+#[test]
+fn real_process_cases_use_the_private_copy_and_each_leads_its_own_group() {
+    let trees = Trees::new();
+    let replaced = "#!/bin/sh\nexit 7\n";
+    let probe = format!(
+        r#"kill -0 "-$$" 2>/dev/null || exit 8
+printf '%s' '{replaced}' > '{}'"#,
+        trees.path("sim").display(),
+    );
+    let sim = trees.simulator_running("sim", &recorded(None), 0, &probe);
+    let output = command(&trees)
+        .args(["--smoke", "--jobs", "1"])
+        .arg("--base-sim")
+        .arg(&sim)
+        .arg("--head-sim")
+        .arg(&sim)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(fs::read_to_string(sim).unwrap(), replaced);
+    assert_eq!(
+        trees.cases("sim"),
+        ["mapping-stop", "mapping-stop", "mce-resume", "mce-resume"]
+    );
+}
+
+#[test_case::test_case(true, "interrupted"; "signal stops the running simulator")]
+#[test_case::test_case(false, "exceeded the 1 s hang safety limit"; "hung simulator is an error")]
+fn real_process_an_unfinished_child_is_stopped_and_never_counts_as_equality(
+    signal: bool,
+    reason: &str,
+) {
+    let trees = Trees::new();
+    let pids = trees.path("pid");
+    let mask = trees.path("mask");
+    let before = format!(
+        r"if [ -r /proc/$$/status ]; then grep '^SigBlk:' /proc/$$/status > '{mask}'; fi
+echo $$ > '{pids}'
+{}
+exec sleep 60",
+        if signal { "kill -TERM $PPID" } else { "" },
+        mask = mask.display(),
+        pids = pids.display(),
+    );
+    let sim = trees.simulator_running("sim", &recorded(None), 0, &before);
+    let output = command(&trees)
+        .args([
+            "--smoke",
+            "--jobs",
+            "1",
+            "--timeout",
+            if signal { "15" } else { "1" },
+        ])
+        .arg("--keep")
+        .arg(trees.path("kept"))
+        .arg("--base-sim")
+        .arg(&sim)
+        .arg("--head-sim")
+        .arg(&sim)
+        .output()
+        .unwrap();
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains(reason), "{stderr}");
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        fs::read_dir(trees.path("kept")).unwrap().count(),
+        usize::from(!signal)
+    );
+    let pid = Pid::from_raw(fs::read_to_string(pids).unwrap().trim().parse().unwrap()).unwrap();
+    assert!(
+        test_kill_process(pid).is_err(),
+        "simulator {pid:?} is still running"
+    );
+    if cfg!(target_os = "linux") {
+        let status = fs::read_to_string(mask).unwrap();
+        let (_, hex) = status.split_once(':').unwrap();
+        let blocked = u64::from_str_radix(hex.trim(), 16).unwrap();
+        for signal in [SIGHUP, SIGINT, SIGTERM] {
+            assert_eq!(blocked & (1 << (signal - 1)), 0, "{status}");
+        }
+    }
+}
+
+#[test]
+fn real_process_a_missing_override_fails_naming_the_file_before_building() {
+    let trees = Trees::new();
+    let missing = trees.path("missing");
+    let cargo = fake_cargo(&trees, &missing, "");
+    let output = command(&trees)
+        .env("CARGO", &cargo)
+        .arg("--head-sim")
+        .arg(&missing)
+        .output()
+        .unwrap();
+    let stderr = text(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains(&format!("read the simulator {}", missing.display())),
+        "{stderr}"
+    );
+    assert!(output.stdout.is_empty());
+    assert!(cargo_runs(&trees).is_empty());
 }
 
 #[test]

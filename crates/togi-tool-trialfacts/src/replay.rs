@@ -3,12 +3,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use togi_facts::Decisive;
 use togi_sim::MachineDefinition;
 use togi_sim::replay::{InvalidFact, Replay, ReplayFact, ReplayOutcome};
 
 use crate::file::{ReadError, read};
-use crate::record::{Class, TrialFact};
+use crate::record::{Class, Decisive, TrialFact};
 
 /// The replay facts of `facts`: decisive trials recorded under a BIOS context. Idle failures never answer a
 /// trial, and a fact without a context cannot say which machine it came from.
@@ -70,7 +69,7 @@ impl Extracts {
         machine_path: &Path,
         machine: &MachineDefinition,
     ) -> Result<(PathBuf, Arc<[TrialFact]>), ExtractsError> {
-        self.load_with(machine_path, machine, |path| read(path))
+        self.load_with(machine_path, machine, read)
     }
 
     /// Like [`Self::load`], reading an uncached extract through `reader`.
@@ -104,7 +103,7 @@ impl Extracts {
         machine_path: &Path,
         machine: &MachineDefinition,
     ) -> Result<Replay, ExtractsError> {
-        self.replay_with(machine_path, machine, |path| read(path))
+        self.replay_with(machine_path, machine, read)
     }
 
     /// Like [`Self::replay`], loading an uncached extract through `reader`.

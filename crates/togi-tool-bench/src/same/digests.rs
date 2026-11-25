@@ -14,7 +14,7 @@ use togi_machine::object_only;
 use togi_tool_sim::scripted::ScriptedCase;
 
 use crate::cache::{touch, write_atomic, write_in};
-use crate::suite::hex;
+use crate::hex;
 
 const FORMAT: &str = "togi-bench-scripted-v1";
 const KEPT_TREES: usize = 8;

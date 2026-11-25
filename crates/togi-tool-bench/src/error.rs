@@ -1,55 +1,14 @@
 use std::io;
 use std::path::PathBuf;
-use std::process::ExitStatus;
-
-use togi_sim::{InvalidMachine, file};
-use togi_tool_trialfacts::ExtractsError;
-
-use crate::suite::SuiteError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("load suite")]
-    Suite(#[from] SuiteError),
-    #[error("load scenario {scenario}")]
-    Machine {
-        scenario: String,
-        #[source]
-        source: file::LoadError,
-    },
-    #[error("load scenario {scenario}")]
-    Replay {
-        scenario: String,
-        #[source]
-        source: ExtractsError,
-    },
-    #[error("{what} {}", path.display())]
-    ReadFile {
-        what: &'static str,
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
     #[error("{what} {}", path.display())]
     WriteFile {
         what: &'static str,
         path: PathBuf,
         #[source]
         source: io::Error,
-    },
-    #[error("decode {what} {} line {line}", path.display())]
-    Decode {
-        what: &'static str,
-        path: PathBuf,
-        line: usize,
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("duplicate {what} run {scenario}/{seed}")]
-    DuplicateRun {
-        what: &'static str,
-        scenario: String,
-        seed: u64,
     },
     #[error("read the simulator {}", path.display())]
     NoSimulator {
@@ -65,20 +24,6 @@ pub enum Error {
     },
     #[error("build the simulator")]
     BuildSimulator(#[source] BuildFailure),
-    #[error("git {command}")]
-    Git {
-        command: String,
-        #[source]
-        source: GitError,
-    },
-    #[error("{run}")]
-    Run {
-        run: String,
-        #[source]
-        source: Box<RunError>,
-    },
-    #[error("interrupted")]
-    Interrupted,
 }
 
 /// Why the simulator did not build.
@@ -88,26 +33,12 @@ pub enum BuildFailure {
     Spawn(#[source] io::Error),
     #[error("cargo build")]
     Run(#[source] RunError),
-    #[error("cargo build {0}")]
-    Status(ExitStatus),
     #[error("cargo build exit status: {0}")]
     Exit(i32),
     #[error("keep cargo's messages")]
     Messages(#[source] io::Error),
     #[error("cargo reported no togi-tool-sim executable")]
     NoExecutable,
-}
-
-/// Why a git command did not answer.
-#[derive(Debug, thiserror::Error)]
-pub enum GitError {
-    #[error(transparent)]
-    Spawn(io::Error),
-    /// What git printed on stderr.
-    #[error("{0}")]
-    Failed(String),
-    #[error("resolve the output path")]
-    Resolve(#[source] io::Error),
 }
 
 /// Why a simulator file is not something the bench starts.
@@ -132,8 +63,7 @@ pub enum Unrunnable {
     InterpreterNotAProgram { interpreter: PathBuf },
 }
 
-/// What stopped one run of the suite. These are harness errors: a session's own outcome, a dead end or a boot
-/// cap included, is a [`Status`](crate::Status) of its record.
+/// What stopped an attempt to build or run a simulator.
 #[derive(Debug, thiserror::Error)]
 pub enum RunError {
     #[error("create the run directory {}", path.display())]
@@ -154,12 +84,6 @@ pub enum RunError {
         #[source]
         source: io::Error,
     },
-    #[error("read the run journal")]
-    Journal(#[source] togi_journal::FileError),
-    #[error("measure the run")]
-    Measure(#[source] MeasureError),
-    #[error("build the run's model")]
-    Model(#[source] InvalidMachine),
     #[error("interrupted")]
     Interrupted,
 }
@@ -176,17 +100,4 @@ pub enum ScriptedError {
         togi_tool_sim::scripted::CONTRACT_VERSION
     )]
     Version { answer: String },
-}
-
-/// Why a finished run's journal could not be measured.
-#[derive(Debug, thiserror::Error)]
-pub enum MeasureError {
-    #[error(transparent)]
-    Shape(togi_sim::ShapeError),
-    #[error("replay the journal")]
-    Replay(#[source] togi_journal::FoldError),
-    #[error("replay the journal into session state")]
-    Folded(#[source] togi_session::FoldError),
-    #[error("extract the trial facts")]
-    Facts(#[source] togi_facts::FactsError<std::convert::Infallible>),
 }

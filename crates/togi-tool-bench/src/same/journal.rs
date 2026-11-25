@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::suite::hex;
+use crate::hex;
 
 const LIVE: &str = "events.jsonl";
 const ARCHIVE: &str = "archive";
