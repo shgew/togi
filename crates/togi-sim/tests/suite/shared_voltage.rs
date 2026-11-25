@@ -820,6 +820,49 @@ fn r7_requests_exist_for_multi_core_r7_and_telemetry_for_any_trial_on_a_rail() {
     assert_eq!(legacy.r7_requests(&profile, &two), Ok(None));
 }
 
+#[test]
+fn a_shared_voltage_machine_samples_its_rail_requests_and_loaded_ccd_clocks() {
+    let mut rig = Rig::new(&committed_machine("shared-voltage.json"), 1);
+    let workload = togi_machine::pick_workload(Regime::R7, 0);
+    rig.pass(spec(
+        "0001",
+        Regime::R7,
+        workload,
+        &[0, 1, 7],
+        Duration::from_secs(30),
+    ));
+    rig.sim.reboot().expect("a representable reboot");
+    let samples = rig
+        .machine
+        .trials
+        .samples("0001")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("valid simulated samples");
+    assert_eq!(samples.len(), 29);
+    let togi_sim::MachineSource::Fitted { model, .. } = rig.sim.source() else {
+        panic!("the sample fixture uses a fitted model");
+    };
+    let idle_v = model.voltage().expect("a rail").idle_v;
+    for sample in &samples {
+        let Some(pm) = sample.pm_table else {
+            panic!("a sample without lanes");
+        };
+        assert_eq!(sample.core_mhz.len(), 3);
+        assert!(
+            (f64::from(pm.voltage_request_v[8]) - idle_v).abs() < 1e-6,
+            "{} against {idle_v}",
+            pm.voltage_request_v[8]
+        );
+        assert!(
+            pm.voltage_request_v[7] > pm.voltage_request_v[8],
+            "loaded cores request more"
+        );
+    }
+    let first = samples[0].core_mhz;
+    assert_eq!(first.get(core(0)), first.get(core(1)), "one CCD, one clock");
+    assert_eq!(first.get(core(8)), None);
+}
+
 fn edit_rail(edit: impl FnOnce(&mut SharedVoltageDef)) -> MachineDefinition {
     let mut definition = committed_machine("shared-voltage.json");
     edit(definition.shared_voltage.as_mut().expect("a rail"));

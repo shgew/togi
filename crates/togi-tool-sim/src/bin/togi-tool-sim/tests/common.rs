@@ -125,14 +125,15 @@ impl Host {
         execute: impl FnOnce(SimInput) -> Result<SimOutcome, togi_simrun::SimError>,
     ) -> Ran {
         self.execute(args, |mut input| {
-            // The CLI has already derived the deadline using the same persistence and boot history.
+            // Only the trial outcomes change: the CLI's prepared machine state must be what this
+            // script resumes from, so a preparation regression cannot be repaired here.
             let simulator = togi_simrun::resume_simulator(
                 &input.persistence,
                 MachineSource::Scripted(script),
                 1,
             )
             .unwrap();
-            assert_eq!(simulator.now(), input.simulator.now());
+            assert_eq!(simulator.persisted(), input.simulator.persisted());
             input.simulator = simulator;
             execute(input)
         })
