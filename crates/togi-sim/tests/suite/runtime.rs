@@ -594,10 +594,14 @@ fn a_scripted_persisted_machine_decodes_only_from_objects() {
         "/samples/voltage",
         &["requests", "clocks"],
     );
-    let mut legacy_voltage = crashed_machine;
-    legacy_voltage["samples"]["voltage"]["rail"] = serde_json::json!(1.0);
-    legacy_voltage["samples"]["voltage"]["rates"] = serde_json::json!([0.0; 16]);
-    assert!(serde_json::from_value::<togi_sim::Persisted>(legacy_voltage).is_err());
+    for (field, value) in [
+        ("rail", serde_json::json!(1.0)),
+        ("rates", serde_json::json!([])),
+    ] {
+        let mut legacy_voltage = crashed_machine.clone();
+        legacy_voltage["samples"]["voltage"][field] = value;
+        assert!(serde_json::from_value::<togi_sim::Persisted>(legacy_voltage).is_err());
+    }
 
     rig.sim.reboot().expect("a representable reboot");
     let rebooted = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
