@@ -69,7 +69,7 @@ Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, set eve
 
 How togi treats the BIOS values:
 
-- It reads every core's offset from the SMU once, at the first `run` of a session, and requires an all-zero baseline: a nonzero or incomplete readback is refused, not clamped ([Session start](spec/tuner.md#session-start)). Keep BIOS Curve Optimizer at 0; a BIOS profile that crashes before togi runs surfaces as a boot-loop dead end ([firmware rules](spec/tuner.md#firmware)).
+- It reads every core's offset from the SMU once, at the first `run` of a session, and requires an all-zero baseline: a nonzero or incomplete readback is refused, not clamped ([Session start](spec/tuner.md#session-start)). Keep BIOS Curve Optimizer at 0 ([BIOS profile](spec/tuner.md#bios-profile)); a BIOS profile that crashes before togi runs surfaces as a boot-loop dead end.
 - Every write sets the core's absolute offset; the SMU does not add it to the BIOS value. Firmware restores BIOS values on reboot; togi's trial writes replace those offsets.
 - The BIOS context that ties a session to a BIOS (BIOS version, board, CPU model, microcode and boost limit) holds no Curve Optimizer offsets. Changing a Curve Optimizer offset in BIOS does not start a new session, and togi keeps the baseline it captured.
 - A clean stop restores every core to CO 0 through the verified write/readback path ([Exit restoration](spec/runtime.md#exit-codes)). It does not capture the baseline again.

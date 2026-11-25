@@ -18,7 +18,7 @@ Finishing the climb does not mean “stable” or “meets your goal”: evidenc
 
 - **Nights test.** The operator starts a night (the tuning boot, or `togi run` by hand). It tests with workloads and runs until the operator ends it or the next normal boot begins; it has no end time. Ending it restores every core to CO 0.
 - **Days observe.** In normal boots togi watches the day profile without running workloads: applied hours, faults, clean and unclean ends. [Daily observation](howto.md#daily-observation) says how to answer what happened after an unclean end.
-- **BIOS stays at CO 0.** The day service will apply the day profile at boot ([#1218](https://github.com/shgew/togi/issues/1218), [firmware rules](spec/tuner.md#firmware)); togi never tells you to enter offsets in BIOS.
+- **BIOS stays at CO 0.** The day service will apply the day profile at boot ([#1218](https://github.com/shgew/togi/issues/1218), [BIOS profile](spec/tuner.md#bios-profile)); togi never tells you to enter offsets in BIOS.
 
 The normal `togi night` confirmation also confirms that the machine is stable
 at CO 0 with BIOS at stock. Its answer is journaled once per firmware context
