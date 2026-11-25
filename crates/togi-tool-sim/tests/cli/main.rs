@@ -238,7 +238,7 @@ fn real_process_simulator_arithmetic_errors_are_reported(
         .unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(output.status.code(), Some(1), "{stderr}");
-    let cause = togi_machine::error_chain(&cause);
+    let cause = togi_machine::error_chain(cause);
     assert_eq!(
         stderr,
         format!(
