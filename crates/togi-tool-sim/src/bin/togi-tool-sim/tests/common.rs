@@ -4,12 +4,14 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Duration;
 
 use jiff::tz::TimeZone;
 use togi_journal::{Event, MemFs};
-use togi_machine::CancellationToken;
+use togi_machine::{CancellationToken, ControllerMode, ResetKind, TargetOffset};
 use togi_render::Renderer;
 use togi_sim::file::Source;
+use togi_sim::{MachineSource, ScriptedMachine, ScriptedTopology, TrialOutcome};
 use togi_simrun::{Persistence, SimInput, SimOutcome};
 use togi_tool_sim::{Suite, SuiteError};
 use togi_tool_trialfacts::Extracts;
@@ -59,8 +61,7 @@ impl Source for Texts {
     }
 }
 
-/// Four cores that crash beyond -10, exercising both events of a bounded campaign.
-/// Where it is put, `/hunt.json`.
+/// Fitted input for the research suite and input-parser tests, stored as `/hunt.json`.
 pub(crate) const HUNT: &str = r#"{
   "cores": 4,
   "model": {"past_limit_rate": 1.0, "signals": {"crash": 1}, "crash_mce": 0.0},
@@ -71,6 +72,27 @@ pub(crate) const HUNT: &str = r#"{
     {"id": 3, "alone": [-10, -10, -10, -10, -10], "together": [-10, -10, -10, -10, -10, -10, -50]}
   ]
 }"#;
+
+/// Preserve the watchdog cuts after each workload prefix needed by the cap and resume tests.
+pub(super) const WATCHDOG_MACHINE: ScriptedMachine = ScriptedMachine::new(
+    ScriptedTopology::FourCores,
+    TargetOffset::ZERO,
+    |trial, _| {
+        let ControllerMode::Managed { rotation, .. } = trial.controller;
+        let nanos = match rotation {
+            65 => 4_695_930,
+            133 => 205_424,
+            134 => 433_244_441,
+            202 => 1_424_415_247,
+            _ => return TrialOutcome::Pass,
+        };
+        TrialOutcome::Reset {
+            stalled: None,
+            kind: ResetKind::Watchdog,
+            at: Duration::from_nanos(nanos),
+        }
+    },
+);
 
 impl Host {
     /// A host holding [`HUNT`] as `/hunt.json`.
@@ -86,6 +108,34 @@ impl Host {
 
     pub(super) fn run<S: AsRef<OsStr>>(&mut self, args: impl IntoIterator<Item = S>) -> Ran {
         self.execute(args, togi_simrun::simulate)
+    }
+
+    pub(super) fn run_scripted<S: AsRef<OsStr>>(
+        &mut self,
+        args: impl IntoIterator<Item = S>,
+        script: ScriptedMachine,
+    ) -> Ran {
+        self.execute_scripted(args, script, togi_simrun::simulate)
+    }
+
+    pub(super) fn execute_scripted<S: AsRef<OsStr>>(
+        &mut self,
+        args: impl IntoIterator<Item = S>,
+        script: ScriptedMachine,
+        execute: impl FnOnce(SimInput) -> Result<SimOutcome, togi_simrun::SimError>,
+    ) -> Ran {
+        self.execute(args, |mut input| {
+            // The CLI has already derived the deadline using the same persistence and boot history.
+            let simulator = togi_simrun::resume_simulator(
+                &input.persistence,
+                MachineSource::Scripted(script),
+                1,
+            )
+            .unwrap();
+            assert_eq!(simulator.now(), input.simulator.now());
+            input.simulator = simulator;
+            execute(input)
+        })
     }
 
     pub(super) fn execute<S: AsRef<OsStr>>(

@@ -18,12 +18,11 @@ use togi_journal::MemFs;
 use togi_journal::fs::Fs;
 use togi_machine::{
     BiosContext, BootId, CancellationToken, CoreId, Error as MachineError, FrequencyJournal,
-    Machine, ObservedOffset, Partial, Running, Signal, Smu, SmuValidated, Stopped, Swept,
+    Machine, ObservedOffset, Partial, ResetKind, Running, Smu, SmuValidated, Stopped, Swept,
     TargetOffset, TrialConditions, TrialSpec, Trials,
 };
 use togi_render::OutputFacts;
-use togi_sim::definition::{CoreDef, ModelDef, Weights};
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 use togi_tuningboot::night::SETUP_PATH;
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
@@ -32,38 +31,29 @@ const CONFIG: &str = "config.json";
 /// Cores of the machine every `togi run` test drives.
 pub(crate) const CORES: i64 = 4;
 
-/// A four-core machine, two cores on each of two CCDs, whose cores all hold to CO -30 alone and together and fail
-/// only past it: operator-attested stock lets the first mapping trial write a nonzero profile.
+/// Two cores on each of two CCDs. The first mapping trial can write a nonzero profile after
+/// stock attestation; deeper loaded-core offsets get an explicit watchdog reset.
 pub(crate) fn simulator(seed: u64) -> Simulator {
-    let core = (0..CORES)
-        .map(|id| CoreDef {
-            id,
-            alone: [-30; 5],
-            together: [-30; 7],
-            flat: 0.0,
-            idle: None,
-            workload: BTreeMap::new(),
-        })
-        .collect();
-    let definition = MachineDefinition {
-        cores: CORES,
-        core,
-        model: ModelDef {
-            past_limit_rate: 1.0,
-            signals: Weights::from([(Signal::Crash, 1.0)]),
-            crash_mce: 0.0,
-            ..ModelDef::default()
+    let script = ScriptedMachine::new(
+        ScriptedTopology::FourCores,
+        TargetOffset::ZERO,
+        |spec, offsets| {
+            if spec
+                .cores
+                .iter()
+                .any(|core| offsets[core.index()].get() < -30)
+            {
+                TrialOutcome::Reset {
+                    stalled: None,
+                    kind: ResetKind::Watchdog,
+                    at: Duration::from_secs(1),
+                }
+            } else {
+                TrialOutcome::Pass
+            }
         },
-        ..MachineDefinition::default()
-    };
-    Simulator::new(
-        Model::new(&definition, seed).unwrap(),
-        RunSettings {
-            seed,
-            ..RunSettings::default()
-        },
-    )
-    .unwrap()
+    );
+    Simulator::scripted(script, seed, History::default()).unwrap()
 }
 
 /// Whether `spec` contains a nonzero profile that gives a stopped run something to restore.

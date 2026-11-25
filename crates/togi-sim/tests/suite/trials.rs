@@ -3,12 +3,16 @@
 use jiff::SignedDuration;
 use std::time::Duration;
 use togi_machine::{
-    BiosContext, CancellationToken, Condition, Error, Regime, ResetKind, Signal, pick_workload,
+    BankType, BiosContext, CancellationToken, Condition, Error, Regime, ResetKind, Signal,
+    TargetOffset, TrialSpec, pick_workload,
 };
 use togi_sim::definition::{BiosContextDef, CcdDef, JointDef, ModelDef, ScriptDef, Weights};
 use togi_sim::model::{Onset, Script};
 use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
-use togi_sim::{MachineDefinition, RunSettings, ScriptError};
+use togi_sim::{
+    MachineDefinition, ReportedFailure, RunSettings, ScriptError, ScriptedMce, ScriptedTopology,
+    TrialOutcome,
+};
 
 use test_case::test_case;
 
@@ -471,7 +475,34 @@ fn scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart() {
             ),
         ],
     );
-    let mut rig = Rig::new(&definition, 1);
+    assert_trial_and_clock_semantics(Rig::new(&definition, 1));
+}
+
+#[test]
+fn typed_outcomes_keep_the_wall_and_monotonic_clocks_apart() {
+    let rig = Rig::scripted(ScriptedTopology::TwoCores, |spec, _| {
+        match spec.id.as_str() {
+            "0001" => TrialOutcome::CorrectedMce {
+                mce: ScriptedMce {
+                    core: core(0),
+                    bank: 0,
+                    bank_type: BankType::LoadStore,
+                },
+                at: Duration::from_secs(7),
+            },
+            "0002" => TrialOutcome::ReportedFailureThenReset {
+                core: core(1),
+                failure: ReportedFailure::ComputationError,
+                at: Duration::from_secs(3),
+            },
+            id => panic!("unexpected test trial {id}"),
+        }
+    });
+    rig.sim.next_reset(ResetKind::ThermalTrip);
+    assert_trial_and_clock_semantics(rig);
+}
+
+fn assert_trial_and_clock_semantics(mut rig: Rig) {
     let epoch = rig.sim.now();
     let boot = rig.boot();
     rig.sim
@@ -515,7 +546,7 @@ fn scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart() {
     assert_eq!(rig.sim.monotonic(), Duration::from_secs(15));
 
     let mut second = basic(Regime::R1, &[1], MINUTE);
-    second.id = "0002".to_owned();
+    "0002".clone_into(&mut second.id);
     let (waited, recorder) = rig.run(second);
     assert!(crashed(&waited));
     let Err(partial) = &waited else {
@@ -552,6 +583,35 @@ fn a_script_that_then_crashes_reports_only_backend_signals(
     assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
 }
 
+#[test_case(
+    |_, _| TrialOutcome::Reset {
+        stalled: Some(core(0)),
+        kind: ResetKind::Watchdog,
+        at: Duration::ZERO,
+    },
+    &[];
+    "a bare reset"
+)]
+#[test_case(
+    |_, _| TrialOutcome::ReportedFailureThenReset {
+        core: core(0),
+        failure: ReportedFailure::ComputationError,
+        at: Duration::ZERO,
+    },
+    &[(core(0), Signal::ComputationError)];
+    "a backend signal"
+)]
+fn a_typed_reset_reports_only_the_backend_signal_if_one_was_supplied(
+    outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+    want: &[(togi_machine::CoreId, Signal)],
+) {
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, outcome);
+    let (waited, recorder) = rig.run(basic(Regime::R7, &[0], SECOND));
+    assert!(crashed(&waited));
+    assert_eq!(recorder.signals, want);
+    assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
+}
+
 #[test_case(Regime::R1; "r1")]
 #[test_case(Regime::R6; "r6")]
 fn a_script_that_crashes_after_a_signal_returns_the_exposure_it_ran(regime: Regime) {
@@ -570,6 +630,41 @@ fn a_script_that_crashes_after_a_signal_returns_the_exposure_it_ran(regime: Regi
     };
     let (ordinary, ordinary_progress, _) = partial_of(false);
     let (chained, chained_progress, monotonic) = partial_of(true);
+    assert_eq!(chained.ran, Duration::from_secs(40));
+    assert_eq!(monotonic, Duration::from_secs(40));
+    assert_eq!(
+        (chained.stops, chained.conts),
+        (ordinary.stops, ordinary.conts)
+    );
+    assert_eq!(chained_progress, ordinary_progress);
+    if regime == Regime::R6 {
+        assert!(chained.conts > 0, "the bursts before the crash are counted");
+    }
+}
+
+#[test_case(Regime::R1; "r1")]
+#[test_case(Regime::R6; "r6")]
+fn a_typed_reset_returns_the_exposure_and_progress_even_after_a_backend_report(regime: Regime) {
+    let partial_of = |outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome| {
+        let mut rig = Rig::scripted(ScriptedTopology::TwoCores, outcome);
+        let (waited, recorder) = rig.run(basic(regime, &[0], MINUTE));
+        let Err(partial) = waited else {
+            panic!("a crash");
+        };
+        assert!(matches!(partial.error, Error::Crashed));
+        (partial.value, recorder.progress, rig.sim.monotonic())
+    };
+    let (ordinary, ordinary_progress, _) = partial_of(|_, _| TrialOutcome::Reset {
+        stalled: Some(core(0)),
+        kind: ResetKind::Watchdog,
+        at: Duration::from_secs(40),
+    });
+    let (chained, chained_progress, monotonic) =
+        partial_of(|_, _| TrialOutcome::ReportedFailureThenReset {
+            core: core(0),
+            failure: ReportedFailure::ComputationError,
+            at: Duration::from_secs(40),
+        });
     assert_eq!(chained.ran, Duration::from_secs(40));
     assert_eq!(monotonic, Duration::from_secs(40));
     assert_eq!(
@@ -633,7 +728,29 @@ fn a_scripted_backend_failure_reports_and_a_scripted_crash_picks_its_reset() {
             ),
         ],
     );
-    let mut rig = Rig::new(&definition, 1);
+    assert_backend_signal_and_reset(Rig::new(&definition, 1));
+}
+
+#[test]
+fn a_typed_backend_failure_reports_and_a_typed_crash_names_its_reset() {
+    let rig = Rig::scripted(ScriptedTopology::TwoCores, |spec, _| {
+        match spec.id.as_str() {
+            "0001" => TrialOutcome::ComputationError {
+                core: core(0),
+                at: Duration::from_secs(2),
+            },
+            "0002" => TrialOutcome::Reset {
+                stalled: Some(core(0)),
+                kind: ResetKind::CpuShutdown,
+                at: Duration::from_secs(3),
+            },
+            id => panic!("unexpected test trial {id}"),
+        }
+    });
+    assert_backend_signal_and_reset(rig);
+}
+
+fn assert_backend_signal_and_reset(mut rig: Rig) {
     let (waited, recorder) = rig.run(basic(Regime::R1, &[0], MINUTE));
     let result = waited.expect("a result");
     assert_eq!(
@@ -642,7 +759,7 @@ fn a_scripted_backend_failure_reports_and_a_scripted_crash_picks_its_reset() {
     );
     assert_eq!(recorder.signals, [(core(0), Signal::ComputationError)]);
     let mut second = basic(Regime::R1, &[0], MINUTE);
-    second.id = "0002".to_owned();
+    "0002".clone_into(&mut second.id);
     assert!(crashed(&rig.run(second).0));
     rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
@@ -741,8 +858,11 @@ fn a_crash_draws_its_reset_from_the_model() {
 
 #[test]
 fn a_crash_reports_its_progress_and_what_ran_before_it() {
-    let definition = with(2, &[-11, 0], (-10, -10), sharp(Signal::Crash), vec![]);
-    let mut rig = Rig::new(&definition, 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Reset {
+        stalled: Some(core(0)),
+        kind: ResetKind::Watchdog,
+        at: Duration::from_secs(7),
+    });
     let (waited, _) = rig.run(basic(Regime::R1, &[0], MINUTE));
     let Err(partial) = waited else {
         panic!("a crash");
@@ -1020,6 +1140,32 @@ fn the_role_regimes_run_on_the_default_machine_and_fail_past_their_limits(
         ..MachineDefinition::default()
     };
     let mut rig = Rig::new(&definition, 1);
+    rig.set_all(0).expect("zero");
+    let safe = rig.pass(basic(regime, cores, 120 * SECOND));
+    assert!(safe.failure.is_none(), "{regime} at zero offsets");
+    rig.set_all(-50).expect("deepest");
+    let deep = rig.pass(basic(regime, cores, 120 * SECOND));
+    assert_eq!(
+        deep.failure.map(|failure| failure.signal),
+        Some(Signal::ComputationError),
+        "{regime} at -50"
+    );
+}
+
+#[test_case(Regime::R8, &[8]; "r8 light core 08 beside its CCD")]
+#[test_case(Regime::R9, &[0]; "r9 serial cpu on core 00")]
+fn the_role_regimes_run_through_the_scripted_machine(regime: Regime, cores: &[i64]) {
+    let mut rig = Rig::scripted(ScriptedTopology::SixteenCores, |spec, registers| {
+        if registers == [TargetOffset::ZERO; 16] {
+            TrialOutcome::Pass
+        } else {
+            assert_eq!(registers, [offset(-50); 16]);
+            TrialOutcome::ComputationError {
+                core: spec.cores[0],
+                at: SECOND,
+            }
+        }
+    });
     rig.set_all(0).expect("zero");
     let safe = rig.pass(basic(regime, cores, 120 * SECOND));
     assert!(safe.failure.is_none(), "{regime} at zero offsets");

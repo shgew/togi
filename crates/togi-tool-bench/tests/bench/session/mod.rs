@@ -4,19 +4,20 @@ use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::{Build, Event, FixStamp, MemFs, Payload, SCHEMA, ShutdownReason};
-use togi_machine::CancellationToken;
+use togi_machine::{CancellationToken, TargetOffset};
 use togi_render::Renderer;
 use togi_session::ConfigSource;
-use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome};
 use togi_simrun::{Observe, Persistence, SimInput, events, simulate};
 
 /// Generate a short valid journal for the fake simulator processes.
 pub(crate) fn unfinished() -> Vec<Event> {
-    let simulator = Simulator::new(
-        Model::new(&MachineDefinition::default(), 1).unwrap(),
-        RunSettings::default(),
-    )
-    .unwrap();
+    let script = ScriptedMachine::new(
+        ScriptedTopology::SixteenCores,
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::Pass,
+    );
+    let simulator = Simulator::scripted(script, 1, History::default()).unwrap();
     let night_end = simulator.now() + SignedDuration::from_hours(8);
     let persistence = Persistence::Memory(MemFs::new());
     simulate(SimInput {

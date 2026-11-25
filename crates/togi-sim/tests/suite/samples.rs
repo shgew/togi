@@ -3,14 +3,14 @@
 
 use std::time::Duration;
 use togi_machine::{
-    CoreId, LEGACY_REGIMES, PerCore, Regime, Signal, TrialConditions, Workload, workloads,
+    CoreId, LEGACY_REGIMES, PerCore, Regime, ResetKind, TargetOffset, TrialConditions, TrialSpec,
+    Workload, workloads,
 };
-use togi_sim::definition::ScriptDef;
-use togi_sim::{MachineDefinition, MachineSource};
+use togi_sim::{History, ScriptedMachine, ScriptedTopology, ScriptedVoltageSamples, TrialOutcome};
 
 use test_case::test_case;
 
-use crate::common::{Rig, committed_machine, core, machine, spec};
+use crate::common::{Rig, core, spec};
 
 fn two_thread_workload() -> (Regime, Workload) {
     LEGACY_REGIMES
@@ -44,17 +44,35 @@ fn collect(rig: &mut Rig, id: &str) -> Vec<TrialConditions> {
         .expect("valid simulated samples")
 }
 
-fn scripted(signal: Signal, at: f64, culprit: i64) -> MachineDefinition {
-    let mut definition = machine(8, vec![]);
-    definition.script = vec![ScriptDef {
-        trial: "0001".to_owned(),
-        signal: Some(signal),
-        at_s: at,
-        core: culprit,
-        ..ScriptDef::default()
-    }];
-    definition
-}
+type Outcome = fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome;
+
+const BEFORE_FIRST_TICK: Outcome = |_, _| TrialOutcome::ComputationError {
+    core: core(2),
+    at: Duration::from_millis(500),
+};
+const AT_FIRST_TICK: Outcome = |_, _| TrialOutcome::ComputationError {
+    core: core(2),
+    at: Duration::from_secs(1),
+};
+const BETWEEN_TICKS: Outcome = |_, _| TrialOutcome::ComputationError {
+    core: core(2),
+    at: Duration::from_millis(2500),
+};
+const SHORT_CRASH: Outcome = |_, _| TrialOutcome::Reset {
+    stalled: Some(core(7)),
+    kind: ResetKind::Watchdog,
+    at: Duration::from_millis(2500),
+};
+const FRACTIONAL_CRASH: Outcome = |_, _| TrialOutcome::Reset {
+    stalled: Some(core(7)),
+    kind: ResetKind::Watchdog,
+    at: Duration::from_millis(4500),
+};
+const IDLE_CULPRIT: Outcome = |_, _| TrialOutcome::Reset {
+    stalled: Some(core(0)),
+    kind: ResetKind::Watchdog,
+    at: Duration::from_secs(3),
+};
 
 fn run_scripted(rig: &mut Rig) {
     let (regime, workload) = two_thread_workload();
@@ -67,36 +85,36 @@ fn run_scripted(rig: &mut Rig) {
     ));
 }
 
-#[test_case(Signal::ComputationError, 0.5, 2, &[], false; "before the first tick in memory")]
-#[test_case(Signal::ComputationError, 0.5, 2, &[], true; "before the first tick in a file")]
-#[test_case(Signal::ComputationError, 1.0, 2, &[], false; "at the first tick in memory")]
-#[test_case(Signal::ComputationError, 1.0, 2, &[], true; "at the first tick in a file")]
+#[test_case(BEFORE_FIRST_TICK, &[], false; "before the first tick in memory")]
+#[test_case(BEFORE_FIRST_TICK, &[], true; "before the first tick in a file")]
+#[test_case(AT_FIRST_TICK, &[], false; "at the first tick in memory")]
+#[test_case(AT_FIRST_TICK, &[], true; "at the first tick in a file")]
 #[test_case(
-    Signal::ComputationError, 2.5, 2,
+    BETWEEN_TICKS,
     &[tick(1000, &[(2, 2000), (7, 2000)]), tick(2000, &[(2, 4000), (7, 4000)])],
     false;
     "between ticks in memory"
 )]
 #[test_case(
-    Signal::ComputationError, 2.5, 2,
+    BETWEEN_TICKS,
     &[tick(1000, &[(2, 2000), (7, 2000)]), tick(2000, &[(2, 4000), (7, 4000)])],
     true;
     "between ticks in a file"
 )]
 #[test_case(
-    Signal::Crash, 2.5, 7,
+    SHORT_CRASH,
     &[tick(1000, &[(2, 2000), (7, 2000)]), tick(2000, &[(2, 4000), (7, 2000)])],
     false;
     "short crash in memory"
 )]
 #[test_case(
-    Signal::Crash, 2.5, 7,
+    SHORT_CRASH,
     &[tick(1000, &[(2, 2000), (7, 2000)]), tick(2000, &[(2, 4000), (7, 2000)])],
     true;
     "short crash in a file"
 )]
 #[test_case(
-    Signal::Crash, 4.5, 7,
+    FRACTIONAL_CRASH,
     &[
         tick(1000, &[(2, 2000), (7, 2000)]),
         tick(2000, &[(2, 4000), (7, 4000)]),
@@ -107,7 +125,7 @@ fn run_scripted(rig: &mut Rig) {
     "fractional crash in memory"
 )]
 #[test_case(
-    Signal::Crash, 4.5, 7,
+    FRACTIONAL_CRASH,
     &[
         tick(1000, &[(2, 2000), (7, 2000)]),
         tick(2000, &[(2, 4000), (7, 4000)]),
@@ -118,25 +136,23 @@ fn run_scripted(rig: &mut Rig) {
     "fractional crash in a file"
 )]
 #[test_case(
-    Signal::Crash, 3.0, 0,
+    IDLE_CULPRIT,
     &[tick(1000, &[(2, 2000), (7, 2000)]), tick(2000, &[(2, 4000), (7, 4000)])],
     false;
     "idle culprit in memory"
 )]
 #[test_case(
-    Signal::Crash, 3.0, 0,
+    IDLE_CULPRIT,
     &[tick(1000, &[(2, 2000), (7, 2000)]), tick(2000, &[(2, 4000), (7, 4000)])],
     true;
     "idle culprit in a file"
 )]
 fn samples_tick_each_second_strictly_before_the_end_and_a_stalled_culprit_stops_early(
-    signal: Signal,
-    at: f64,
-    culprit: i64,
+    outcome: Outcome,
     want: &[TrialConditions],
     file_backed: bool,
 ) {
-    let mut rig = Rig::new(&scripted(signal, at, culprit), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::EightCores, outcome);
     let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
     if file_backed {
         rig.sim.set_sample_storage(dir);
@@ -150,16 +166,13 @@ fn samples_tick_each_second_strictly_before_the_end_and_a_stalled_culprit_stops_
 
 #[test]
 fn a_crashed_trials_serialized_samples_survive_recovery() {
-    let mut definition = machine(2, vec![]);
-    definition.script = vec![ScriptDef {
-        trial: "0001".to_owned(),
-        signal: Some(Signal::Crash),
-        at_s: 6.0,
-        core: 1,
-        ..ScriptDef::default()
-    }];
+    let outcome: Outcome = |_, _| TrialOutcome::Reset {
+        stalled: Some(core(1)),
+        kind: ResetKind::Watchdog,
+        at: Duration::from_secs(6),
+    };
     let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
-    let mut rig = Rig::new(&definition, 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, outcome);
     rig.sim.set_sample_storage(dir.clone());
     let waited = rig
         .run(spec(
@@ -180,7 +193,7 @@ fn a_crashed_trials_serialized_samples_survive_recovery() {
         tick(5000, &[(0, 5000), (1, 4000)]),
     ];
     assert_eq!(collect(&mut rig, "0001"), want);
-    let mut recovered = Rig::new(&definition, 1);
+    let mut recovered = Rig::scripted(ScriptedTopology::TwoCores, outcome);
     recovered.sim.set_sample_storage(dir);
     assert_eq!(collect(&mut recovered, "0001"), want);
 }
@@ -188,7 +201,7 @@ fn a_crashed_trials_serialized_samples_survive_recovery() {
 #[test]
 fn ending_a_trial_compresses_its_samples_without_changing_them() {
     let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
-    let mut rig = Rig::new(&machine(2, vec![]), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim.set_sample_storage(dir.clone());
     rig.pass(spec(
         "0001",
@@ -206,7 +219,7 @@ fn ending_a_trial_compresses_its_samples_without_changing_them() {
         "the stored bytes are compressed"
     );
     assert_eq!(collect(&mut rig, "0001"), before);
-    let mut memory = Rig::new(&machine(2, vec![]), 1);
+    let mut memory = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     memory
         .machine
         .trials
@@ -216,7 +229,7 @@ fn ending_a_trial_compresses_its_samples_without_changing_them() {
 
 #[test]
 fn a_long_trial_keeps_no_series_and_yields_lazily() {
-    let mut rig = Rig::new(&machine(2, vec![]), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let hour = Duration::from_secs(3600);
     rig.pass(spec(
         "0001",
@@ -242,7 +255,7 @@ fn a_long_trial_keeps_no_series_and_yields_lazily() {
 fn a_sample_store_that_cannot_be_written_is_an_error_with_the_trial_result(
     kind: std::io::ErrorKind,
 ) {
-    let mut rig = Rig::new(&machine(2, vec![]), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     let store = std::rc::Rc::new(crate::common::MemorySamples {
         fail_open: Some(kind),
         ..Default::default()
@@ -271,7 +284,7 @@ fn a_sample_store_that_cannot_be_written_is_an_error_with_the_trial_result(
 #[test_case(3600; "long")]
 fn a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result(seconds: u64) {
     const NO_SPACE: i32 = 28;
-    let mut rig = Rig::new(&machine(2, vec![]), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.sim
         .set_sample_storage(std::rc::Rc::new(crate::common::MemorySamples {
             fail_after: Some(0),
@@ -299,12 +312,27 @@ fn a_sample_file_that_refuses_writes_is_an_error_with_the_trial_result(seconds: 
 }
 
 #[test]
-fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_storage() {
-    let definition = committed_machine("shared-voltage.json");
+fn voltage_samples_keep_their_lanes_in_memory_and_in_serialized_storage() {
+    const IDLE_V: f32 = 1.0;
+    static LANES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: {
+            let mut requests = [IDLE_V; 16];
+            requests[0] = 1.25;
+            requests[1] = 1.25;
+            requests[7] = 1.25;
+            requests
+        },
+        ccd_mhz: [5400, 5200],
+    };
+    let inputs = ScriptedMachine::sixteen_with_voltage_samples(
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::Pass,
+        &LANES,
+    );
     let mut memory = Vec::new();
     for file_backed in [false, true] {
         let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
-        let mut rig = Rig::new(&definition, 1);
+        let mut rig = Rig::with_script(inputs, History::default());
         if file_backed {
             rig.sim.set_sample_storage(dir.clone());
         }
@@ -325,10 +353,7 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
         } else {
             memory = samples.clone();
         }
-        let MachineSource::Fitted { model, .. } = rig.sim.source() else {
-            panic!("the sample fixture uses a fitted model");
-        };
-        let idle_v = model.voltage().expect("a rail").idle_v;
+        let idle_v = f64::from(IDLE_V);
         for sample in &samples {
             let Some(pm) = sample.pm_table else {
                 panic!("{storage}: a sample without lanes");
@@ -361,9 +386,20 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
 #[test_case(false; "in memory")]
 #[test_case(true; "stored")]
 fn the_largest_finite_recorded_idle_voltage_survives_sample_storage(stored: bool) {
-    let mut definition = committed_machine("shared-voltage.json");
-    definition.shared_voltage.as_mut().expect("a rail").idle_v = f64::from(f32::MAX);
-    let mut rig = Rig::new(&definition, 1);
+    static LANES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: {
+            let mut requests = [1.0; 16];
+            requests[8] = f32::MAX;
+            requests
+        },
+        ccd_mhz: [5400, 5200],
+    };
+    let inputs = ScriptedMachine::sixteen_with_voltage_samples(
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::Pass,
+        &LANES,
+    );
+    let mut rig = Rig::with_script(inputs, History::default());
     if stored {
         rig.sim
             .set_sample_storage(std::rc::Rc::new(crate::common::MemorySamples::default()));
@@ -396,7 +432,7 @@ fn the_largest_finite_recorded_idle_voltage_survives_sample_storage(stored: bool
 
 #[test]
 fn a_machine_without_a_rail_has_no_lanes() {
-    let mut rig = Rig::new(&machine(2, vec![]), 1);
+    let mut rig = Rig::scripted(ScriptedTopology::TwoCores, |_, _| TrialOutcome::Pass);
     rig.pass(spec(
         "0001",
         Regime::R1,

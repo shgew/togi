@@ -950,15 +950,12 @@ fn a_state_writer_lock_that_cannot_be_taken_fails_the_night_and_changes_nothing(
 
 #[test]
 fn a_fresh_night_confirmation_is_used_by_the_later_run_after_verified_stock_startup() {
-    let definition = togi_sim::MachineDefinition::default();
-    let sim = togi_sim::Simulator::new(
-        togi_sim::Model::new(&definition, 1).unwrap(),
-        togi_sim::RunSettings {
-            seed: 1,
-            ..togi_sim::RunSettings::default()
-        },
-    )
-    .unwrap();
+    let script = togi_sim::ScriptedMachine::new(
+        togi_sim::ScriptedTopology::SixteenCores,
+        togi_machine::TargetOffset::ZERO,
+        |_, _| togi_sim::TrialOutcome::Pass,
+    );
+    let sim = togi_sim::Simulator::scripted(script, 1, togi_sim::History::default()).unwrap();
     let mut machine = sim.seams();
     let mut host = Host::new();
     host.topology = machine.host.topology().unwrap();

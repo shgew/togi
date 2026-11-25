@@ -1,30 +1,23 @@
 use std::path::Path;
 
-use super::common::Host;
+use super::common::{Host, WATCHDOG_MACHINE};
 
 /// Reconstruct the simulator for each invocation, retaining only the journal and machine document.
 #[test]
 fn a_session_resumed_from_recorded_memory_ends_where_an_uninterrupted_one_does() {
-    let mut host = Host::hunting();
+    let mut host = Host::default();
     assert_eq!(
-        host.run(["--machine", "/hunt.json", "--state-dir", "/whole"])
+        host.run_scripted(["--state-dir", "/whole"], WATCHDOG_MACHINE)
             .code,
         Some(0)
     );
     let mut resumes = 0;
-    let split = [
-        "--machine",
-        "/hunt.json",
-        "--state-dir",
-        "/split",
-        "--max-boots",
-        "1",
-    ];
-    let mut code = host.run(split).code;
+    let split = ["--state-dir", "/split", "--max-boots", "1"];
+    let mut code = host.run_scripted(split, WATCHDOG_MACHINE).code;
     while code == Some(3) {
         resumes += 1;
         assert!(resumes < 20, "the split session never finished");
-        code = host.run(split).code;
+        code = host.run_scripted(split, WATCHDOG_MACHINE).code;
     }
     assert_eq!(code, Some(0));
     assert!(resumes >= 2, "the session crashed too rarely to split it");
