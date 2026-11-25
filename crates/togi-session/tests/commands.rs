@@ -9,12 +9,13 @@ use test_case::test_case;
 use jiff::tz::TimeZone;
 use togi_journal::fs::{Fault, Op};
 use togi_journal::{
-    Build, FixStamp, Journal, MemFs, Payload, ResetTarget, SCHEMA, SessionStart, Stamp, StateDir,
-    StockAttested,
+    Build, DeadEndCondition, FixStamp, Journal, MemFs, Payload, ResetTarget, SCHEMA, SessionStart,
+    ShutdownReason, Stamp, StateDir, StockAttested,
 };
-use togi_machine::{CancellationToken, CoreId};
+use togi_machine::{CancellationToken, CoreId, Error, ObservedOffset, TargetOffset};
 use togi_render::Renderer;
-use togi_session::{CommandError, ConfigSource, RunInput, reset_all, run};
+use togi_session::{CommandError, ConfigSource, Ended, RunInput, Stop, reset_all, run};
+use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 
 fn build() -> Build {
@@ -162,6 +163,411 @@ fn an_unarmed_manual_run_refuses_before_any_offset_write_or_trial() {
     assert!(!events.iter().any(|event| matches!(
         event.payload,
         Payload::SmuIntent(_) | Payload::TrialIntent(_) | Payload::TrialStart(_)
+    )));
+}
+
+/// Interrupt the process at the first nonzero SMU command without resetting the machine.
+fn interrupted_apply(sim: &Simulator, mem: &MemFs, cut: HookPhase) -> usize {
+    sim.interrupt_smu(move |access: &SmuOperation| {
+        if access.op != SmuOp::Read && access.phase == cut && access.offset < 0 {
+            return Err(Error::Crashed);
+        }
+        Ok(())
+    });
+    let ended = run(input(sim, mem));
+    assert!(
+        ended
+            .errors
+            .iter()
+            .any(togi_session::SessionError::is_crash)
+    );
+    assert!(!ended.journal.events().iter().any(|event| {
+        matches!(
+            event.payload,
+            Payload::Shutdown(_) | Payload::ProfileRestored(_)
+        )
+    }));
+    let earlier = ended.journal.events().len();
+    drop(ended.journal.close().unwrap());
+    sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    sim.fail_check("watchdog", "hardware watchdog inactive");
+    earlier
+}
+
+fn refusal(ended: &Ended) -> DeadEndCondition {
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let Some(Stop::DeadEnd {
+        dead_end, reboot, ..
+    }) = &ended.stop
+    else {
+        panic!("expected a dead end, got {:?}", ended.stop);
+    };
+    assert!(!reboot);
+    dead_end.condition
+}
+
+#[test_case(false; "zero write fails")]
+#[test_case(true; "zero readback disagrees")]
+fn an_unarmed_same_boot_restart_reports_failed_restoration_as_an_smu_dead_end(readback: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let earlier = interrupted_apply(&sim, &mem, HookPhase::After);
+    if readback {
+        sim.corrupt_readback(core(0));
+    } else {
+        sim.fail_write(1);
+    }
+
+    let ended = run(input(&sim, &mem));
+    assert_eq!(refusal(&ended), DeadEndCondition::Smu);
+    assert!(ended.stock_unverified);
+    let events = &ended.journal.events()[earlier..];
+    let watchdog = events.iter().find(|event| matches!(
+        &event.payload, Payload::PreflightCheck(check) if check.check == "watchdog" && !check.ok
+    )).unwrap();
+    let fault = events
+        .iter()
+        .find(|event| {
+            if readback {
+                matches!(&event.payload, Payload::SmuReadback(read)
+                if read.expected == Some(TargetOffset::ZERO) && read.offset != ObservedOffset(0))
+            } else {
+                matches!(&event.payload, Payload::SmuError(error)
+                if error.offset == Some(TargetOffset::ZERO))
+            }
+        })
+        .unwrap();
+    let dead_end = events
+        .iter()
+        .find(|event| {
+            matches!(
+                &event.payload, Payload::DeadEnd(end) if end.condition == DeadEndCondition::Smu
+            )
+        })
+        .unwrap();
+    assert_eq!(dead_end.cause, [watchdog.seq, fault.seq]);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::SmuIntent(_)))
+            .count(),
+        1,
+        "do not retry after a failed restoration"
+    );
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::ProfileRestored(_) | Payload::Shutdown(_) | Payload::TrialIntent(_)
+    )));
+}
+
+#[test_case(HookPhase::Before; "cut after durable zero intent before write")]
+#[test_case(HookPhase::After; "cut between zero write and readback")]
+fn an_unarmed_restart_reconciles_an_interrupted_stock_restoration(cut: HookPhase) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let start = interrupted_apply(&sim, &mem, HookPhase::After);
+    sim.interrupt_smu(move |access: &SmuOperation| {
+        if access.op != SmuOp::Read && access.phase == cut && access.offset == 0 {
+            return Err(Error::Crashed);
+        }
+        Ok(())
+    });
+    let interrupted = run(input(&sim, &mem));
+    assert!(
+        interrupted
+            .errors
+            .iter()
+            .any(togi_session::SessionError::is_crash)
+    );
+    let events = &interrupted.journal.events()[start..];
+    let intent = events.last().unwrap();
+    let Payload::SmuIntent(zero) = &intent.payload else {
+        panic!("the last durable event must be the interrupted zero intent");
+    };
+    assert_eq!(zero.command().offset(), TargetOffset::ZERO);
+    let (intent, target) = (intent.seq, zero.command().core().unwrap());
+    let earlier = interrupted.journal.events().len();
+    drop(interrupted.journal.close().unwrap());
+    sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+
+    let ended = run(input(&sim, &mem));
+    assert_eq!(refusal(&ended), DeadEndCondition::Preflight);
+    assert!(!ended.stock_unverified);
+    let events = &ended.journal.events()[earlier..];
+    assert!(events.iter().any(|event| {
+        event.cause == [intent]
+            && matches!(&event.payload, Payload::SmuReadback(read)
+            if read.core == target && read.expected.is_none()
+                && (read.offset == ObservedOffset(0)) == (cut == HookPhase::After))
+    }));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(&event.payload, Payload::SmuWrite(written)
+            if written.command().offset() == TargetOffset::ZERO))
+            .count(),
+        usize::from(cut == HookPhase::Before)
+    );
+    assert!(
+        togi_journal::State::replay(ended.journal.events())
+            .unwrap()
+            .open
+            .is_empty()
+    );
+    let mut machine = sim.seams();
+    for info in machine.host.topology().unwrap() {
+        assert_eq!(machine.smu.offset(info.core).unwrap(), ObservedOffset(0));
+    }
+}
+
+#[test]
+fn an_unarmed_same_boot_restart_does_not_displace_a_pending_dead_end() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let start = interrupted_apply(&sim, &mem, HookPhase::After);
+    sim.fail_write(1);
+    let failed = run(input(&sim, &mem));
+    assert_eq!(refusal(&failed), DeadEndCondition::Smu);
+    let earlier = failed.journal.events().len();
+    drop(failed.journal.close().unwrap());
+
+    let restored = run(input(&sim, &mem));
+    assert_eq!(refusal(&restored), DeadEndCondition::Preflight);
+    let events = &restored.journal.events()[earlier..];
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::ProfileRestored(_)))
+    );
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::DeadEnd(_) | Payload::Shutdown(_) | Payload::BootSavedEntry(_)
+    )));
+    let earlier = restored.journal.events().len();
+    drop(restored.journal.close().unwrap());
+
+    sim.fail_check("watchdog", "");
+    let resumed = run(input(&sim, &mem));
+    assert_eq!(refusal(&resumed), DeadEndCondition::Smu);
+    let events = resumed.journal.events();
+    assert_eq!(
+        events[start..]
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::DeadEnd(_)))
+            .count(),
+        1,
+        "only the original dead end is recorded"
+    );
+    assert!(matches!(
+        &events[earlier..].last().unwrap().payload,
+        Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::DeadEnd
+    ));
+}
+
+#[test_case(HookPhase::After; "predecessor left a nonzero offset")]
+#[test_case(HookPhase::Before; "predecessor left every core at zero")]
+fn an_unarmed_same_boot_restart_reads_and_restores_stock_before_refusing(cut: HookPhase) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let earlier = interrupted_apply(&sim, &mem, cut);
+    let mut machine = sim.seams();
+    let cores = machine.host.topology().unwrap();
+    let inherited: Vec<_> = cores
+        .iter()
+        .map(|info| (info.core, machine.smu.offset(info.core).unwrap()))
+        .collect();
+    let needs_restore = cut == HookPhase::After;
+    assert_eq!(
+        inherited
+            .iter()
+            .any(|(_, offset)| *offset != ObservedOffset(0)),
+        needs_restore
+    );
+
+    let ended = run(input(&sim, &mem));
+    assert_eq!(refusal(&ended), DeadEndCondition::Preflight);
+    assert!(!ended.stock_unverified);
+    let events = &ended.journal.events()[earlier..];
+    let checked = events.iter().find(|event| matches!(
+        &event.payload, Payload::PreflightCheck(check) if check.check == "watchdog" && !check.ok
+    )).unwrap();
+    let swept = events.iter().find(|event| matches!(
+        &event.payload, Payload::PreflightCheck(check) if check.check == "trial_scopes" && check.ok
+    )).unwrap();
+    let refused = events.iter().find(|event| matches!(
+        &event.payload, Payload::DeadEnd(end) if end.condition == DeadEndCondition::Preflight
+    )).unwrap();
+    assert_eq!(refused.cause, [checked.seq]);
+    assert!(checked.seq < swept.seq);
+    let observed: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::SmuReadback(readback) = &event.payload
+                && readback.expected.is_none()
+            {
+                assert!(swept.seq < event.seq && event.seq < refused.seq);
+                return Some((readback.core, readback.offset));
+            }
+            None
+        })
+        .collect();
+    assert_eq!(observed, inherited);
+    let writes: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                Payload::SmuIntent(_) | Payload::SmuWrite(_) | Payload::ProfileRestored(_)
+            ) || matches!(&event.payload, Payload::SmuReadback(read) if read.expected.is_some())
+        })
+        .collect();
+    if needs_restore {
+        let [intent, written, readback, restored] = writes.as_slice() else {
+            panic!("expected one restoration transaction, got {writes:?}");
+        };
+        let Payload::SmuIntent(intent_record) = &intent.payload else {
+            panic!("restoration must start with an intent");
+        };
+        let command = intent_record.command();
+        assert_eq!(command.offset(), TargetOffset::ZERO);
+        assert!(swept.seq < intent.seq && restored.seq < refused.seq);
+        assert_eq!(written.cause, [intent.seq]);
+        assert!(matches!(&written.payload, Payload::SmuWrite(write) if write.command() == command));
+        assert_eq!(readback.cause, [written.seq]);
+        assert!(matches!(&readback.payload, Payload::SmuReadback(read)
+            if Some(read.core) == command.core() && read.expected == Some(TargetOffset::ZERO)
+                && read.offset == ObservedOffset(0)));
+        assert_eq!(restored.cause, [readback.seq]);
+        let Payload::ProfileRestored(profile) = &restored.payload else {
+            panic!("restoration must end with verified stock");
+        };
+        assert_eq!(
+            profile.offsets,
+            cores
+                .iter()
+                .map(|info| (info.core, TargetOffset::ZERO))
+                .collect()
+        );
+    } else {
+        assert!(
+            writes.is_empty(),
+            "do not write when the machine already holds stock"
+        );
+    }
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::ProfileApplied(_)
+            | Payload::TaskStart(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
+    )));
+    assert!(matches!(
+        &events.last().unwrap().payload, Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::DeadEnd
+    ));
+    for info in cores {
+        assert_eq!(machine.smu.offset(info.core).unwrap(), ObservedOffset(0));
+    }
+}
+
+#[test]
+fn an_unarmed_same_boot_restart_does_not_touch_the_smu_without_validation() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let earlier = interrupted_apply(&sim, &mem, HookPhase::After);
+    sim.fail_check("cpu", "unsupported CPU");
+    sim.interrupt_smu(|_: &SmuOperation| panic!("SMU access without validation"));
+
+    let ended = run(input(&sim, &mem));
+    assert_eq!(refusal(&ended), DeadEndCondition::Preflight);
+    assert!(
+        !ended.journal.events()[earlier..]
+            .iter()
+            .any(|event| matches!(
+                event.payload,
+                Payload::SmuIntent(_) | Payload::ProfileRestored(_) | Payload::Shutdown(_)
+            ))
+    );
+}
+
+/// Trial scopes a stale run left that cannot be confirmed stopped.
+struct SweepFailure(Box<dyn togi_machine::Trials>);
+
+impl togi_machine::Trials for SweepFailure {
+    fn controller_pid(&self) -> u32 {
+        self.0.controller_pid()
+    }
+
+    fn content(
+        &mut self,
+        workload: togi_machine::WorkloadId,
+    ) -> Result<togi_machine::ContentId, togi_machine::Error> {
+        self.0.content(workload)
+    }
+
+    fn sweep(&mut self, _: &CancellationToken) -> Result<togi_machine::Swept, togi_machine::Error> {
+        Err(togi_machine::Error::Other(Box::new(io::Error::other(
+            "leftover trial scope still running",
+        ))))
+    }
+
+    fn recover_frequency(
+        &mut self,
+        stopped: &togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<String, togi_machine::Error> {
+        self.0.recover_frequency(stopped, journal)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+        journal: &mut dyn togi_machine::FrequencyJournal,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        self.0.start(cancel, spec, ready, journal)
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.0.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.0.samples(id)
+    }
+}
+
+#[test]
+fn an_unarmed_same_boot_restart_does_not_touch_the_smu_when_the_sweep_fails() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let earlier = interrupted_apply(&sim, &mem, HookPhase::After);
+    sim.interrupt_smu(|_: &SmuOperation| panic!("SMU access before leftover scopes are stopped"));
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(SweepFailure(input.machine.trials));
+
+    let ended = run(input);
+    assert_eq!(refusal(&ended), DeadEndCondition::Containment);
+    let events = &ended.journal.events()[earlier..];
+    let swept = events.iter().find(|event| matches!(
+        &event.payload, Payload::PreflightCheck(check) if check.check == "trial_scopes" && !check.ok
+    )).unwrap();
+    let refused = events.iter().find(|event| matches!(
+        &event.payload, Payload::DeadEnd(end) if end.condition == DeadEndCondition::Containment
+    )).unwrap();
+    assert_eq!(refused.cause, [swept.seq]);
+    assert!(!events.iter().any(|event| matches!(
+        event.payload,
+        Payload::SmuIntent(_)
+            | Payload::SmuReadback(_)
+            | Payload::ProfileRestored(_)
+            | Payload::Shutdown(_)
     )));
 }
 

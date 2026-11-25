@@ -98,6 +98,8 @@ togi status
 
 An in-session run requires an armed, counting hardware watchdog, just like the tuning boot; `sudo togi run` checks once at startup and refuses if it is unarmed. Sampling countdown progress can take up to four seconds per candidate device; manual startup does not retry for readiness or arm a watchdog. It checks again before each nonzero profile application and each workload start; loss detected there stops new work and restores verified stock, and a stop signal interrupts sampling and takes ordinary cleanup ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows a failed `watchdog` result. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
 
+If a previous run left nonzero offsets on the same boot, `run` attempts to restore and verify CO 0 even if the watchdog is unarmed. It still refuses to tune; a failed restoration reports that stock was not verified ([Same-boot resume](spec/runtime.md#same-boot-resume)).
+
 ## Daily observation
 
 After a session exists, leave firmware Curve Optimizer at CO 0 and arm PID 1's hardware watchdog.
@@ -110,6 +112,13 @@ including a short power-button shutdown handled by systemd, zeroes and verifies 
 its final checkpoint and clean-stop marker. A later start records an earlier observed boot without
 that marker as unclean, with its checkpoint, offsets, reset reason and available kernel evidence;
 unavailable evidence stays unknown.
+
+Unlike `run`, a `sudo togi day` started by hand that refuses a nonzero baseline does not restore
+stock: it exits and leaves those offsets applied ([#1632](https://github.com/shgew/togi/issues/1632)).
+Reboot, or run `sudo togi emergency-stop` with no other togi process running; only a successful
+exit means every core was zeroed and read back at 0, and a reported failure leaves stock unverified.
+The installed day service attempts the same zero-only recovery through its post-stop step after
+such a refusal.
 
 `togi status` shows the Day summary; `togi events --kind day` shows the raw records. Hours are checkpointed lower bounds, not a stability guarantee. An interval whose two readbacks differ cannot identify when offsets changed, so it remains in boot hours but earns no hours for either profile.
 
