@@ -20,7 +20,7 @@ When a design question comes up, recommend the option that reaches per-core offs
 ## Docs
 
 - `docs/model.md`: the one-page design being built, not yet the code's behavior; keep that notice until they match. `docs/how-togi-tunes.md` and `docs/spec/` describe shipped behavior until the loop lands.
-- `docs/decisions.md`: decisions in force and rejected ideas. `docs/adr/` is history, not authority; add no new ADRs.
+- `docs/decisions.md`: decisions in force and rejected ideas. The [archive](docs/archive.md) is history, not authority; add no new ADRs.
 - `docs/screens.md`: owner-approved concepts for the screens of the design being built, in the model's words.
 - `README.md`: status and commands. `GLOSSARY.md`: vocabulary. Update the relevant spec and operator guide with the code.
 - `docs/issues.md`: deferred work and hardware evidence. `REVIEW.md`: review criteria and merge units; `.omp/commands/review-pr.md`: review mechanics; `docs/review-record.md`: records.
@@ -84,7 +84,7 @@ Idiom, required in pull requests and checked by `/review-pr`:
 
 - **Traceable:** journal every action/decision with a stranger-readable `msg`; the journal alone reconstructs what happened and why.
 - **Safe writes:** only `togi-smu` writes hardware, through the session transaction enforced by Clippy's disallowed methods: `TargetOffset` in [-50, 0], durable intent before, readback after. The constrained zero-only emergency is separate ([transaction](docs/spec/runtime.md#offset-types-and-the-write-transaction)).
-- Comments explain reasons names cannot; describe current Rust, leaving deleted Go ancestry to ADRs, changelog and migration history.
+- Comments explain reasons names cannot; describe current Rust, leaving deleted Go ancestry to the changelog and archive.
 
 ## Testing
 

@@ -137,7 +137,7 @@ an admissible nonzero cell.
 ## CO-0 controls
 
 **Historical Ruleset 13 behavior, removed by
-[ADR 0095](../adr/0095-operator-attested-stock-stability.md).** First-night,
+[Ruleset 14 stock attestation](tuner-ruleset14.md#operator-attested-stock-stability).** First-night,
 changed-firmware and pre-restoration all-zero matrices and the all-zero rerun
 after a nonzero failure naming a CO-0 core no longer run. The
 [Ruleset 14 attestation](tuner-ruleset14.md#operator-attested-stock-stability)
@@ -215,7 +215,7 @@ The existing hardware, containment, preflight, thermal and unresolved-defect sto
 
 ## Historical rule anchors
 
-The following anchors preserve links from historical ADRs and predecessor-tool documentation. They do not retain policy, aliases or compatibility code. [ADR 0080](../adr/0080-per-ccd-first.md) replaces the per-core rules; [ADR 0079](../adr/0079-day-observer-night-tester.md) replaces cycles/phases with the night/day policy. Historical facts stay in archived journals.
+The following anchors preserve links from historical ADRs and predecessor-tool documentation. They do not retain policy, aliases or compatibility code. [ADR 0080](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0080-per-ccd-first.md) replaces the per-core rules; [ADR 0079](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0079-day-observer-night-tester.md) replaces cycles/phases with the night/day policy. Historical facts stay in archived journals.
 
 ### Search
 
@@ -283,7 +283,7 @@ Removed; [daily events](#daily-events) have no cycle-expiry window.
 
 ### BIOS profile
 
-No export or automatic BIOS recommendation; [ADR 0082](../adr/0082-bios-stays-at-zero.md) keeps BIOS at CO 0.
+No export or automatic BIOS recommendation; [firmware stays at CO 0](../decisions.md).
 
 ### Defect list
 
