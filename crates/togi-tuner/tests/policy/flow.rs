@@ -447,13 +447,53 @@ fn an_unexplained_end_at_d_vetoes_and_retreats_provisionally_until_an_answer_rec
             }
         })
         .unwrap_or_else(|| panic!("no reclassified event in {answered:?}"));
-    assert!(
-        !matches!(
-            reclassified.classification,
-            Classification::CpuSuspect { .. }
-        ),
-        "{reclassified:?}"
+    assert_eq!(reclassified.event, event.event);
+    assert_eq!(reclassified.classification, Classification::NonCpu {});
+    assert_eq!(
+        classifications_of(&journal, &event.event),
+        [Classification::NonCpu {}]
     );
+    assert!(answered.iter().any(|payload| {
+        matches!(payload, Payload::CampaignReclassified(change)
+            if change.event == event.event && change.from == event.classification
+                && change.to == Classification::NonCpu {})
+    }));
+}
+
+#[test]
+fn an_unanswered_end_at_stock_is_non_cpu_in_the_journal() {
+    let mut journal = Journal::ready();
+    journal.hold_stock();
+    journal.boot_start("day1");
+    unexplained_end(&mut journal, &zero());
+    let committed = journal.settle_day(&cold_boot_at("day2", journal.now()));
+    let event = committed
+        .iter()
+        .find_map(|payload| {
+            if let Payload::DayEvent(event) = payload {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("no event in {committed:?}"));
+    assert_eq!(event.classification, Classification::NonCpu {});
+    assert_eq!(
+        classifications_of(&journal, &event.event),
+        [Classification::NonCpu {}]
+    );
+}
+
+/// The current classification of every projected event with the identity `event`.
+fn classifications_of(journal: &Journal, event: &togi_journal::DayEventId) -> Vec<Classification> {
+    journal
+        .state
+        .project()
+        .events
+        .into_iter()
+        .filter(|projected| projected.event == *event)
+        .map(|projected| projected.classification)
+        .collect()
 }
 
 #[test]
