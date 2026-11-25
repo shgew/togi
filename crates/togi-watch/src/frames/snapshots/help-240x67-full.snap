@@ -66,28 +66,25 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~    wwwww     ttttttttttttttttttttt                                                                                                                                                 ttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │    grey      idle, still to come, unknown                                                                                                                                          them and finish does not hide later events
 ~    wwww      tttttttttttttttttttttttttttt                                                                                                                                          tttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                      experimental  experimental: 50 clean hours; at most 1 crash per 17 h
-~                                                                                                                                                                      wwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                                    (95%, fixed-rate model). This is an example for current
-~                                                                                                                                                                                    ttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                                exact-profile evidence, not a reliability certificate;
-~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                                tttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                                    finish alone never meets the hazard goal
-~                                                                                                                                                                                    tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      experimental  observations for the current exact profile, not a
+~                                                                                                                                                                      wwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                                    stability verdict; a fixed-rate model bound is not a
+~                                                                                                                                                                                    tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                                measured crash rate or a prediction
+~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                                ttttttttttttttttttttttttttttttttttt
+│
 │    failures       failure decisions, including trials skipped because they already
 ~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                   failed
-~                   tttttt
-│    crashes        boots that ended without a clean shutdown                                                                                                          KINDS OF LOAD ─────────────────────────────────────────────────────────
-~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                                                                                                          wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│    last observed  the last failure seen in this session that changed what togi
-~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                   does; skips do not count                                                                                                                           R1 light          one light thread: compiling, browsing
-~                   tttttttttttttttttttttttt                                                                                                                           wwwwwwww          ttttttttttttttttttttttttttttttttttttt
-│    q              exit dashboard; tuning itself keeps running                                                                                                        R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-~    w              ttttttttttttttttttttttttttttttttttttttttttt                                                                                                        wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
-~                                                                                                                                                                      wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
+│                   failed                                                                                                                                             KINDS OF LOAD ─────────────────────────────────────────────────────────
+~                   tttttt                                                                                                                                             wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│    crashes        boots that ended without a clean shutdown
+~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt
+│    last observed  the last failure seen in this session that changed what togi                                                                                       R1 light          one light thread: compiling, browsing
+~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                       wwwwwwww          ttttttttttttttttttttttttttttttttttttt
+│                   does; skips do not count                                                                                                                           R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+~                   tttttttttttttttttttttttt                                                                                                                           wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
+│    q              exit dashboard; tuning itself keeps running                                                                                                        R3 load steps     load switching on and off: current steps
+~    w              ttttttttttttttttttttttttttttttttttttttttttt                                                                                                        wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
 │                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
 ~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
 │                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
@@ -96,6 +93,7 @@ legend: t=Text g=Grey w=White c=Running a=Warn p=Good f=Bad k=Track h=Chip l=Lam
 ~                                                                                                                                                                      wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
 │                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
 ~                                                                                                                                                                      wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│
 │
 │
 │

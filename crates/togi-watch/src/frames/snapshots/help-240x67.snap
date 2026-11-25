@@ -35,21 +35,21 @@ expression: body
 │    red       failures, past and present                                                                                                                              allowance     machine-wide consumed and remaining events, including
 │    green     passed, done, covered                                                                                                                                                 provisional charges; reclassification does not refund
 │    grey      idle, still to come, unknown                                                                                                                                          them and finish does not hide later events
-│                                                                                                                                                                      experimental  experimental: 50 clean hours; at most 1 crash per 17 h
-│                                                                                                                                                                                    (95%, fixed-rate model). This is an example for current
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                                exact-profile evidence, not a reliability certificate;
-│                                                                                                                                                                                    finish alone never meets the hazard goal
+│                                                                                                                                                                      experimental  observations for the current exact profile, not a
+│                                                                                                                                                                                    stability verdict; a fixed-rate model bound is not a
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                                measured crash rate or a prediction
+│
 │    failures       failure decisions, including trials skipped because they already
-│                   failed
-│    crashes        boots that ended without a clean shutdown                                                                                                          KINDS OF LOAD ─────────────────────────────────────────────────────────
-│    last observed  the last failure seen in this session that changed what togi
-│                   does; skips do not count                                                                                                                           R1 light          one light thread: compiling, browsing
-│    q              exit dashboard; tuning itself keeps running                                                                                                        R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
+│                   failed                                                                                                                                             KINDS OF LOAD ─────────────────────────────────────────────────────────
+│    crashes        boots that ended without a clean shutdown
+│    last observed  the last failure seen in this session that changed what togi                                                                                       R1 light          one light thread: compiling, browsing
+│                   does; skips do not count                                                                                                                           R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+│    q              exit dashboard; tuning itself keeps running                                                                                                        R3 load steps     load switching on and off: current steps
 │                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
 │                                                                                                                                                                      R5 both threads   both threads of one core: SMT pressure
 │                                                                                                                                                                      R6 idle + bursts  idle with short wake-ups: idle and boost
 │                                                                                                                                                                      R7 all-core       a CCD, part of one, or every core: power and heat
+│
 │
 │
 │

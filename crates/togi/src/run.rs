@@ -31,15 +31,14 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| examples(&[crate::cli::RUN_
 
 /// Start or resume the night's tuning session in the foreground
 ///
-/// Runs the night of the per-CCD tuning policy: controls, coverage mapping, qualification and reproduction, then
-/// cap tests and re-qualification while nothing else is due. The night has no deadline: it runs until you stop it
-/// (a signal or a reboot), a conclusive failure at CO 0, no configured backend giving evidence any more,
-/// or a runtime safety dead end. A restart after a crash continues the night; a restart after a
-/// stop or a normal boot opens the next one. After a crash the next run attributes it from the journal and
-/// continues. On resume, known defects affecting past decisions are recorded with their cores; a too-aggressive
-/// one stops the run until reset --all starts a fresh session. It needs root.
+/// Runs the per-CCD night policy: mapping, exact-profile qualification and requalification,
+/// and reproduction of suspect daily failures. If none is due, it can repeat tests at the
+/// current nonzero day profile. It requires a current stock attestation from `togi night`
+/// and never runs an all-zero trial. The night has no deadline:
+/// it continues across crash reboots and ends when you stop it or the tuner has no admissible
+/// work or hits a safety dead end. On resume, recorded defects can also stop the run. Needs root.
 ///
-/// A session starts only from a verified all-zero baseline and returns every core to CO 0 when it stops. A
+/// A session starts from a verified all-zero baseline. A clean stop restores and verifies CO 0. A
 /// BIOS change found on resume is recorded and the session continues. A journal from an older ruleset, schema or
 /// evidence epoch, and no newer one, is archived. A newer ruleset, schema or evidence epoch stops the run before
 /// another event is written; reset --all archives that session. Journal lines are colored on terminals and in
@@ -47,7 +46,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| examples(&[crate::cli::RUN_
 ///
 /// Every run requires an armed hardware watchdog before each nonzero profile application and each workload start.
 /// Manual startup checks once and refuses immediately; --tuning-boot waits up to 30 seconds.
-/// Loss detected at a later boundary stops the run and restores CO 0.
+/// Loss detected at a later boundary stops new work. Cleanup attempts to restore and verify CO 0.
 ///
 /// Only one day observer, run or reset can own this machine, even with different state directories.
 /// Stop the day service before tuning. The NixOS module creates /run/lock/togi.lock at boot;

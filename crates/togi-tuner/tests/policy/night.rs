@@ -726,7 +726,7 @@ fn changed_context(field: &str, value: &str) -> SessionContext {
 }
 
 #[test_case("bios_version", "2"; "BIOS version")]
-#[test_case("bios_version", "1.2.0.7 AGESA ComboAM5PI 1.2.0.2"; "AGESA")]
+#[test_case("bios_version", "1.2.0.7 AGESA ComboAM5PI 1.2.0.2"; "BIOS string containing AGESA")]
 #[test_case("microcode", "mc2"; "microcode")]
 fn a_changed_firmware_context_invalidates_the_attestation(field: &str, value: &str) {
     let mut journal = Journal::ready();

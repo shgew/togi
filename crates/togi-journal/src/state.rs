@@ -79,7 +79,7 @@ pub struct State {
     pub backends: BackendPaths,
 }
 
-/// The backend store paths the latest `config.loaded` recorded; a pass counts only under the path in force.
+/// The backend store paths recorded by the latest `config.loaded`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct BackendPaths {
     pub mprime: Option<PathBuf>,

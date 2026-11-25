@@ -33,10 +33,11 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     ])
 });
 
-/// Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.
+/// Top-level command-line arguments.
 #[derive(Debug, Parser)]
 #[command(
     name = NAME,
+    about = env!("CARGO_PKG_DESCRIPTION"),
     version = VERSION.as_str(),
     after_help = EXAMPLES.as_str(),
     arg_required_else_help = true,
@@ -256,8 +257,7 @@ pub fn config_after_command(mut args: Vec<OsString>) -> Vec<OsString> {
     args
 }
 
-/// Words the unknown-flag error for `--config` as the scope rule: the flag belongs to three
-/// commands and every other command, and the top level, reject it.
+/// Give an out-of-scope `--config` the same explanation wherever Clap refuses it.
 fn config_scope_error(error: clap::Error, args: &[OsString]) -> clap::Error {
     let rejected = error.kind() == ErrorKind::UnknownArgument
         && matches!(

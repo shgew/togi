@@ -73,8 +73,7 @@ pub fn setup(ctx: &Context<'_>) -> Result<Setup, String> {
         .map_err(|error| format!("invalid {SETUP_PATH}: {}", togi_render::error_chain(&error)))
 }
 
-/// What the night will do, as `togi status` plans it today. The crash range Ruleset 13 forecasts
-/// joins these lines here; until it does, the night shows what the planner offers.
+/// The planner's current work, not a forecast of duration or failures.
 fn plan(ctx: &mut Context<'_>) -> Result<Vec<String>, Exit> {
     let line = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(None) => None,

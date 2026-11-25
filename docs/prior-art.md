@@ -1,6 +1,6 @@
 # Prior art
 
-What togi takes from existing tools and research, and what it deliberately leaves out. Read before proposing a feature: if it is listed under Rejected, it needs a new ADR.
+What togi takes from existing tools and research, and what it leaves out. [Decisions](decisions.md) records current choices; the linked ADRs are historical.
 
 ## linux-corecycler
 
@@ -36,10 +36,10 @@ What togi takes from existing tools and research, and what it deliberately leave
 
 | Feature | Why |
 |---|---|
-| Qt GUI, desktop entry, notifications | CLI first; `togi watch` reads the journal as a TUI |
+| Qt GUI and desktop entry | The CLI and `togi watch` are the tuning interface; the day service can send [desktop notifications](spec/runtime.md#day-observation). |
 | Full monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | togi samples temperatures, every core's clock, the PM table and RAPL package and aggregate core energy-derived power. The rest of the [#625 inventory](https://github.com/shgew/togi/issues/625) stays out: duplicates of collected data, per-core IPIs, device IRQs or polled SMBus, or data unrelated to CPU tuning do not justify a general monitoring subsystem. |
 | SQLite history | [ADR 0093](adr/0093-journal-fold-and-snapshots.md#journal-authority) |
-| A fixed validation-stage sequence, accumulated clean-time budgets and deeper probes earned by those budgets | The fork calls the last two endurance banks and annealing ([its usage guide](https://github.com/shgew/linux-corecycler/blob/main/docs/usage.md#auto-tuner)). Ruleset 13 instead uses [night queues](spec/tuner.md#scheduling) for mapping, controls, qualification, requalification and reproduction, with filler when none is due, and [exact-profile qualification](spec/workloads.md#coverage-matrix); it reports evidence, not durability tiers ([ADR 0079](adr/0079-day-observer-night-tester.md), [ADR 0028](adr/0028-remove-tiers.md)). The [applied-hour hold](spec/tuner.md#hold-and-next-proposal) is a promotion precondition on observed daily use, not an endurance bank that earns depth. |
+| A fixed validation-stage sequence, accumulated clean-time budgets and deeper probes earned by those budgets | The fork calls the last two endurance banks and annealing ([its usage guide](https://github.com/shgew/linux-corecycler/blob/main/docs/usage.md#auto-tuner)). togi uses [night queues and exact-profile qualification](how-togi-tunes.md#what-a-night-does). The [day hold](spec/tuner-ruleset14.md#4-a-clean-hold-earns-one-step) is a promotion prerequisite on observed daily use, not a durability grade. |
 | Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/togi/issues/20) |
 | stress-ng and stressapptest backends | [ADR 0008](adr/0008-self-checking-workloads.md) |
 | PBO limit, scalar and frequency control | togi tunes CO only; the rest is BIOS context |
@@ -81,4 +81,4 @@ Why finite testing cannot prove stability, and what that implies for the method:
 - **Current transients are their own failure mode.** Generated di/dt stressmarks failed 62 mV higher than a hand-written maximum-power test ([AUDIT, MICRO 2012](https://ieeexplore.ieee.org/document/6493621); [GeST](https://github.com/toolsForUarch/GeST)). Hence R3 and R4.
 - **Corrected errors come before crashes** ([Bacha and Teodorescu, ISCA 2013](https://www.cse.ohio-state.edu/~teodorescu.1/download/papers/bacha-isca13.pdf)). Hence corrected MCEs count as failures.
 - **Wrong results can be silent** ([Cores that don't count, HotOS 2021](https://sigops.org/s/conferences/hotos/2021/papers/hotos21-s01-hochschild.pdf); [Meta, 2022](https://arxiv.org/abs/2203.08989)). Hence [ADR 0008](adr/0008-self-checking-workloads.md).
-- **Idle cannot be simulated.** A busy loop never enters deep C-states. R6 covers what synthetic idle can; [`togi day`](spec/runtime.md#day-observation) observes real use without starting workloads or applying offsets.
+- **An idle trial is not desktop idle.** R6 exercises a particular suspend/resume workload shape; it does not reproduce real idle, sleep and wake. The [day service](spec/runtime.md#day-observation) applies and observes the permitted profile without starting test workloads.

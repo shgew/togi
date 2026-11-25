@@ -4,7 +4,7 @@ expression: "completion(\"nushell\")"
 ---
 module completions {
 
-  # Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs
+  # Tunes Curve Optimizer offsets per CCD on Zen 5 desktop CPUs
   export extern togi [
     --state-dir: directory    # State directory
     --help(-h)                # Print help

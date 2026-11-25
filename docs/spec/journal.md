@@ -283,7 +283,7 @@ changes shape and `SCHEMA` stays 1.
 
 Write the attestation once per firmware context before switching into tuning.
 Firmware identity, not workload content or evidence epoch, scopes the answer;
-a BIOS, AGESA or microcode change needs a matching new-context attestation.
+a change in the recorded BIOS context needs a matching new-context attestation.
 Reopening a context already attested does not append a duplicate. The answer
 is not measured stock exposure, a qualification, a day hold or permission for
 a different firmware context. Missing current attestation refuses nonzero

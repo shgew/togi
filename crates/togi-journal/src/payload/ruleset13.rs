@@ -1,6 +1,5 @@
-//! Ruleset 13 evidence and night payloads (`docs/spec/journal.md`, Ruleset 13 events): exposure, CCD edge and
-//! cap, night planning, qualification and reproduction, plus the identity and profile types the day payloads
-//! share. Rates are validated finite on decode; an unknown or unbounded value is a tagged variant, never zero.
+//! Night and evidence payloads, including historical Ruleset 13 cap records, and shared day
+//! identity and profile types. Rates are validated finite on decode.
 
 use std::fmt;
 
@@ -161,9 +160,8 @@ object_only! {
 }
 
 object_only! {
-    /// A daily event's stable identity: the boot whose end or fault it is, the journal record (manual report or
-    /// import) it came from, by original session and sequence, or the night whose monthly re-qualification of D
-    /// failed.
+    /// A daily event's stable identity: its boot, a historical record's original session and
+    /// sequence, or the night whose requalification of D failed.
     #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
     #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
     pub enum DayEventId {

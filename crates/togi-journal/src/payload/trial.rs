@@ -100,6 +100,7 @@ object_only! {
         pub core: CoreId,
         pub cpus: Vec<CpuId>,
         pub pid: u32,
+        /// The recorded scope identity for this worker.
         pub scope: String,
     }
 }
@@ -148,6 +149,7 @@ object_only! {
         pub trial: TrialId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub window_start_ns: Option<u64>,
+        /// The primary process's scope. Individual workers may have their own scopes.
         pub scope: String,
         pub pid: u32,
         pub cpus: Vec<CpuId>,

@@ -22,12 +22,12 @@ Golden output is rendered from journals the tests build in memory ([The stats to
 
 ## The stats tool (`togi-tool-stats`)
 
-`just stats` runs `togi-tool-stats` ([#820](https://github.com/shgew/togi/issues/820)). It takes the flags `--state-dir`, `--journal` and `--since`, and prints the sections above. Scoring a run against a simulated forecast (`--forecast`) was retired with the forecast by Ruleset 13 ([#1217](https://github.com/shgew/togi/issues/1217)). Per-core policy analyses of historical journals (hunts, checking chains, R7 backoff attribution, counterfactual re-derivation accounting) were retired with the per-core policy by Ruleset 13 ([#1217](https://github.com/shgew/togi/issues/1217)); `togi events` reads those journals' events.
+`just stats` takes `--state-dir`, `--journal` and `--since` and prints the sections above. It reports recorded exposure and failures, not a forecast. For historical per-core runs, inspect the original events with `togi events`.
 
 - It reads only `events.jsonl`, never trial samples. A `trial.end` already holds the request telemetry the session summarized from the trial's samples, also for a trial a crash cut short, so a trial whose end lacks the fields has none to recover. The R7 request report counts a trial's end fields and the carried `trial.carried` facts of other sessions.
 - A journal that does not follow itself (a gap in the sequence, a cause that does not precede its event) is an error naming the file, with exit status 1; a usage error exits 2.
 - Recorded voltage requests must fit a signed 64-bit 4 mV bin; an unrepresentable bin is a journal-input error, never a clipped endpoint.
-- **Time** is grouped by the trial's activity (`search`, `checking`, `hunt`, `deepening`, or `-` for an intent without one). Every grouped table follows the order the vocabulary declares: regimes `R1`..`R7`; activities, conditions and outcomes as the journal lists them; and trial classes (failure rate by depth, the R7 request tables) by the workload's place in the catalog, then the loaded cores by number, then the intended duration in seconds, so `60s` lists before `120s`. Nothing sorts alphabetically.
+- **Time** is grouped by the recorded activity, using `-` for an intent without one. Grouped tables use the declared order of regimes, activities, conditions and outcomes; trial classes follow workload catalog order, loaded core numbers, then intended duration.
 - **Session** adds the event count.
 - **Failures** shows `-` for the regime of a failure that names neither a regime nor a trial. **Inconclusive trials** escapes a multi-line reason (`\n`) and shows `-` for a trial that records none.
 - `--journal` and `--state-dir` refuse a journal file that is a symlink, because the report reads through the journal crate's no-follow open.
@@ -36,20 +36,20 @@ The tests compare rendered output with compile-time golden fixtures in `crates/t
 
 ## Retros
 
-After an unattended run on the target machine, write a retro as a new comment on the pinned [Target-machine runs](https://github.com/shgew/togi/issues/260) issue. Build it from `just stats` and `togi events`, not from memory. A question they do not answer, such as how clocks and voltage requests moved with offset, can be asked of the journals and samples with [`just sql`](#querying-journals-and-samples-just-sql); the retro still reports from `just stats` and `togi events`. In omp, `/retro` runs the whole workflow ([`.omp/commands/retro.md`](../.omp/commands/retro.md)).
+A retrospective is optional and starts at the owner's request. Build it from `just stats`, `togi events`, and, when needed, [read-only journal queries](#querying-journals-and-samples-just-sql). The [retro procedure](../.omp/commands/retro.md) owns publication.
 
 A full retro has these sections:
 
 - **Session:** session ID, togi version and ruleset, machine and BIOS context, wall time, trials, crashes and how they recovered, and any earlier run that got no retro.
-- **What happened:** the nights in order with their hours and tasks, each qualification with its outcome, each mapping edge and cap with its change, the day steps, the daily events with their vetoes, and the day profile at the end of the run.
+- **What happened:** the nights in order with their observed hours and tasks, qualification outcomes, mapping edges and ceilings, day steps, vetoes and the final day profile.
 - **What went well** and **what went badly**, each with the numbers that show it.
-- **Actions:** one line each, linking the issue or pull request that carries it; file the issue first if none exists. An action that would change tuner decisions becomes a sub-issue of the open pinned `Ruleset N` issue; any other action becomes an ordinary issue in its block ([`docs/issues.md`](issues.md)). Link both kinds here.
+- **Actions:** link the issue or pull request carrying each action. See [Issues](issues.md) for work that needs tracking.
 
 A run with nothing new gets the short form instead: no failure pattern that earlier retros have not recorded, no decision that contradicts the spec, no device trouble. Its retro is the **Session** paragraph, the numbers that changed since the previous retro, and **Actions:** none.
 
 Retros have no dashboard section: the owner files dashboard and UI issues directly.
 
-A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into its bench machine files under `tools/bench/machines/`, and what simulated runs should show goes into `docs/simulating.md`. The retro links to the pull request that moved it.
+A finding that holds beyond one run belongs with the evidence or rule it changes. Simulation can exercise a recorded mechanism; it cannot substitute for target-machine observations.
 
 ## Querying journals and samples (`just sql`)
 
