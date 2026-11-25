@@ -3,8 +3,6 @@ use togi_journal::{Dimension, ImportClass, MissingFact, Refusal, Stamp};
 
 use togi_journal::{Build, Journal, Marker, Payload, SessionId, StateDir};
 use togi_machine::BiosContext;
-use togi_sim::MachineDefinition;
-use togi_sim::definition::ModelDef;
 
 use togi_journal::MemFs;
 use togi_journal::fs::{Fault, FileKind, Op};
@@ -14,14 +12,7 @@ use crate::testing::{Bench, build, finished_with_day_records, simulated};
 use crate::{Ended, Stop, run};
 
 fn bench() -> Bench {
-    Bench::defined(&MachineDefinition {
-        cores: 2,
-        model: ModelDef {
-            past_limit_rate: 0.0,
-            ..ModelDef::default()
-        },
-        ..MachineDefinition::default()
-    })
+    Bench::new(2)
 }
 
 fn ended(bench: &Bench) -> Ended {
@@ -1189,14 +1180,7 @@ fn reconstructed_campaign_charges_survive_transition_reset_and_resume(
     use togi_tuner::policy::successor::Reconstruction;
 
     // Two physical cores per CCD let an uninterrupted run schedule neighbour-load work.
-    let bench = Bench::defined(&MachineDefinition {
-        cores: 4,
-        model: ModelDef {
-            past_limit_rate: 0.0,
-            ..ModelDef::default()
-        },
-        ..MachineDefinition::default()
-    });
+    let bench = Bench::new(4);
     let campaign = charged_predecessor(&bench);
     if reset {
         let mut dir = simulated(&bench.mem);

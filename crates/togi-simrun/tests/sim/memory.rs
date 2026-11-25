@@ -2,10 +2,12 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use togi_journal::{Event, EventKind, Payload, ShutdownReason};
+use togi_machine::TargetOffset;
 use togi_session::{SessionError, Stop};
+use togi_sim::ScriptedTopology;
 use togi_simrun::Observe;
 
-use crate::common::{Bench, finish, hunt_machine, until_kind};
+use crate::common::{Bench, core, finish, passing, until_kind};
 
 fn count(events: &[Event], kind: EventKind) -> usize {
     events.iter().filter(|event| event.kind() == kind).count()
@@ -13,7 +15,7 @@ fn count(events: &[Event], kind: EventKind) -> usize {
 
 #[test]
 fn a_crash_right_after_session_start_is_replayed_once() {
-    let bench = Bench::new(&hunt_machine(2), 1);
+    let bench = Bench::four_cores(1);
     let mut input = bench.input();
     let sim = bench.sim.clone();
     let fired = Rc::new(Cell::new(false));
@@ -61,14 +63,13 @@ fn a_crash_right_after_session_start_is_replayed_once() {
 
 #[test]
 fn a_resume_replays_what_the_earlier_run_recorded() {
-    let definition = hunt_machine(2);
-    let first = Bench::new(&definition, 1);
+    let first = Bench::four_cores(1);
     let mut input = first.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     assert_eq!(finish(input).stop, Some(Stop::Signal));
     let before = first.events().len();
 
-    let second = first.resumed(&definition, 1);
+    let second = first.reopened(1);
     let mut input = second.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     assert_eq!(finish(input).stop, Some(Stop::Signal));
@@ -79,9 +80,14 @@ fn a_resume_replays_what_the_earlier_run_recorded() {
 
 #[test]
 fn a_baseline_that_is_not_zero_starts_no_night() {
-    let mut definition = hunt_machine(4);
-    definition.bios = Some(vec![-5, 0, 0, 0]);
-    let bench = Bench::new(&definition, 1);
+    let script = passing(ScriptedTopology::FourCores).with_boot_offsets(|id| {
+        if id == core(0) {
+            TargetOffset::new(-5).unwrap()
+        } else {
+            TargetOffset::ZERO
+        }
+    });
+    let bench = Bench::scripted(script, 1);
     let finished = finish(bench.input());
     assert!(
         matches!(

@@ -6,8 +6,8 @@ use togi_machine::{
     TrialSpec,
 };
 use togi_sim::{
-    History, RestoreError, ScriptError, ScriptedMachine, ScriptedTopology, Simulator, TrialOutcome,
-    model::Script,
+    History, ReportedFailure, RestoreError, ScriptError, ScriptedMachine, ScriptedMce,
+    ScriptedTopology, ScriptedVoltageSamples, Simulator, TrialOutcome, model::Script,
 };
 
 use crate::common::{Journal, Rig, basic, core, machine, offset};
@@ -20,6 +20,10 @@ fn rig(
     outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
 ) -> Rig {
     let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, outcome);
+    rig_with(inputs)
+}
+
+fn rig_with(inputs: ScriptedMachine) -> Rig {
     let sim = Simulator::scripted(inputs, 1, History::default()).expect("a scripted machine");
     Rig {
         machine: sim.seams(),
@@ -230,5 +234,209 @@ fn a_scripted_machine_reports_no_preferred_core_ranking() {
     assert_eq!(
         missing.error.to_string(),
         "simulated preferred-core ranking unavailable"
+    );
+}
+
+#[test_case(ScriptedTopology::TwoCores, 2; "two cores")]
+#[test_case(ScriptedTopology::EightCores, 8; "eight cores")]
+fn mixed_registers_are_restored_on_each_boot(topology: ScriptedTopology, count: i64) {
+    let inputs = ScriptedMachine::new(topology, TargetOffset::ZERO, |_, _| TrialOutcome::Pass)
+        .with_boot_offsets(|core| offset(-5 - i64::from(core.get())));
+    let mut rig = rig_with(inputs);
+    let Ok(detected) = rig.machine.host.topology() else {
+        panic!("missing scripted topology");
+    };
+    assert_eq!(usize::try_from(count), Ok(detected.len()));
+    let expected: Vec<_> = (0..count)
+        .map(|core| offset(-5 - core).observed())
+        .collect();
+    for (id, &value) in (0..count).zip(&expected) {
+        assert!(
+            matches!(rig.read(id), Ok(actual) if actual == value),
+            "initial register {id}"
+        );
+    }
+    assert!(rig.set_all(-2).is_ok(), "change the initial registers");
+    assert!(
+        rig.sim.reboot().is_ok(),
+        "reboot with mixed stock registers"
+    );
+    for (id, &value) in (0..count).zip(&expected) {
+        assert!(
+            matches!(rig.read(id), Ok(actual) if actual == value),
+            "reset register {id}"
+        );
+    }
+}
+
+#[test_case(ReportedFailure::ComputationError, Signal::ComputationError; "computation error")]
+#[test_case(ReportedFailure::Stall, Signal::Stall; "stall")]
+fn a_reported_backend_failure_reaches_the_reporter_before_the_reset(
+    failure: ReportedFailure,
+    expected: Signal,
+) {
+    let script: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome = match failure {
+        ReportedFailure::ComputationError => |_, _| TrialOutcome::ReportedFailureThenReset {
+            core: core(0),
+            failure: ReportedFailure::ComputationError,
+            at: AFTER,
+        },
+        ReportedFailure::Stall => |_, _| TrialOutcome::ReportedFailureThenReset {
+            core: core(0),
+            failure: ReportedFailure::Stall,
+            at: AFTER,
+        },
+    };
+    let mut rig = rig(ScriptedTopology::TwoCores, script);
+    let boot = rig.boot();
+    let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
+    let Err(crash) = result else {
+        panic!("reported failure was not followed by a reset");
+    };
+    assert!(matches!(crash.error, Error::Crashed));
+    assert_eq!(crash.value.ran, AFTER);
+    assert_eq!(report.signals, [(core(0), expected)]);
+    assert!(rig.sim.reboot().is_ok(), "boot after the reset");
+    assert!(matches!(
+        rig.machine.kernel.reset_reason_after(&boot),
+        Ok(reason) if reason.kind == Some(ResetKind::Watchdog)
+    ));
+}
+
+#[test]
+fn a_corrected_machine_check_logs_at_its_monotonic_time_without_resetting() {
+    let mut rig = rig(ScriptedTopology::FourCores, |_, _| {
+        TrialOutcome::CorrectedMce {
+            mce: ScriptedMce {
+                core: core(0),
+                bank: 2,
+                bank_type: BankType::L2Cache,
+            },
+            at: AFTER,
+        }
+    });
+    let boot = rig.boot();
+    let before = rig.sim.monotonic();
+    assert_eq!(rig.pass(basic(Regime::R2, &[0], DURATION)).ran, DURATION);
+    assert_eq!(rig.boot(), boot);
+    let evidence = rig.mces(&boot);
+    let [check] = evidence.as_slice() else {
+        panic!("expected a corrected check: {evidence:?}")
+    };
+    assert_eq!(
+        (check.core, check.bank, check.bank_type),
+        (Some(core(0)), 2, BankType::L2Cache)
+    );
+    assert!(check.corrected);
+    assert_eq!(check.monotonic, before + AFTER);
+}
+
+#[test]
+fn a_named_reset_keeps_successor_boot_evidence_without_an_in_trial_signal() {
+    let mut rig = rig(ScriptedTopology::SixteenCores, |_, _| {
+        TrialOutcome::ResetWithMce {
+            mce: ScriptedMce {
+                core: core(15),
+                bank: 6,
+                bank_type: BankType::L3Cache,
+            },
+            stalled: Some(core(0)),
+            kind: ResetKind::Watchdog,
+            at: AFTER,
+        }
+    });
+    let before = rig.boot();
+    let (result, report) = rig.run(basic(Regime::R2, &[0], DURATION));
+    assert!(matches!(
+        result.expect_err("in-flight reset").error,
+        Error::Crashed
+    ));
+    assert!(report.signals.is_empty());
+    let sim =
+        Simulator::restore(rig.sim.source(), rig.sim.persisted()).expect("restore before reboot");
+    sim.reboot().expect("boot with pending kernel evidence");
+    let mut machine = sim.seams();
+    let current = machine.host.boot_id().expect("successor boot");
+    assert_eq!(
+        machine
+            .kernel
+            .reset_reason_after(&before)
+            .expect("successor reset reason")
+            .kind,
+        Some(ResetKind::Watchdog)
+    );
+    let evidence = machine
+        .kernel
+        .mces(&current, Duration::ZERO)
+        .expect("successor kernel evidence");
+    let [check] = evidence.as_slice() else {
+        panic!("expected a check in the successor boot: {evidence:?}")
+    };
+    assert_eq!(
+        (check.core, check.bank, check.bank_type, check.corrected),
+        (Some(core(15)), 6, BankType::L3Cache, false)
+    );
+}
+
+#[test_case(|_, _| TrialOutcome::UnexpectedExit { core: core(0), at: AFTER }, Signal::UnexpectedExit; "unexpected exit")]
+#[test_case(|_, _| TrialOutcome::Stall { core: core(0), at: AFTER }, Signal::Stall; "stall")]
+fn a_backend_failure_ends_the_trial_without_resetting(
+    outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+    signal: Signal,
+) {
+    let mut rig = rig(ScriptedTopology::SixteenCores, outcome);
+    let boot = rig.boot();
+    let result = rig.pass(basic(Regime::R2, &[0], DURATION));
+    assert_eq!(result.ran, AFTER);
+    let Some(failure) = result.failure else {
+        panic!("missing in-process backend failure");
+    };
+    assert_eq!((failure.core, failure.signal), (core(0), signal));
+    assert_eq!(rig.boot(), boot);
+}
+
+#[test]
+fn voltage_samples_keep_the_written_lanes_after_snapshot_restoration() {
+    static SAMPLES: ScriptedVoltageSamples = ScriptedVoltageSamples {
+        requests_v: [1.25; 16],
+        ccd_mhz: [5_400, 5_200],
+    };
+    let inputs = ScriptedMachine::sixteen_with_voltage_samples(
+        TargetOffset::ZERO,
+        |_, _| TrialOutcome::Pass,
+        &SAMPLES,
+    );
+    let mut rig = rig_with(inputs);
+    rig.pass(basic(Regime::R2, &[8], DURATION));
+    let restored =
+        Simulator::restore(rig.sim.source(), rig.sim.persisted()).expect("restore sampled machine");
+    let mut machine = restored.seams();
+    let sample = machine
+        .trials
+        .samples("0001")
+        .next()
+        .expect("recorded trial sample")
+        .expect("readable trial sample");
+    assert_eq!(
+        sample
+            .pm_table
+            .expect("voltage requests in PM table")
+            .voltage_request_v,
+        SAMPLES.requests_v
+    );
+    assert_eq!(
+        sample.core_mhz.iter().collect::<Vec<_>>(),
+        [(core(8), 5_200)]
+    );
+    let lanes = machine
+        .host
+        .preflight()
+        .into_iter()
+        .find(|check| check.name == "pm_table")
+        .expect("the PM table preflight check");
+    assert!(lanes.ok);
+    assert_eq!(
+        lanes.detail,
+        "scripted samples supply per-core voltage requests and loaded-core clocks"
     );
 }

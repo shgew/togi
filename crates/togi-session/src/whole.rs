@@ -6,9 +6,8 @@ mod cut;
 use jiff::{SignedDuration, Timestamp};
 use togi_journal::{DeadEndCondition, Event, Payload, Queue, TrialIntent};
 use togi_machine::Backend;
-use togi_sim::MachineDefinition;
 
-use crate::testing::Bench;
+use crate::testing::{Bench, passing_machine, target};
 use crate::{Ended, RunInput, SessionError, Stop};
 
 /// How long the operator lets a night run before ending it.
@@ -410,11 +409,8 @@ fn every_backend_inconclusive_through_every_retry_ends_the_night_without_evidenc
 
 #[test]
 fn a_baseline_that_is_not_all_zero_is_refused_before_anything_is_written() {
-    let bench = Bench::defined(&MachineDefinition {
-        cores: 2,
-        bios: Some(vec![-5, 0]),
-        ..MachineDefinition::default()
-    });
+    let bench =
+        Bench::scripted(passing_machine(2).with_boot_offsets(|core| target([-5, 0][core.index()])));
     let ended = crate::run(bench.input());
 
     assert!(

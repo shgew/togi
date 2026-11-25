@@ -1,46 +1,40 @@
 //! Selected recovery boundaries that remain in the ordinary test loop.
 
 use test_case::test_case;
-use togi_sim::definition::ScriptDef;
+use togi_machine::{BankType, ControllerMode, Purpose};
 use togi_sim::faults::{HookPhase, SmuOp};
+use togi_sim::{ScriptedMce, TrialOutcome};
 
 use super::*;
-
-fn small_definition() -> MachineDefinition {
-    MachineDefinition {
-        cores: 4,
-        core: (0..4).map(|id| limits(id, -50)).collect(),
-        ..MachineDefinition::default()
-    }
-}
+use crate::testing::scripted_machine;
 
 #[test_case(Fate::Killed; "same boot killed process")]
 #[test_case(Fate::Crashed; "new boot crash")]
 fn an_interrupted_failing_trial_is_committed_once(fate: Fate) {
-    // Discover the first isolated nonzero trial through the public run, then pin only its outcome.
-    let definition = small_definition();
-    let baseline = Bench::defined(&definition);
+    // Discover the first isolated nonzero trial through the public run.
+    let baseline = Bench::new(4);
     let (_, events) = play(&baseline, Phase::Run { trials: 120 }, 0, None);
-    let (trial, core) = events.iter().find_map(|event| {
+    let trial = events.iter().find_map(|event| {
         if let Payload::TrialIntent(intent) = &event.payload
             && matches!(intent.tested, Some(Tested::Isolated { offset, .. }) if offset.get() < 0)
             && intent.core.is_some()
         {
-            Some((intent.trial.clone(), intent.core.unwrap()))
+            Some(intent.trial.clone())
         } else {
             None
         }
     }).expect("the bounded run reaches isolated mapping");
-    let scripted = Bench::defined(&MachineDefinition {
-        script: vec![ScriptDef {
-            trial: trial.to_string(),
-            signal: Some(Signal::ComputationError),
-            at_s: 2.0,
-            core: i64::from(core.get()),
-            ..ScriptDef::default()
-        }],
-        ..definition
-    });
+    let scripted = Bench::scripted(scripted_machine(4, |spec, _| {
+        let ControllerMode::Managed { rotation, purpose } = spec.controller;
+        if rotation == 1 && purpose == Purpose::Isolated {
+            TrialOutcome::ComputationError {
+                core: spec.cores[0],
+                at: Duration::from_secs(2),
+            }
+        } else {
+            TrialOutcome::Pass
+        }
+    }));
     let mut phases = Vec::new();
     step(&scripted, &mut phases, Phase::Run { trials: 120 });
     let phase = &phases[0];
@@ -143,7 +137,7 @@ fn an_interrupted_failing_trial_is_committed_once(fate: Fate) {
 
 #[test]
 fn a_between_trial_power_cut_preserves_commitments_with_matched_downtime() {
-    let bench = Bench::defined(&small_definition());
+    let bench = Bench::new(4);
     let mut phases = Vec::new();
     step(&bench, &mut phases, Phase::Run { trials: 120 });
     let phase = &phases[0];
@@ -233,10 +227,33 @@ fn a_day_smu_power_cut_resumes_with_the_nonzero_applied_profile() {
 #[test_case(Fate::Killed, togi_journal::EventKind::SmuIntent; "kill after zero intent")]
 #[test_case(Fate::Killed, togi_journal::EventKind::Shutdown; "kill after completed stop")]
 fn an_interrupted_no_nonzero_work_stop_is_recovered(fate: Fate, boundary: togi_journal::EventKind) {
-    let bench = Bench::defined(&MachineDefinition {
-        core: (0..4).map(|id| limits(id, 0)).collect(),
-        ..small_definition()
-    });
+    let bench = Bench::scripted(scripted_machine(4, |spec, _| {
+        let ControllerMode::Managed { rotation, .. } = spec.controller;
+        let core = spec.cores[0];
+        match rotation {
+            1 => TrialOutcome::CorrectedMce {
+                mce: ScriptedMce {
+                    core,
+                    bank: 7,
+                    bank_type: BankType::MemoryController,
+                },
+                at: Duration::from_nanos(45_654_383),
+            },
+            2 => TrialOutcome::ComputationError {
+                core,
+                at: Duration::from_nanos(121_159_381),
+            },
+            3 => TrialOutcome::ComputationError {
+                core,
+                at: Duration::from_nanos(5_017_257_481),
+            },
+            4 => TrialOutcome::Stall {
+                core,
+                at: Duration::from_nanos(28_850_934_123),
+            },
+            _ => TrialOutcome::Pass,
+        }
+    }));
     let mut phases = Vec::new();
     step(&bench, &mut phases, Phase::Run { trials: 120 });
     let phase = &phases[0];
@@ -271,7 +288,7 @@ fn an_interrupted_no_nonzero_work_stop_is_recovered(fate: Fate, boundary: togi_j
 
 /// A short tuning history with a known reset reported only by a day boot, followed by a fresh tuning boot.
 fn tuning_after_observed_days() -> (MachineSource, Played) {
-    let bench = Bench::defined(&small_definition());
+    let bench = Bench::new(4);
     let mut phases = Vec::new();
     step(&bench, &mut phases, Phase::Run { trials: 1 });
     step(&bench, &mut phases, Phase::Boot);

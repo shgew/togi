@@ -3,7 +3,9 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use togi_machine::{BiosContext, CoreId, ResetKind, TargetOffset, TrialSpec};
+use togi_machine::{
+    BankType, BiosContext, CoreId, CoreSet, ResetKind, Signal, TargetOffset, TrialSpec,
+};
 
 use crate::Model;
 use crate::definition::{
@@ -11,6 +13,7 @@ use crate::definition::{
 };
 use crate::persisted::PersistedSource;
 use crate::replay::Replay;
+use crate::voltage::VoltageState;
 
 /// The inputs of a fake machine, supplied again when restoring its mutable state.
 #[derive(Clone, Debug)]
@@ -25,14 +28,18 @@ pub enum MachineSource {
 /// The two-CCD topologies used by the scripted fixtures.
 #[derive(Clone, Copy, Debug)]
 pub enum ScriptedTopology {
+    TwoCores,
     FourCores,
+    EightCores,
     SixteenCores,
 }
 
 impl ScriptedTopology {
     const fn cores(self) -> usize {
         match self {
+            Self::TwoCores => 2,
             Self::FourCores => 4,
+            Self::EightCores => 8,
             Self::SixteenCores => 16,
         }
     }
@@ -44,8 +51,22 @@ impl ScriptedTopology {
 #[derive(Clone, Copy, Debug)]
 pub struct ScriptedMachine {
     topology: ScriptedTopology,
-    stock: TargetOffset,
+    stock: BootOffsets,
+    voltage: Option<&'static ScriptedVoltageSamples>,
     pub(crate) outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum BootOffsets {
+    Uniform(TargetOffset),
+    PerCore(fn(CoreId) -> TargetOffset),
+}
+
+/// Fixed PM-table requests and clocks for a sixteen-core fixture; not used to choose outcomes.
+#[derive(Debug)]
+pub struct ScriptedVoltageSamples {
+    pub requests_v: [f32; 16],
+    pub ccd_mhz: [u32; 2],
 }
 
 impl ScriptedMachine {
@@ -56,10 +77,51 @@ impl ScriptedMachine {
     ) -> Self {
         Self {
             topology,
-            stock,
+            stock: BootOffsets::Uniform(stock),
+            voltage: None,
             outcome,
         }
     }
+
+    /// Uses independently specified reset registers at construction and at every reboot.
+    #[must_use]
+    pub const fn with_boot_offsets(mut self, offset: fn(CoreId) -> TargetOffset) -> Self {
+        self.stock = BootOffsets::PerCore(offset);
+        self
+    }
+
+    /// A sixteen-core script that supplies fixed voltage requests and CCD clocks.
+    pub const fn sixteen_with_voltage_samples(
+        stock: TargetOffset,
+        outcome: fn(&TrialSpec, &[TargetOffset]) -> TrialOutcome,
+        samples: &'static ScriptedVoltageSamples,
+    ) -> Self {
+        Self {
+            voltage: Some(samples),
+            ..Self::new(ScriptedTopology::SixteenCores, stock, outcome)
+        }
+    }
+
+    pub(crate) fn voltage_state(&self, loaded: CoreSet) -> Option<VoltageState> {
+        let samples = self.voltage?;
+        Some(VoltageState {
+            requests: samples.requests_v,
+            clocks: samples.ccd_mhz,
+            rail: loaded
+                .iter()
+                .map(|core| f64::from(samples.requests_v[core.index()]))
+                .fold(0.0, f64::max),
+            rates: [0.0; 16],
+        })
+    }
+}
+
+/// Where a scripted machine check is reported, independently of the workload's stopped worker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScriptedMce {
+    pub core: CoreId,
+    pub bank: u16,
+    pub bank_type: BankType,
 }
 
 /// What the script makes one simulated trial do. The times are relative to its start.
@@ -70,7 +132,33 @@ pub enum TrialOutcome {
         core: CoreId,
         at: Duration,
     },
+    UnexpectedExit {
+        core: CoreId,
+        at: Duration,
+    },
+    Stall {
+        core: CoreId,
+        at: Duration,
+    },
+    /// A durable backend error report before the machine disappears, not a completed trial.
+    ReportedFailureThenReset {
+        core: CoreId,
+        failure: ReportedFailure,
+        at: Duration,
+    },
+    /// The kernel records a corrected check while the workload runs its full duration.
+    CorrectedMce {
+        mce: ScriptedMce,
+        at: Duration,
+    },
     Reset {
+        stalled: Option<CoreId>,
+        kind: ResetKind,
+        at: Duration,
+    },
+    /// Independent reset and successor-boot kernel evidence, without an in-trial MCE report.
+    ResetWithMce {
+        mce: ScriptedMce,
         stalled: Option<CoreId>,
         kind: ResetKind,
         at: Duration,
@@ -80,6 +168,22 @@ pub enum TrialOutcome {
         core: CoreId,
         at: Duration,
     },
+}
+
+/// A backend signal that can be journaled immediately before a reset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReportedFailure {
+    ComputationError,
+    Stall,
+}
+
+impl ReportedFailure {
+    pub(crate) const fn signal(self) -> Signal {
+        match self {
+            Self::ComputationError => Signal::ComputationError,
+            Self::Stall => Signal::Stall,
+        }
+    }
 }
 
 impl MachineSource {
@@ -115,7 +219,12 @@ impl MachineSource {
         registers.clear();
         match self {
             Self::Fitted { model, .. } => registers.extend_from_slice(model.bios()),
-            Self::Scripted(script) => registers.resize(script.topology.cores(), script.stock),
+            Self::Scripted(script) => match script.stock {
+                BootOffsets::Uniform(offset) => registers.resize(script.topology.cores(), offset),
+                BootOffsets::PerCore(offset) => {
+                    registers.extend(crate::cores::ids(script.topology.cores()).map(offset));
+                }
+            },
         }
     }
 
@@ -142,10 +251,17 @@ impl MachineSource {
         }
     }
 
-    pub(crate) fn has_voltage_lanes(&self) -> bool {
+    pub(crate) fn voltage_lanes_detail(&self) -> &'static str {
         match self {
-            Self::Fitted { model, .. } => model.voltage().is_some(),
-            Self::Scripted(_) => false,
+            Self::Fitted { model, .. } if model.voltage().is_some() => {
+                "simulated shared-voltage model supplies per-core voltage requests and loaded-core clocks"
+            }
+            Self::Scripted(script) if script.voltage.is_some() => {
+                "scripted samples supply per-core voltage requests and loaded-core clocks"
+            }
+            Self::Fitted { .. } | Self::Scripted(_) => {
+                "pm_table version unavailable: simulator reports no per-core lanes"
+            }
         }
     }
 

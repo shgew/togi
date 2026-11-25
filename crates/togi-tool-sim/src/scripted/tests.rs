@@ -38,7 +38,7 @@ const INPUTS: [(&str, &[u8]); 5] = [
 /// The contract version and the digest of [`INPUTS`], the BIOS defaults and the clock it was declared for.
 const PINNED: (&str, &str) = (
     "1",
-    "1372f72b7f922f376daa05b3a639ac3722431d8057062d20aef62acf7a0bbaba",
+    "a298b3142e3e5ddaa1e662e8b3e1d8fdc186dac65085b55918b1ee93e03ab0ea",
 );
 
 #[test]

@@ -6,7 +6,7 @@ use togi_journal::{Event, EventKind, MemFs};
 use togi_session::SessionError;
 use togi_simrun::{Observe, Persistence, SimError, SimInput, SimOutcome, events, simulate};
 
-use crate::common::{crash_first, hunt_machine, input, nz, simulator};
+use crate::common::{crash_first, four_core_simulator, input, nz, rebooting_simulator};
 
 struct Log {
     fail_writes: bool,
@@ -53,7 +53,7 @@ fn shown(outcome: &Result<SimOutcome, SimError>) -> String {
 
 #[test]
 fn a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_capping_it() {
-    let machine = simulator(&hunt_machine(2), 1);
+    let machine = four_core_simulator(1);
     let mut input = input(machine.clone(), Persistence::Memory(MemFs::new()));
     input.max_boots = nz(3);
     input.observer = Some(crash_first(&machine, EventKind::TrialEnd, usize::MAX));
@@ -75,7 +75,7 @@ fn a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_cappin
 
 #[test]
 fn a_log_that_cannot_flush_fails_the_simulation() {
-    let machine = simulator(&hunt_machine(2), 1);
+    let machine = four_core_simulator(1);
     let mut input = input(machine.clone(), Persistence::Memory(MemFs::new()));
     input.max_boots = nz(3);
     input.observer = Some(crash_first(&machine, EventKind::TrialEnd, usize::MAX));
@@ -92,10 +92,7 @@ fn a_log_that_cannot_flush_fails_the_simulation() {
 
 #[test]
 fn an_observer_sees_every_append_after_the_log_fails() {
-    let mut input = input(
-        simulator(&hunt_machine(2), 1),
-        Persistence::Memory(MemFs::new()),
-    );
+    let mut input = input(four_core_simulator(1), Persistence::Memory(MemFs::new()));
     input.log = Some(log(true, false).0);
     let seen = Rc::new(Cell::new(0));
     let counted = Rc::clone(&seen);
@@ -136,7 +133,7 @@ fn observed_run_equals_journal(
     log: Option<Box<dyn Write>>,
     replay: togi_simrun::Replay,
 ) {
-    let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
+    let mut input = input(rebooting_simulator(), persistence.clone());
     input.log = log;
     input.replay = replay;
     let seen = recording(&mut input);
@@ -177,7 +174,7 @@ fn an_observer_sees_the_journal_in_order_beside_a_log() {
 #[test]
 fn an_observer_sees_the_journal_in_order_beside_a_failing_log() {
     let persistence = Persistence::Memory(MemFs::new());
-    let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
+    let mut input = input(rebooting_simulator(), persistence.clone());
     input.max_boots = nz(3);
     input.log = Some(log(true, false).0);
     let seen = recording(&mut input);
@@ -199,7 +196,7 @@ fn an_observer_sees_the_journal_in_order_across_cold_boots() {
 #[test]
 fn a_stopped_observer_is_not_called_again_and_the_run_is_cancelled_once() {
     let persistence = Persistence::Memory(MemFs::new());
-    let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
+    let mut input = input(four_core_simulator(1), persistence.clone());
     let calls = Rc::new(Cell::new(0_u32));
     let counted = Rc::clone(&calls);
     input.observer = Some(Box::new(move |event| {

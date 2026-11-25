@@ -6,7 +6,10 @@ use togi_journal::{EventKind, MemFs};
 use togi_session::{SessionError, Stop};
 use togi_simrun::{HistoryError, Observe, Persistence, SimError, SimOutcome, events, simulate};
 
-use crate::common::{Bench, STATE, finish, hunt_machine, input, nz, simulator, until_kind};
+use crate::common::{
+    Bench, STATE, finish, four_core_simulator, input, nz, rebooting_simulator, until_kind,
+    watchdog_resets,
+};
 
 /// A log that keeps what it is given. With `fail` set it refuses the write that completes a `journal.torn` line's
 /// kind, the way a full disk would refuse the repair line.
@@ -56,8 +59,7 @@ fn torn_lines(written: &Rc<RefCell<Vec<u8>>>) -> usize {
 
 /// A bench whose journal stopped after its first trial, with the writer's last record cut short.
 fn torn_bench() -> Bench {
-    let definition = hunt_machine(2);
-    let first = Bench::new(&definition, 1);
+    let first = Bench::four_cores(1);
     let mut input = first.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     assert_eq!(finish(input).stop, Some(Stop::Signal));
@@ -65,7 +67,7 @@ fn torn_bench() -> Bench {
     let mut bytes = first.fs.contents(&path).unwrap();
     bytes.extend_from_slice(b"{\"seq\":99999,\"tim");
     first.fs.put(&path, bytes);
-    first.resumed(&definition, 1)
+    first.reopened(1)
 }
 
 #[test]
@@ -129,7 +131,7 @@ fn shown(outcome: &Result<SimOutcome, SimError>) -> String {
 #[test]
 fn samples_without_a_state_directory_on_disk_are_refused_before_anything_is_touched() {
     let fs = MemFs::new();
-    let sim = simulator(&hunt_machine(2), 1);
+    let sim = four_core_simulator(1);
     let before = sim.persisted();
     let mut input = input(sim.clone(), Persistence::Memory(fs.clone()));
     input.write_samples = true;
@@ -145,7 +147,7 @@ fn samples_without_a_state_directory_on_disk_are_refused_before_anything_is_touc
 
 #[test]
 fn a_machine_crashed_before_the_simulation_fails_boot_one_on_the_host() {
-    let bench = Bench::new(&hunt_machine(2), 1);
+    let bench = Bench::four_cores(1);
     bench.sim.crash();
     let before = bench.sim.persisted();
     let outcome = simulate(bench.input());
@@ -166,7 +168,7 @@ fn a_machine_crashed_before_the_simulation_fails_boot_one_on_the_host() {
 
 #[test]
 fn real_fs_a_dump_writes_the_capped_memory_directory_to_disk() {
-    let bench = Bench::new(&hunt_machine(2), 1);
+    let bench = Bench::scripted(watchdog_resets(), 1);
     let out = tempfile::tempdir().unwrap();
     let target = out.path().join("dump");
     let mut input = bench.input();
@@ -203,7 +205,7 @@ fn a_live_journal_that_was_never_written_has_no_events() {
 fn a_live_journal_is_read_back() {
     let fs = MemFs::new();
     let persistence = Persistence::Memory(fs.clone());
-    let mut input = input(simulator(&hunt_machine(2), 1), persistence.clone());
+    let mut input = input(rebooting_simulator(), persistence.clone());
     input.max_boots = nz(2);
     let outcome = simulate(input);
     assert!(
@@ -230,7 +232,7 @@ fn a_malformed_live_journal_is_an_error_not_an_empty_history() {
 
 #[test]
 fn archives_are_not_part_of_the_live_events() {
-    let bench = Bench::new(&hunt_machine(2), 1);
+    let bench = Bench::four_cores(1);
     let mut input = bench.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     finish(input);

@@ -1,19 +1,20 @@
 //! Ruleset 14 nights through the simulation: the real session over the simulated seams. Whole-night assertions
 //! retain the operator's `stop_at`; transition assertions stop from the event observer.
 
+use std::time::Duration;
+
 use jiff::SignedDuration;
 use test_case::test_case;
 use togi_journal::{
     DeadEndCondition, Event, EventKind, Outcome, Payload, Queue, ShutdownReason, StockAttested,
     TrialIntent,
 };
-use togi_machine::{Backend, BiosContext, CoreId, Signal};
+use togi_machine::{Backend, BiosContext, ControllerMode, CoreId, ResetKind, Signal, TargetOffset};
 use togi_session::Stop;
-use togi_sim::MachineDefinition;
-use togi_sim::definition::ScriptDef;
+use togi_sim::{ScriptedMachine, ScriptedTopology, TrialOutcome};
 use togi_simrun::{Observe, Replay};
 
-use crate::common::{Bench, crash_at_nth, finish, hunt_machine};
+use crate::common::{Bench, crash_at_nth, finish, passing};
 
 fn intents(events: &[Event]) -> Vec<&TrialIntent> {
     events
@@ -79,7 +80,7 @@ fn assert_no_zero_trial(events: &[Event]) {
 
 #[test]
 fn a_first_night_is_attested_once_and_maps_nonzero_until_the_operator_ends_it() {
-    let bench = Bench::new(&MachineDefinition::default(), 1);
+    let bench = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     let finished = finish(bench.input());
 
     assert_eq!(finished.stop, Some(Stop::Signal));
@@ -106,20 +107,19 @@ fn a_first_night_is_attested_once_and_maps_nonzero_until_the_operator_ends_it() 
 
 #[test]
 fn a_changed_firmware_is_attested_again_and_an_unchanged_one_is_not() {
-    let definition = MachineDefinition::default();
     let night = SignedDuration::from_mins(20);
-    let first = Bench::new(&definition, 1);
+    let first = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     let mut input = first.input();
     input.stop_at = Some(first.sim.now() + night);
     finish(input);
 
-    let second = first.resumed(&definition, 1);
+    let second = first.reopened(1);
     let mut input = second.input();
     input.stop_at = Some(second.sim.now() + night);
     finish(input);
     assert_eq!(attestations(&second.events()).len(), 1);
 
-    let third = second.resumed(&definition, 1);
+    let third = second.reopened(1);
     let recorded = third.sim.seams().host.bios_context().unwrap();
     let changed = BiosContext {
         bios_version: "SIM.2".to_owned(),
@@ -143,7 +143,7 @@ fn a_changed_firmware_is_attested_again_and_an_unchanged_one_is_not() {
 #[test_case(Replay::Warm; "warm")]
 #[test_case(Replay::Cold; "cold")]
 fn a_crash_mid_night_is_recovered_and_the_same_night_continues(replay: Replay) {
-    let bench = Bench::new(&MachineDefinition::default(), 1);
+    let bench = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     let mut input = bench.input();
     input.observer = Some(crash_at_nth(&bench.sim, EventKind::TrialEnd, 4));
     input.replay = replay;
@@ -169,8 +169,7 @@ fn a_crash_mid_night_is_recovered_and_the_same_night_continues(replay: Replay) {
 
 #[test]
 fn an_operator_signal_ends_the_night_and_a_restart_opens_a_new_one() {
-    let definition = MachineDefinition::default();
-    let first = Bench::new(&definition, 1);
+    let first = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     let mut input = first.input();
     input.stop_at = Some(first.sim.now() + SignedDuration::from_mins(20));
     let finished = finish(input);
@@ -178,7 +177,7 @@ fn an_operator_signal_ends_the_night_and_a_restart_opens_a_new_one() {
     let before = intents(&first.events()).len();
     assert!(before > 0);
 
-    let second = first.resumed(&definition, 1);
+    let second = first.reopened(1);
     let mut input = second.input();
     input.stop_at = Some(second.sim.now() + SignedDuration::from_mins(20));
     let finished = finish(input);
@@ -210,13 +209,23 @@ fn an_operator_signal_ends_the_night_and_a_restart_opens_a_new_one() {
 
 #[test]
 fn a_failure_on_the_first_mapping_trial_is_a_mapping_failure_not_a_stock_dead_end() {
-    let mut definition = hunt_machine(4);
-    definition.script = vec![ScriptDef {
-        trial: "0001".into(),
-        signal: Some(Signal::Crash),
-        ..ScriptDef::default()
-    }];
-    let bench = Bench::new(&definition, 1);
+    let script = ScriptedMachine::new(
+        ScriptedTopology::FourCores,
+        TargetOffset::ZERO,
+        |spec, _| {
+            let ControllerMode::Managed { rotation, .. } = spec.controller;
+            if rotation == 1 {
+                TrialOutcome::Reset {
+                    stalled: Some(spec.cores[0]),
+                    kind: ResetKind::Watchdog,
+                    at: Duration::ZERO,
+                }
+            } else {
+                TrialOutcome::Pass
+            }
+        },
+    );
+    let bench = Bench::scripted(script, 1);
     let finished = finish(bench.input());
 
     assert!(finished.errors.is_empty(), "{:?}", finished.errors);
@@ -257,7 +266,7 @@ fn ran_on(events: &[Event], backend: Backend) -> usize {
 
 #[test]
 fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
-    let bench = Bench::new(&MachineDefinition::default(), 1);
+    let bench = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     let sim = bench.sim.clone();
     let mut mapping = false;
     let mut failed = false;
@@ -311,7 +320,7 @@ fn an_exhausted_backend_is_left_and_the_night_continues_on_the_other() {
 #[test_case(Backend::Mprime; "mprime")]
 #[test_case(Backend::Ycruncher; "ycruncher")]
 fn a_backend_unavailable_from_the_start_is_exhausted_without_a_started_trial(backend: Backend) {
-    let bench = Bench::new(&MachineDefinition::default(), 1);
+    let bench = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     bench.sim.fail_backend_setup(backend);
     let finished = finish(bench.input());
 
@@ -375,7 +384,7 @@ fn a_backend_unavailable_from_the_start_is_exhausted_without_a_started_trial(bac
 
 #[test]
 fn a_night_with_every_backend_exhausted_ends_in_a_dead_end() {
-    let bench = Bench::new(&MachineDefinition::default(), 1);
+    let bench = Bench::scripted(passing(ScriptedTopology::SixteenCores), 1);
     bench.sim.fail_backend_setup(Backend::Mprime);
     bench.sim.fail_backend_setup(Backend::Ycruncher);
     let finished = finish(bench.input());

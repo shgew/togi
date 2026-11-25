@@ -50,7 +50,6 @@
             in
             {
               togi-sim = [ (bench + "/machines") ];
-              togi-simrun = [ (bench + "/machines") ];
               togi-tool-bench = [
                 (bench + "/machines")
                 (bench + "/facts")

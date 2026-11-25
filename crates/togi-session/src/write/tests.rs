@@ -6,7 +6,6 @@ use togi_journal::{
     DeadEndCondition, Event, Payload, ProfileApplied, Seq, SmuCommand, SmuOp, SmuReadback,
 };
 use togi_machine::{Condition, CoreId, Error, ObservedOffset, PerCore, TargetOffset};
-use togi_sim::MachineDefinition;
 use togi_sim::faults::{HookPhase, SmuOp as SimOp, SmuOperation};
 
 use super::{
@@ -15,7 +14,7 @@ use super::{
 };
 use crate::emergency::{Access, Response, respond};
 use crate::error::Flow;
-use crate::testing::{Rig, assert_fold_consistent, core, target};
+use crate::testing::{Rig, assert_fold_consistent, core, passing_machine, target};
 
 fn profile(offsets: &[i64]) -> PerCore<TargetOffset> {
     offsets
@@ -569,11 +568,8 @@ fn startup_readback_resolves_every_inherited_intent_on_its_core(
 
 #[test]
 fn a_nonzero_machine_is_read_as_it_stands_and_a_value_no_write_can_set_is_unknown() {
-    let mut rig = Rig::defined(&MachineDefinition {
-        cores: 2,
-        bios: Some(vec![-5, -7]),
-        ..MachineDefinition::default()
-    });
+    let mut rig =
+        Rig::scripted(passing_machine(2).with_boot_offsets(|core| target([-5, -7][core.index()])));
     let reading = super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap();
     assert_eq!(reading.offsets.get(core(1)), Some(ObservedOffset(-7)));
     assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Known(target(-5))));

@@ -38,7 +38,10 @@ pub use persisted::{Persisted, RestoreError};
 pub use runtime::{ArithmeticError, EPOCH, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
-pub use source::{MachineSource, ScriptedMachine, ScriptedTopology, TrialOutcome};
+pub use source::{
+    MachineSource, ReportedFailure, ScriptedMachine, ScriptedMce, ScriptedTopology,
+    ScriptedVoltageSamples, TrialOutcome,
+};
 pub use trials::CONTROLLER_PID;
 pub use vocab::{
     RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, limit_index, modeled_as, regime_index,

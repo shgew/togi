@@ -1,11 +1,11 @@
 use togi_journal::EventKind;
 use togi_session::Stop;
 
-use crate::common::{Bench, STATE, finish, hunt_machine, until_kind};
+use crate::common::{Bench, STATE, finish, until_kind};
 
 /// The `trial.start` lines of a fresh simulation with `seed`, run to its first trial's end, exactly as journaled.
 fn trial_starts(seed: u64) -> Vec<String> {
-    let bench = Bench::new(&hunt_machine(4), seed);
+    let bench = Bench::four_cores(seed);
     let mut input = bench.input();
     input.observer = Some(until_kind(EventKind::TrialEnd));
     assert_eq!(finish(input).stop, Some(Stop::Signal));

@@ -5,11 +5,11 @@ use togi_journal::{EventKind, LockError, Payload, StateDir};
 use togi_machine::CoreId;
 use togi_simrun::{Persistence, SimError, SimOutcome, simulate};
 
-use crate::common::{Bench, crash_first, hunt_machine, nz, simulator};
+use crate::common::{Bench, crash_first, four_core_simulator, nz};
 
 #[test]
 fn boot_cap_leaves_a_partial_session_in_the_journal() {
-    let bench = Bench::new(&hunt_machine(2), 1);
+    let bench = Bench::four_cores(1);
     let mut input = bench.input();
     input.max_boots = nz(3);
     input.observer = Some(crash_first(&bench.sim, EventKind::TrialEnd, usize::MAX));
@@ -35,7 +35,7 @@ fn real_fs_a_held_lock_refuses_the_simulation_before_any_journal_or_offset_chang
         reason = "the test holds the state directory's writer lock on disk"
     )]
     let held = StateDir::lock_unsynced(dir.path()).unwrap();
-    let sim = simulator(&hunt_machine(2), 1);
+    let sim = four_core_simulator(1);
     let mut input = crate::common::input(sim.clone(), Persistence::Files(dir.path().to_path_buf()));
     input.max_boots = nz(2);
     let error = simulate(input).err().unwrap();
