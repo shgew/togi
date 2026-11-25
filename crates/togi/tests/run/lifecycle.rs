@@ -462,6 +462,52 @@ fn a_failed_smu_write_is_the_smu_dead_end_and_exits_eleven() {
     );
 }
 
+#[test]
+fn a_smu_dead_end_is_reported_alongside_cleanup_errors_and_stock_uncertainty() {
+    use togi_journal::fs::{Fault, Op};
+
+    let setup = || {
+        let mut fake = Fake::new();
+        let fs = togi_journal::MemFs::new();
+        fs.put(fake.dir.join("config.json"), b"{}".to_vec());
+        fake.fs = std::sync::Arc::new(fs.clone());
+        fake.attest_stock();
+        fake.sim.fail_write(1);
+        (fake, fs)
+    };
+    let (baseline, _) = setup();
+    let (exit, _, baseline_err) = baseline.run(&["run"]);
+    assert_eq!(exit, Exit::Smu, "{baseline_err}");
+    let warning = baseline
+        .events()
+        .iter()
+        .find(|event| {
+            matches!(&event.payload, Payload::SessionWarning(warning)
+                if warning.operation == "restore stock before stopping")
+        })
+        .unwrap()
+        .seq;
+
+    let (fake, fs) = setup();
+    let seeded = fake.events().last().unwrap().seq;
+    fs.inject(Fault::before(Op::Write, warning.get() - seeded.get()).named("events.jsonl"));
+    let (exit, _, err) = fake.run(&["run"]);
+    assert_eq!(exit, Exit::Error, "{err}");
+    let start = baseline_err.find("togi: dead end smu:").unwrap();
+    let end = baseline_err
+        .find("togi: stock not verified; current offsets unknown\n")
+        .unwrap();
+    let dead_end = &baseline_err[start..end];
+    assert!(dead_end.contains("  evidence: "), "{dead_end}");
+    let cleanup = err.find("injected Write fault").unwrap();
+    assert!(
+        err[cleanup..].contains(&format!(
+            "{dead_end}togi: stock not verified; current offsets unknown\n"
+        )),
+        "{err}"
+    );
+}
+
 /// `text` with an event of a kind this build does not know at its end.
 fn with_a_future_kind(text: &str) -> String {
     let next = text.lines().count() + 1;

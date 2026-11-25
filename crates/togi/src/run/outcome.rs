@@ -31,6 +31,7 @@ impl Outcome {
 /// [`Exit::Usage`], a topology the tuner cannot work on [`Exit::Preflight`], any other error
 /// [`Exit::Error`]; without errors a signal, the cycles or the first result exit 0 and a dead end exits
 /// with its own status.
+/// Errors are printed first and determine the outcome without suppressing dead-end diagnostics.
 pub(super) fn conclude(
     err: &mut dyn Write,
     renderer: Renderer,
@@ -39,7 +40,7 @@ pub(super) fn conclude(
     errors: &[SessionError],
     events: &[Event],
 ) -> Outcome {
-    if let Some(first) = errors.first() {
+    let failure = errors.first().map(|first| {
         for error in errors {
             let line = format!(
                 "togi run: {}",
@@ -52,7 +53,7 @@ pub(super) fn conclude(
             };
             let _ = writeln!(err, "{}", renderer.text(style, &line));
         }
-        return Outcome::exit(match first {
+        Outcome::exit(match first {
             SessionError::Compatibility(_) => Exit::Incompatible,
             SessionError::UnsupportedTopology(_)
             | SessionError::BaselineNotZero { .. }
@@ -78,9 +79,9 @@ pub(super) fn conclude(
             | SessionError::RecoveredElapsed(_)
             | SessionError::Monotonic(_)
             | SessionError::Profile(_) => Exit::Error,
-        });
-    }
-    match stop {
+        })
+    });
+    let stopped = match stop {
         Some(Stop::Signal | Stop::Night(_)) => Outcome::exit(Exit::Ok),
         Some(Stop::DeadEnd {
             dead_end,
@@ -108,7 +109,8 @@ pub(super) fn conclude(
             }
         }
         None => Outcome::exit(Exit::Error),
-    }
+    };
+    failure.unwrap_or(stopped)
 }
 
 /// Reports uncertain offsets independently of the stop and any cleanup errors.

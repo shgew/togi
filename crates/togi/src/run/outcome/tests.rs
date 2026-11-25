@@ -118,6 +118,7 @@ fn uncertain_offsets_are_reported_alongside_cleanup_errors() {
     assert_eq!(
         String::from_utf8(err).unwrap(),
         "togi run: write the event log: full\n\
+         togi: dead end smu: operator intervention required\n\
          togi: stock not verified; current offsets unknown\n"
     );
 }
@@ -216,7 +217,8 @@ fn a_refused_journal_is_exit_sixteen_and_beats_a_dead_end() {
     assert_eq!(outcome.exit, Exit::Incompatible);
     assert_eq!(
         err,
-        "togi run: the journal's schema is 2; this build's is 1\n"
+        "togi run: the journal's schema is 2; this build's is 1\n\
+         togi: dead end smu: operator intervention required\n"
     );
 }
 
