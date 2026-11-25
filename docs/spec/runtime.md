@@ -591,7 +591,8 @@ confirms the machine is stable at CO 0 with BIOS at stock. There is no second
 prompt. Before selecting tuning, a yes durably journals
 [`stock.attested`](journal.md#stock-attestation) for the current firmware
 context if it has not already been attested. A change in that recorded context
-requires a new current-context answer. A decline records no attestation.
+requires an answer for the new context unless this session already attested
+it. A decline records no attestation.
 The normal boot's session envelope and operator attestation alone are not
 tuning activity and do not admit that boot to tuning crash recovery.
 

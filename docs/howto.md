@@ -243,7 +243,8 @@ stock. Only `y` or `yes` goes on: togi journals that attestation once per
 firmware context, selects the current generation's tuning entry, remembers
 the boot selection it replaces and reboots. A change in the recorded BIOS
 context, which includes BIOS version and microcode but no separate AGESA
-version, requires a new attestation. Any other answer changes nothing.
+version, requires an attestation for that context unless this session already
+has one. Any other answer changes nothing.
 In a normal boot, `sudo togi watch` offers the same switch on `n`, with the
 same stock-stability confirmation and no second prompt.
 

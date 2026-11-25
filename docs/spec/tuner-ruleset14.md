@@ -35,8 +35,8 @@ No trial may run with every core at CO 0. The existing `togi night`
 confirmation includes the operator's assertion that the machine is stable at
 CO 0 with BIOS at stock; there is no separate prompt. A confirmed answer is
 durably recorded as [`stock.attested`](journal.md#stock-attestation) once per
-firmware context. A change in the [recorded BIOS context](tuner.md#firmware) requires a new answer for
-the new context. An absent current attestation ends tuning before nonzero work;
+firmware context. A change in the [recorded BIOS context](tuner.md#firmware) requires an answer for
+the new context unless this session already recorded one for it. An absent current attestation ends tuning before nonzero work;
 [runtime](runtime.md#night-and-day) owns the refusal and stock restoration.
 A reset or ruleset transition requires a new answer in the new session; archived
 consent is not imported.
