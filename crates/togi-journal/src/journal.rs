@@ -274,7 +274,7 @@ impl Journal {
                 }
             }
             for open in &state.open {
-                if open.kind == EventKind::SmuIntent
+                if open.kind() == EventKind::SmuIntent
                     && (&open.boot == self.boot()
                         || tuning_ends
                             .get(&open.boot)

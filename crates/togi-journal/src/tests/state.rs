@@ -247,6 +247,51 @@ fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
     assert_eq!(incremental, state);
 }
 
+#[test_case::test_case("boot-a", 1, &[2], false; "remaining core")]
+#[test_case::test_case("boot-a", 0, &[2], true; "duplicate first core")]
+#[test_case::test_case("boot-a", 1, &[], true; "uncited readback")]
+#[test_case::test_case("boot-b", 1, &[2], true; "later boot")]
+fn an_inherited_set_all_intent_requires_a_cited_readback_from_every_core(
+    boot: &str,
+    second_core: u8,
+    causes: &[u64],
+    still_open: bool,
+) {
+    let intent = at(
+        2,
+        "boot-a",
+        1,
+        &[],
+        Payload::SmuIntent(SmuIntentRecord::new(SmuCommand::SetAll {
+            offset: togi_machine::TargetOffset::ZERO,
+        })),
+    );
+    let observe = |n| {
+        Payload::SmuReadback(SmuReadback {
+            core: core(n),
+            offset: togi_machine::ObservedOffset(0),
+            expected: None,
+        })
+    };
+    let events = [
+        start(),
+        intent,
+        at(3, "boot-a", 2, &[2], observe(0)),
+        at(4, boot, 3, causes, observe(second_core)),
+    ];
+    assert_eq!(
+        replay(&events[..3])
+            .unwrap()
+            .in_flight()
+            .map(|open| open.seq),
+        Seq::new(2)
+    );
+    assert_eq!(
+        replay(&events).unwrap().in_flight().map(|open| open.seq),
+        Seq::new(2).filter(|_| still_open)
+    );
+}
+
 #[test_case::test_case("boot-a", &[2], true, false; "same boot observation")]
 #[test_case::test_case("boot-b", &[2], true, false; "later boot observation")]
 #[test_case::test_case("boot-b", &[], true, true; "uncited observation")]
@@ -297,8 +342,8 @@ fn trial_end_closes_only_its_own_trial() {
     .unwrap();
     assert_eq!(state.open.len(), 1);
     let open = state.in_flight().unwrap();
-    assert_eq!(open.trial.as_ref().unwrap().as_str(), "0002");
-    assert_eq!(open.kind, EventKind::TrialIntent);
+    assert_eq!(open.trial().unwrap().as_str(), "0002");
+    assert_eq!(open.kind(), EventKind::TrialIntent);
 }
 
 #[test]
@@ -310,7 +355,7 @@ fn the_newest_unmatched_intent_is_in_flight_across_kinds() {
     ])
     .unwrap();
     assert_eq!(state.open.len(), 2);
-    assert_eq!(state.in_flight().unwrap().kind, EventKind::SmuIntent);
+    assert_eq!(state.in_flight().unwrap().kind(), EventKind::SmuIntent);
 }
 
 #[test]
@@ -324,9 +369,9 @@ fn completing_the_smu_command_leaves_the_open_trial_in_flight() {
     .unwrap();
     assert_eq!(state.open.len(), 1);
     let open = state.in_flight().unwrap();
-    assert_eq!(open.kind, EventKind::TrialIntent);
+    assert_eq!(open.kind(), EventKind::TrialIntent);
     assert_eq!(open.seq, Seq::new(2).unwrap());
-    assert_eq!(open.trial.as_ref().unwrap().as_str(), "0001");
+    assert_eq!(open.trial().unwrap().as_str(), "0001");
 }
 
 #[test]

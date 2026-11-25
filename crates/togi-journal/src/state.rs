@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use jiff::Timestamp;
-use togi_machine::{Backend, BiosContext, BootId, CcdId, CoreId, CpuId, ObservedOffset, PerCore};
+use togi_machine::{
+    Backend, BiosContext, BootId, CcdId, CoreId, CoreSet, CpuId, ObservedOffset, PerCore,
+};
 
-use crate::payload::{DeadEndCondition, EventKind, Payload, TrialId};
+use crate::payload::{DeadEndCondition, EventKind, Payload, SmuCommand, TrialId};
 use crate::{Build, Event, SCHEMA, Seq, SessionId};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -56,10 +58,67 @@ pub struct CoreFacts {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InFlight {
     pub seq: Seq,
-    pub kind: EventKind,
     pub msg: String,
     pub boot: BootId,
-    pub trial: Option<TrialId>,
+    intent: PendingIntent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PendingIntent {
+    Set(CoreId),
+    SetAll { write: Option<Seq>, unread: CoreSet },
+    Trial(TrialId),
+}
+
+impl InFlight {
+    pub const fn kind(&self) -> EventKind {
+        match self.intent {
+            PendingIntent::Set(_) | PendingIntent::SetAll { .. } => EventKind::SmuIntent,
+            PendingIntent::Trial(_) => EventKind::TrialIntent,
+        }
+    }
+
+    pub const fn trial(&self) -> Option<&TrialId> {
+        match &self.intent {
+            PendingIntent::Trial(trial) => Some(trial),
+            PendingIntent::Set(_) | PendingIntent::SetAll { .. } => None,
+        }
+    }
+
+    /// Whether a startup readback of this core on `boot` should cite this intent.
+    pub fn covers_smu_core(&self, core: CoreId, boot: &BootId) -> bool {
+        self.boot == *boot
+            && match self.intent {
+                PendingIntent::Set(target) => target == core,
+                PendingIntent::SetAll { .. } => true,
+                PendingIntent::Trial(_) => false,
+            }
+    }
+
+    fn resolved_by_smu(&mut self, event: &Event) -> bool {
+        if self.boot != event.boot {
+            return false;
+        }
+        match &mut self.intent {
+            PendingIntent::Set(_) => event.cause.contains(&self.seq),
+            PendingIntent::SetAll { write, unread } => {
+                let cites_intent = event.cause.contains(&self.seq);
+                if let Payload::SmuWrite(written) = &event.payload
+                    && cites_intent
+                    && matches!(written.command(), SmuCommand::SetAll { .. })
+                {
+                    *write = Some(event.seq);
+                }
+                if let Payload::SmuReadback(readback) = &event.payload
+                    && (cites_intent || write.is_some_and(|seq| event.cause.contains(&seq)))
+                {
+                    return unread.remove(readback.core) && unread.is_empty();
+                }
+                false
+            }
+            PendingIntent::Trial(_) => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,6 +179,11 @@ impl State {
 
     pub fn in_flight(&self) -> Option<&InFlight> {
         self.open.last()
+    }
+
+    /// The newest outstanding intent of a particular boot, for crash attribution.
+    pub fn in_flight_on(&self, boot: &BootId) -> Option<&InFlight> {
+        self.open.iter().rfind(|open| open.boot == *boot)
     }
 
     pub fn core(&self, core: CoreId) -> Option<&CoreFacts> {
@@ -212,26 +276,33 @@ impl State {
                     session.build.fixes = config.build.fixes;
                 }
             }
-            Payload::SmuIntent(_) => self.push_open(event, None),
-            Payload::SmuWrite(_)
-            | Payload::SmuError(_)
-            | Payload::SmuReadback(_)
-            | Payload::DayBootStart(_) => {
-                self.open.retain(|open| {
-                    !(open.kind == EventKind::SmuIntent
-                        && event.resolves_smu_intent(
-                            open.seq,
-                            &open.boot,
-                            self.cores.iter().map(|facts| facts.core),
-                        ))
-                });
+            Payload::SmuIntent(intent) => {
+                let pending = match intent.command() {
+                    SmuCommand::Set { core, .. } => PendingIntent::Set(core),
+                    SmuCommand::SetAll { .. } => PendingIntent::SetAll {
+                        write: None,
+                        unread: self.cores.iter().map(|facts| facts.core).collect(),
+                    },
+                };
+                self.push_open(event, pending);
             }
-            Payload::TrialIntent(intent) => self.push_open(event, Some(intent.trial.clone())),
+            Payload::SmuWrite(_) | Payload::SmuError(_) | Payload::SmuReadback(_) => {
+                self.open.retain_mut(|open| !open.resolved_by_smu(event));
+            }
+            Payload::DayBootStart(start) => {
+                if !event.cause.is_empty()
+                    && start.observes_cores(self.cores.iter().map(|facts| facts.core))
+                {
+                    self.open.retain(|open| {
+                        !(open.kind() == EventKind::SmuIntent && event.cause.contains(&open.seq))
+                    });
+                }
+            }
+            Payload::TrialIntent(intent) => {
+                self.push_open(event, PendingIntent::Trial(intent.trial.clone()));
+            }
             Payload::TrialEnd(end) => {
-                self.open.retain(|open| {
-                    !(open.kind == EventKind::TrialIntent
-                        && open.trial.as_ref() == Some(&end.trial))
-                });
+                self.open.retain(|open| open.trial() != Some(&end.trial));
             }
             Payload::CrashDetected(crash) => {
                 self.open.retain(|open| open.boot != crash.previous_boot);
@@ -314,13 +385,12 @@ impl State {
         Ok(())
     }
 
-    fn push_open(&mut self, event: &Event, trial: Option<TrialId>) {
+    fn push_open(&mut self, event: &Event, intent: PendingIntent) {
         self.open.push(InFlight {
             seq: event.seq,
-            kind: event.kind(),
             msg: event.msg.clone(),
             boot: event.boot.clone(),
-            trial,
+            intent,
         });
     }
 

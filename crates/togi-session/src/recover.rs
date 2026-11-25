@@ -212,7 +212,13 @@ impl Crashes<'_, '_> {
         let stray = kind == CrashKind::Stray;
         let detected = CrashDetected {
             previous_boot: crashed.clone(),
-            in_flight: state.latest_unmatched_intent(crashed),
+            in_flight: self
+                .recovery
+                .appender
+                .folds
+                .facts
+                .in_flight_on(crashed)
+                .map(|intent| intent.seq),
             stray,
             condition: applied.filter(|_| !stray).map(|(_, condition)| condition),
             reset_reason: reason.kind,
