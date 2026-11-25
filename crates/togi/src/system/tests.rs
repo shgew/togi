@@ -65,7 +65,7 @@ fn real_process_zone_helper() {
         return;
     }
     let offset = Timestamp::UNIX_EPOCH
-        .to_zoned(Real.zone())
+        .to_zoned_datetime(Real.zone())
         .strftime("%:z")
         .to_string();
     println!("{MARK}{offset}{MARK}");

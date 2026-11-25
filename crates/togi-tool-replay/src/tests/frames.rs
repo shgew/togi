@@ -53,7 +53,7 @@ fn without_trailing_blanks(text: &str) -> String {
 }
 
 fn clock(time: Timestamp) -> String {
-    time.to_zoned(TimeZone::UTC)
+    time.to_zoned_datetime(TimeZone::UTC)
         .strftime("%H:%M:%S")
         .to_string()
 }

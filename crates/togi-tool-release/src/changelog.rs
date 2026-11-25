@@ -209,7 +209,7 @@ pub fn rewrite_changelog(
         return Err(RewriteError::Exists(version.to_owned()));
     }
     let web_url = web_url.trim_end_matches('/');
-    let date = today.to_zoned(TimeZone::UTC).date();
+    let date = today.to_zoned_datetime(TimeZone::UTC).date();
     let released = format!("## [{version}] - {date}\n\n{}\n\n", body.trim());
     let mut changelog = changelog.to_owned();
     let at = if let Some(m) = compiled(&SECTION_HEADING)?.find(&changelog) {

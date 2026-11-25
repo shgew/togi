@@ -30,7 +30,7 @@ impl SessionId {
         if let Some(suffix) = suffix.filter(|suffix| suffix.get() < 2) {
             return Err(InvalidSessionId::Suffix(suffix.get()));
         }
-        let civil = time.to_zoned(TimeZone::UTC).datetime();
+        let civil = time.to_zoned_datetime(TimeZone::UTC).datetime();
         if !(0..=9999).contains(&civil.year()) {
             return Err(InvalidSessionId::Time);
         }
@@ -38,7 +38,7 @@ impl SessionId {
             .with()
             .subsec_nanosecond(0)
             .build()
-            .and_then(|civil| civil.to_zoned(TimeZone::UTC))
+            .and_then(|civil| civil.to_zoned_datetime(TimeZone::UTC))
             .map_err(|_| InvalidSessionId::Time)?;
         Ok(Self {
             time: truncated.timestamp(),
@@ -68,7 +68,7 @@ impl SessionId {
 
 impl fmt::Display for SessionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let civil = self.time.to_zoned(TimeZone::UTC).datetime();
+        let civil = self.time.to_zoned_datetime(TimeZone::UTC).datetime();
         write!(
             f,
             "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
@@ -119,7 +119,7 @@ impl FromStr for SessionId {
         )
         .map_err(|_| malformed())?;
         let time = civil
-            .to_zoned(TimeZone::UTC)
+            .to_zoned_datetime(TimeZone::UTC)
             .map_err(|_| malformed())?
             .timestamp();
         let suffix = match suffix {
