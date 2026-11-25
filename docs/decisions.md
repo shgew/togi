@@ -1,6 +1,6 @@
 # Decisions
 
-These decisions govern the design being built in [model.md](model.md), not a claim that the shipped code already implements it. [The tuning guide](how-togi-tunes.md) and specs describe today. Change this page or the relevant spec when a decision changes; put the reasoning in the pull request. Keep this page under about 100 lines. [ADRs](adr/README.md) are history, not authority; add no new ADRs.
+These decisions govern the design being built in [model.md](model.md), not a claim that the shipped code already implements it. [The tuning guide](how-togi-tunes.md) and specs describe today. Change this page or the relevant spec when a decision changes; put the reasoning in the pull request. Keep this page under about 100 lines. The [archive](archive.md) is history, not authority; add no new ADRs.
 
 ## In force
 

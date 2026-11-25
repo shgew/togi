@@ -14,7 +14,7 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 
 Fitting and model checking were retired by R03 in [#1559](https://github.com/shgew/togi/issues/1559), following the [approved decision](decisions.md#rejected) rejecting predictive simulators and fitted machine models as tuning-policy authorities. Bench no longer runs or reports calibration checks. Its hazard metrics still describe the selected synthetic model, not measured hardware risk.
 
-The annotated historical-source tag [`archive/pre-cut`](https://github.com/shgew/togi/tree/archive/pre-cut) retains the [original methodology](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#methodology), fitter and model-check sources. It is not a product release. Reproduction requires that historical source, not current commands.
+The [historical source snapshot](archive.md) at `archive/pre-cut` retains the [original methodology](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#methodology), fitter and model-check sources. It is not a product release. Reproduction requires that historical source, not current commands.
 
 ### Flagged target fits
 
@@ -69,9 +69,9 @@ The legacy session suite registers no gate and `just bench` judges none: a sessi
 
 Day/night experiment gates, successor registration/scoring and campaign launching were retired by [R01 in #1559](https://github.com/shgew/togi/issues/1559). They are not product acceptance conditions. This removal changes neither production tuning decisions nor `SCHEMA` or `RULESET`.
 
-The annotated historical-source tag [`archive/pre-cut`](https://github.com/shgew/togi/tree/archive/pre-cut) retains the evaluator sources, registrations and [original instructions](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#daynight-gate). It is not a product release. Reproducing those experiments requires that historical source, not current commands.
+The [historical source snapshot](archive.md) at `archive/pre-cut` retains the evaluator sources, registrations and [original instructions](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#daynight-gate). It is not a product release. Reproducing those experiments requires that historical source, not current commands.
 
-Ruleset 13's gate was not met: the [reduced development read](https://github.com/shgew/togi/issues/1217#issuecomment-6403197212) was not the registered full score, and holdout was never run. The [B′ research note](research/bprime-research-note.md) and original trial evidence remain historical evidence. Outstanding hardware acceptance is recorded in [#1459](https://github.com/shgew/togi/issues/1459).
+Ruleset 13's gate was not met: the [reduced development read](https://github.com/shgew/togi/issues/1217#issuecomment-6403197212) was not the registered full score, and holdout was never run. The [B′ research note](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/research/bprime-research-note.md) and original trial evidence remain historical evidence. Outstanding hardware acceptance is recorded in [#1459](https://github.com/shgew/togi/issues/1459).
 
 ### Successor day/night run path
 
@@ -83,7 +83,7 @@ The [archived registration](https://github.com/shgew/togi/blob/archive/pre-cut/t
 
 ### Historical gates
 
-The Ruleset 9 gate is defined by [ADR 0038](adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. The bench no longer judges any session-suite gate, and the archive is pinned by hash in the bench's tests.
+The historical Ruleset 9 gate was defined by [ADR 0038](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0038-self-sufficient-cores.md) and [#105](https://github.com/shgew/togi/issues/105); [ADR 0040](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0040-located-hunts.md) records the Ruleset 10 gate. The [Ruleset 11 archive](../tools/bench/gates/ruleset-11/) holds its suite, baseline, candidate and scored report. These are historical records, not current-anchor measurements. The bench no longer judges any session-suite gate, and the archive is pinned by hash in the bench's tests.
 
 The [#493 measurement record](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) identifies the tuner, simulator and regenerated anchor used for its comparison. Earlier measurements of `target-r7-vf-boost` and `target-r7-request-gap` describe frozen copies, not today's overlays. See [reproducing an older ruleset](#reproducing-an-older-ruleset) before comparing historical builds.
 
@@ -91,7 +91,7 @@ A scenario may also list legacy `smoke` seeds, each one of its dev or holdout se
 
 A scenario may set `night_hours` (a positive whole number, default 8), the simulated hours after which the operator ends each of its nights, and `night_end` (`"operator"`, the default, `"dead_end"`, or `"operator_or_stock"`, which also passes a stock dead end), how the sim suite expects the night to end ([the session suite](#the-session-suite)). Every scenario of `tools/bench/suite.json` sets `night_hours` to 48, so a night reaches mapping and the crashes a hunt produces. The bench does not read either.
 
-`--suite FILE` runs another scenario file instead, with machine paths relative to it. The [historical adversarial-search protocol](../tools/bench/adversary.md) used this interface; its removed model-check gate is not a current instruction.
+`--suite FILE` runs another scenario file instead, with machine paths relative to it. The [historical adversarial-search protocol](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/tools/bench/adversary.md) used this interface; its removed model-check gate is not a current instruction.
 
 The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble member in each split. Its oracle draws uniformly from decisive facts matching the entire applied profile and trial class (regime, workload, sorted loaded cores and intended duration). Draws are deterministic per seed and trial ID/index. Condition, phase, source ruleset and evidence epoch do not restrict a class match; BIOS context does. The oracle never uses facts from another BIOS context or records without one. Non-matching trials and trial-less failures use the fitted machine. The tuner sees only the resulting journal evidence, not the oracle or its extract.
 
@@ -402,7 +402,7 @@ The native reader does not import Go-era journal headers. The committed 2026-10-
 
 `togi-tool-fit` and `togi-tool-modelcheck` are retired. `just fit`, `just fit-artifact` and `just forward-compare` are absent, with no replacement commands. The [approved decision](decisions.md#rejected) rejects fitted forecasts as a way to decide tuning policy.
 
-The [original fitting instructions and implementation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#fitting-the-target-machine) remain under the annotated historical-source tag `archive/pre-cut`. The retained [model research program](../tools/fit/program.md) is historical, not an executable current gate. Machine files, facts, provenance and original evidence remain unchanged.
+The [original fitting instructions and implementation](https://github.com/shgew/togi/blob/archive/pre-cut/docs/benchmarking.md#fitting-the-target-machine) remain under the annotated historical-source tag `archive/pre-cut`. The archived [model research program](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/tools/fit/program.md) is historical, not an executable current gate. Machine files, facts, provenance and original evidence remain unchanged.
 
 ### In-sample shared-voltage anchor
 
@@ -416,7 +416,7 @@ Forward fitting and record comparison are retired with no replacement. The [orig
 
 The [once-only frozen score and extraction provenance on #480](https://github.com/shgew/togi/issues/480#issuecomment-6232034381) and its [raw output](../tools/bench/facts/shared-voltage-score-20261017.txt) are the record, not a recipe to score again. It failed; no ensemble, overlays, anchor or baseline were regenerated and no Ruleset 12 gate was registered. The [owner's decision](https://github.com/shgew/togi/issues/480#issuecomment-6231671066) permits Ruleset 12 to ship ungated and moves #490/#896 to Ruleset 13. Nobody retunes against these spent sessions: a later candidate needs unfitted post-freeze sessions.
 
-The refreshed extract preserves the original research artifact's rows. That is extraction provenance, not validation of the fitted fallback; the [model program](../tools/fit/program.md#the-data) owns the approved research inputs.
+The refreshed extract preserves the original research artifact's rows. That is extraction provenance, not validation of the fitted fallback; the [model program](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/tools/fit/program.md#the-data) records the research inputs.
 
 ### The fit tool (`togi-tool-fit`)
 

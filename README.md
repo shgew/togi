@@ -87,7 +87,7 @@ The NixOS tuning specialisation requires GRUB. `sudo togi night` selects it pers
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
 |[docs/spec/journal.md](docs/spec/journal.md)|The journal, its events and the state file|
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|
-|[docs/adr/](docs/adr/)|Why each major decision was made|
+|[docs/decisions.md](docs/decisions.md)|Decisions in force, rejected ideas and a link to the archive|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
 |[Issues](https://github.com/shgew/togi/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
 |[CONTRIBUTING.md](CONTRIBUTING.md)|Why togi takes no contributions|
@@ -99,7 +99,7 @@ togi takes no contributions: issues, comments and pull requests are limited to c
 
 ## License
 
-Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General Public License, version 3 or any later version](LICENSE) (GPL-3.0-or-later). Releases up to and including 0.9.0 were published under the MIT license and remain available under it ([ADR 0035](docs/adr/0035-gpl-3.0-or-later.md)).
+Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General Public License, version 3 or any later version](LICENSE) (GPL-3.0-or-later). Releases up to and including 0.9.0 were published under the MIT license and remain available under it ([ADR 0035](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0035-gpl-3.0-or-later.md)).
 
 ## Development
 

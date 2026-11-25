@@ -54,7 +54,7 @@ all-zero targets; all-zero D receives neither filler nor requalification.
 When no nonzero cell is admissible, end the night with a named reason and
 restore every core to stock. Day observation at CO 0 and the initial or
 post-firmware 50-hour clean stock hold remain required; neither loads the
-machine with a trial. [ADR 0095](../adr/0095-operator-attested-stock-stability.md)
+machine with a trial. [ADR 0095](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0095-operator-attested-stock-stability.md)
 records this reversal of retained controls.
 
 ## 3. What exactly qualifies the next profile
@@ -182,7 +182,7 @@ prove exact permitted-profile application and the complete lifecycle with fake-S
 owner decided on 2026-10-31 that the successor simulator score
 ([#1457](https://github.com/shgew/togi/issues/1457)) is research and gates nothing; U+5, 50-hour holds,
 exact-profile qualification, newest-step stopping and the two-event allowance remain the bounds.
-[ADR 0096](../adr/0096-activate-permitted-day-profiles.md) reverses only ADR 0094's successor-score and
+[ADR 0096](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0096-activate-permitted-day-profiles.md) reverses only ADR 0094's successor-score and
 supervised-procedure activation gate, not the risk policy or transaction safeguards.
 
 Hardware acceptance is the on-machine check on the day of the **first live nonzero step**, recorded in
@@ -238,8 +238,8 @@ The boundary is the earliest `campaign.start` of the machine, original or fresh,
 Identities with no recoverable timeline, such as a failed re-qualification, stay inside the campaign and are charged as before; events at or after the start keep every campaign rule. Imports keep the original provenance and deduplicate by original identity, and the first hold still starts at zero.
 
 The consolidated architectural rationale and predecessor dispositions are
-[ADR 0094](../adr/0094-two-ends-bounded-exploration.md), with activation amended by
-[ADR 0096](../adr/0096-activate-permitted-day-profiles.md). The original Ruleset 13 gate remains failed.
+[ADR 0094](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0094-two-ends-bounded-exploration.md), with activation amended by
+[ADR 0096](https://github.com/shgew/togi/blob/c11c1a2f42495ca1a453bc904777d14a18107935/docs/adr/0096-activate-permitted-day-profiles.md). The original Ruleset 13 gate remains failed.
 The external successor registration/scoring commands are [retired](../benchmarking.md#daynight-gate);
 they are not an activation condition.
 
