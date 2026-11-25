@@ -482,7 +482,14 @@ fn trial_start(p: &TrialStart) -> String {
             for instance in rest {
                 let _ = write!(text, ", {}", instance.scope);
             }
-            let _ = write!(text, " on cpus {}", cpus(&p.cpus));
+            let mut loaded: Vec<_> = p
+                .instances
+                .iter()
+                .flat_map(|instance| instance.cpus.iter().copied())
+                .collect();
+            loaded.sort_unstable();
+            loaded.dedup();
+            let _ = write!(text, " on cpus {}", cpus(&loaded));
             return text;
         }
     };
