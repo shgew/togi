@@ -33,6 +33,8 @@ use togi_tuningboot::{Bootloader, RETRY_MARKER};
 
 use rustix::termios::{QueueSelector, tcflush};
 
+use crate::emergency_stop::Authority;
+
 /// What a command needs from the host.
 pub trait System {
     /// Whether this platform can run on real hardware; `Err` is the refusal a command reports.
@@ -195,6 +197,7 @@ pub trait System {
     /// Zero-only abnormal-exit recovery when the installed host lock's final entry was refused.
     fn recover_without_exclusion(
         &self,
+        authority: &Authority,
         refused: &RefusedEntry,
         state_dir: &Path,
         swept: &mut dyn FnMut(&str),
@@ -391,6 +394,7 @@ impl System for Real {
     )]
     fn recover_without_exclusion(
         &self,
+        _authority: &Authority,
         refused: &RefusedEntry,
         state_dir: &Path,
         swept: &mut dyn FnMut(&str),

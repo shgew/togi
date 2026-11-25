@@ -41,6 +41,15 @@ pub struct Args {}
 
 const COMMAND: &str = "emergency-stop";
 
+/// The right to recover after a refused host-lock entry, which only `emergency-stop` can mint, so
+/// no other command can pass a refusal to [`System::recover_without_exclusion`](crate::system::System::recover_without_exclusion).
+///
+/// ```compile_fail,E0423
+/// let _ = togi_cli::emergency_stop::Authority(());
+/// ```
+#[derive(Debug)]
+pub struct Authority(());
+
 #[derive(Debug, thiserror::Error)]
 #[error("{missing} of {cores} cores did not read back 0")]
 struct Unconfirmed {
@@ -104,9 +113,14 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
                 ctx.err,
                 format_args!("{refused}; attempting zero-only recovery without the lock"),
             );
-            let result = system.recover_without_exclusion(&refused, ctx.state_dir, &mut |detail| {
-                say(ctx.err, format_args!("trial scopes: {detail}"));
-            });
+            let result = system.recover_without_exclusion(
+                &Authority(()),
+                &refused,
+                ctx.state_dir,
+                &mut |detail| {
+                    say(ctx.err, format_args!("trial scopes: {detail}"));
+                },
+            );
             (result, Exit::ZeroedWithoutExclusion)
         }
         Err(error @ LockError::Busy { .. }) => {

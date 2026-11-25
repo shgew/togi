@@ -358,11 +358,13 @@ impl System for Night {
 
     fn recover_without_exclusion(
         &self,
+        authority: &togi_cli::emergency_stop::Authority,
         refused: &togi_hostlock::RefusedEntry,
         state: &Path,
         swept: &mut dyn FnMut(&str),
     ) -> Result<togi_hardware::emergency::Recovery, togi_hardware::emergency::Failure> {
-        self.host.recover_without_exclusion(refused, state, swept)
+        self.host
+            .recover_without_exclusion(authority, refused, state, swept)
     }
 
     fn interactive(&self) -> bool {

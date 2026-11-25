@@ -532,6 +532,7 @@ impl System for Fake {
 
     fn recover_without_exclusion(
         &self,
+        _: &togi_cli::emergency_stop::Authority,
         _: &togi_hostlock::RefusedEntry,
         _: &Path,
         _: &mut dyn FnMut(&str),

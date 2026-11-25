@@ -570,6 +570,7 @@ mod tests {
 
         fn recover_without_exclusion(
             &self,
+            _: &crate::emergency_stop::Authority,
             _: &togi_hostlock::RefusedEntry,
             _: &Path,
             _: &mut dyn FnMut(&str),

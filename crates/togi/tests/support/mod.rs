@@ -574,6 +574,7 @@ impl System for Host {
     )]
     fn recover_without_exclusion(
         &self,
+        _: &togi_cli::emergency_stop::Authority,
         refused: &togi_hostlock::RefusedEntry,
         _: &Path,
         swept: &mut dyn FnMut(&str),
