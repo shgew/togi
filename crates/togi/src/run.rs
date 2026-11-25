@@ -219,28 +219,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         &ended.errors,
         ended.journal.events(),
     );
-    let dead_end = ended
-        .stop
-        .as_ref()
-        .filter(|stop| matches!(stop, togi_session::Stop::DeadEnd { .. }));
-    if panic.is_some()
-        && !ended.errors.is_empty()
-        && let Some(dead_end) = dead_end
-    {
-        outcome::conclude(
-            ctx.err,
-            renderer,
-            &zone,
-            Some(dead_end),
-            &[],
-            ended.journal.events(),
-        );
-    }
     if ended.stock_unverified {
         outcome::stock_not_verified(ctx.err, renderer);
     }
     let reboot_asked = matches!(
-        dead_end,
+        ended.stop,
         Some(togi_session::Stop::DeadEnd { reboot: true, .. })
     );
     let mut exit = result.exit;
