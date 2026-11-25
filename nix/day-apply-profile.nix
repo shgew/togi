@@ -20,7 +20,11 @@ pkgs.testers.runNixOSTest {
       "-global ICH9-LPC.noreboot=false"
       "-watchdog-action reset"
     ];
-    boot.initrd.kernelModules = [ "iTCO_wdt" ];
+    # lpc_ich creates the TCO device; in the initrd it is ready before PID 1 starts (see vm-test.nix).
+    boot.initrd.kernelModules = [
+      "lpc_ich"
+      "iTCO_wdt"
+    ];
     boot.kernelModules = [ "fuse" ];
     services.togi = {
       enable = true;
