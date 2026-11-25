@@ -398,9 +398,8 @@ pub(crate) struct Reading {
     pub readbacks: Vec<Seq>,
 }
 
-/// Reads every core's offset, journals each as a readback without an expected value and lets the hardware know what
-/// it found: a value no write could have put there leaves the slot unknown. Each read cites every inherited open
-/// intent for its core on this boot, resolving them without inventing a write. A read that fails records `smu.error`.
+/// Reads every core's offset, journals each observation and lets the hardware know what it found.
+/// Successful reads cite the inherited intents they observe; a failure records only the error.
 pub(crate) fn read_all(
     appender: &mut Appender,
     smu: &mut dyn Smu,
@@ -408,41 +407,26 @@ pub(crate) fn read_all(
 ) -> Result<Reading, WriteFailure> {
     let mut offsets = PerCore::default();
     let mut readbacks = Vec::with_capacity(hardware.cores.len());
+    let mut causes = Vec::new();
     for core in &hardware.cores {
-        let boot = appender.journal().boot();
-        let inherited: Vec<Seq> = appender
-            .folds
-            .facts
-            .open
-            .iter()
-            .filter(|open| open.boot == *boot)
-            .filter_map(|open| {
-                let event = appender.journal().event(open.seq)?;
-                if let Payload::SmuIntent(intent) = &event.payload
-                    && intent.command().core().is_none_or(|target| target == core)
-                {
-                    Some(open.seq)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let causes = inherited.as_slice();
         let observed = match smu.offset(core) {
             Ok(observed) => observed,
             Err(error) => {
                 hardware.engaged = true;
                 hardware.slots.set(core, Slot::Unknown);
-                return Err(failed(
-                    appender,
-                    SmuOp::Read,
-                    Some(core),
-                    None,
-                    causes,
-                    error,
-                ));
+                return Err(failed(appender, SmuOp::Read, Some(core), None, &[], error));
             }
         };
+        let boot = appender.journal().boot();
+        causes.extend(
+            appender
+                .folds
+                .facts
+                .open
+                .iter()
+                .filter(|intent| intent.covers_smu_core(core, boot))
+                .map(|intent| intent.seq),
+        );
         hardware.observe(core, observed);
         let seq = appender.append(
             Payload::SmuReadback(SmuReadback {
@@ -450,8 +434,9 @@ pub(crate) fn read_all(
                 offset: observed,
                 expected: None,
             }),
-            causes,
+            &causes,
         )?;
+        causes.clear();
         offsets.set(core, observed);
         readbacks.push(seq);
     }

@@ -349,7 +349,7 @@ fn crashed_mapping_trial(events: &[Event]) {
     let open = togi_journal::State::replay(events)
         .expect("the journal folds")
         .in_flight()
-        .and_then(|flight| flight.trial.clone())
+        .and_then(|flight| flight.trial().cloned())
         .expect("the crashed trial is still in flight");
     let intent = intent_of(events, &open);
     assert_eq!(intent.task.map(|task| task.queue), Some(Queue::Mapping));

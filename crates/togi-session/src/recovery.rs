@@ -26,20 +26,6 @@ pub(crate) struct Cited {
     pub detail: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum IntentKind {
-    Smu,
-    Trial(TrialId),
-}
-
-/// An intent that no write, error or end has answered yet.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct OpenIntent {
-    pub seq: Seq,
-    pub boot: BootId,
-    pub kind: IntentKind,
-}
-
 /// Legacy intents have no content list; current intents freeze every participating workload there.
 fn trial_backends(intent: &TrialIntent) -> impl Iterator<Item = Backend> + '_ {
     [Backend::Mprime, Backend::Ycruncher]
@@ -235,7 +221,6 @@ pub(crate) struct RecoveryState {
     backends: BTreeMap<Backend, BackendState>,
     kernel_retries: Vec<Seq>,
     kernel_cursors: BTreeMap<BootId, KernelCursor>,
-    unmatched: Vec<OpenIntent>,
     open: Option<OpenTrial>,
     mce_keys: HashSet<MceKey>,
     recovered: Vec<RecoveredMce>,
@@ -331,9 +316,7 @@ impl RecoveryState {
                 record.applied = None;
             }
             Payload::SmuIntent(intent) => self.smu_intent(event, intent.command()),
-            Payload::SmuWrite(_) => self.resolve_smu_intents(event),
             Payload::SmuError(error) => {
-                self.resolve_smu_intents(event);
                 self.smu = Some(Cited {
                     seq,
                     detail: format!("SMU command failed: {}", error.error),
@@ -342,11 +325,6 @@ impl RecoveryState {
             Payload::SmuReadback(readback) => self.smu_readback(event, readback),
             Payload::TrialIntent(intent) => {
                 self.task = None;
-                self.unmatched.push(OpenIntent {
-                    seq,
-                    boot: event.boot.clone(),
-                    kind: IntentKind::Trial(intent.trial.clone()),
-                });
                 self.trials += 1;
                 self.open = Some(OpenTrial::new(event, intent.clone()));
                 self.kernel_boundary(
@@ -404,9 +382,6 @@ impl RecoveryState {
                     end.kernel_cursor.as_ref(),
                     end.kernel_error.as_deref(),
                 );
-                self.unmatched.retain(
-                    |open| !matches!(&open.kind, IntentKind::Trial(trial) if *trial == end.trial),
-                );
                 if self
                     .open
                     .as_ref()
@@ -423,7 +398,6 @@ impl RecoveryState {
             },
             Payload::DeadEnd(dead_end) => self.dead_ended(seq, &event.cause, dead_end),
             Payload::DayBootStart(_) => {
-                self.resolve_smu_intents(event);
                 if self
                     .night_boot
                     .as_ref()
@@ -480,6 +454,7 @@ impl RecoveryState {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::SmuWrite(_)
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
@@ -666,23 +641,7 @@ impl RecoveryState {
         self.backends.entry(backend).or_default()
     }
 
-    fn resolve_smu_intents(&mut self, event: &Event) {
-        self.unmatched.retain(|open| {
-            !(matches!(open.kind, IntentKind::Smu)
-                && event.resolves_smu_intent(
-                    open.seq,
-                    &open.boot,
-                    self.topology.iter().map(|(core, _)| core),
-                ))
-        });
-    }
-
     fn smu_intent(&mut self, event: &Event, command: SmuCommand) {
-        self.unmatched.push(OpenIntent {
-            seq: event.seq,
-            boot: event.boot.clone(),
-            kind: IntentKind::Smu,
-        });
         let baseline_seq = self.baseline.as_ref().map(|(seq, _)| *seq);
         let open_trial = self.open.is_some();
         let record = self.record(event);
@@ -696,7 +655,6 @@ impl RecoveryState {
     }
 
     fn smu_readback(&mut self, event: &Event, readback: &togi_journal::SmuReadback) {
-        self.resolve_smu_intents(event);
         if let Some(expected) = readback.expected
             && expected.observed() != readback.offset
         {
@@ -809,8 +767,6 @@ impl RecoveryState {
                 recovered.claimed = Some(detected.previous_boot.clone());
             }
         }
-        self.unmatched
-            .retain(|open| open.boot != detected.previous_boot);
         match outcome {
             CrashKind::Stray => self.stray.push(event.seq),
             CrashKind::Idle | CrashKind::InTrial | CrashKind::Inconclusive | CrashKind::Thermal => {
@@ -1041,20 +997,6 @@ impl RecoveryState {
             .filter(|mce| evidence::crash_owns(&mce.from_boot, mce.corrected, boot, next))
             .map(|mce| mce.seq)
             .collect()
-    }
-
-    /// The latest intent of `boot` that nothing answered, not the last event of the boot.
-    pub(crate) fn latest_unmatched_intent(&self, boot: &BootId) -> Option<Seq> {
-        self.unmatched
-            .iter()
-            .rev()
-            .find(|open| open.boot == *boot)
-            .map(|open| open.seq)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn unmatched_intents(&self) -> &[OpenIntent] {
-        &self.unmatched
     }
 
     pub(crate) fn open_trial(&self) -> Option<&OpenTrial> {

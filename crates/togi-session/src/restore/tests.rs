@@ -77,8 +77,9 @@ fn startup_readback_resolution_survives_replaying_the_journal() {
     assert_eq!(
         resumed
             .appender
-            .recovery()
-            .latest_unmatched_intent(resumed.appender.journal().boot()),
+            .folds
+            .facts
+            .in_flight_on(resumed.appender.journal().boot()),
         None
     );
     assert!(resumed.appender.journal().events().iter().any(|event| {

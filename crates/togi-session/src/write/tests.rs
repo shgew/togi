@@ -74,6 +74,14 @@ impl Rig {
             })
             .collect()
     }
+
+    fn in_flight(&self) -> Option<Seq> {
+        self.appender
+            .folds
+            .facts
+            .in_flight_on(&self.boot)
+            .map(|open| open.seq)
+    }
 }
 
 fn assert_set_chain(events: &[Event], core: CoreId, target: TargetOffset, receipt: Seq) {
@@ -139,6 +147,27 @@ fn zeroing_every_core_reads_every_core_back() {
             .all(|(_, offset)| offset == TargetOffset::ZERO)
     );
     assert_fold_consistent(&rig.appender);
+}
+
+#[test]
+fn replay_keeps_an_all_core_write_open_until_its_last_readback() {
+    let mut rig = Rig::new(2);
+    rig.zero_all().unwrap();
+    let [_, intent, write, first, last] = rig.events() else {
+        panic!("expected an all-core write with two readbacks");
+    };
+    for end in [write.seq, first.seq, last.seq] {
+        let prefix = |event: &&Event| event.seq <= end;
+        let outstanding = (end != last.seq).then_some(intent.seq);
+        let facts = togi_journal::State::replay(rig.events().iter().take_while(prefix)).unwrap();
+        assert_eq!(
+            facts.in_flight_on(&rig.boot).map(|open| open.seq),
+            outstanding,
+            "journal prefix ending with #{} ({})",
+            end,
+            rig.appender.journal().event(end).unwrap().kind()
+        );
+    }
 }
 
 #[test]
@@ -458,7 +487,7 @@ fn a_crash_at_every_smu_access_leaves_the_intent_and_no_invented_evidence(
     assert_eq!(rig.kinds(), expected, "{op:?} {phase:?}");
     assert!(matches!(Flow::from(failure), Flow::Fatal(_)));
     assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Unknown));
-    let pending = rig.appender.recovery().latest_unmatched_intent(&rig.boot);
+    let pending = rig.in_flight();
     assert_eq!(pending, (added == 1).then_some(intent), "{op:?} {phase:?}");
     assert_fold_consistent(&rig.appender);
 }
@@ -525,10 +554,7 @@ fn startup_readback_resolves_the_inherited_intent_on_its_core_without_a_write() 
     assert_eq!(rig.events()[before].cause, []);
     assert_eq!(rig.events()[before + 1].cause, [intent]);
     assert_eq!(reading.offsets.get(core(1)), Some(ObservedOffset(0)));
-    assert_eq!(
-        rig.appender.recovery().latest_unmatched_intent(&rig.boot),
-        None
-    );
+    assert_eq!(rig.in_flight(), None);
     assert_eq!(rig.appender.folds.facts.in_flight(), None);
     assert_fold_consistent(&rig.appender);
 }
@@ -557,11 +583,11 @@ fn startup_readback_resolves_every_inherited_intent_on_its_core(
     assert_eq!(rig.kinds()[before..], ["smu.readback", "smu.readback"]);
     assert_eq!(reading.readbacks.len(), 2);
     assert_eq!(rig.events()[before + citing].cause, intents);
-    assert_eq!(rig.events()[before + 1 - citing].cause, []);
     assert_eq!(
-        rig.appender.recovery().latest_unmatched_intent(&rig.boot),
-        None
+        rig.events()[before + 1 - citing].cause,
+        if first.is_none() { &intents[..1] } else { &[] }
     );
+    assert_eq!(rig.in_flight(), None);
     assert_eq!(rig.appender.folds.facts.in_flight(), None);
     assert_fold_consistent(&rig.appender);
 }
@@ -602,4 +628,48 @@ fn a_failed_read_records_the_error_and_is_smu_evidence() {
     ));
     assert_eq!(rig.kinds(), ["session.start", "smu.error"]);
     assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Unknown));
+}
+
+#[test]
+fn replay_keeps_inherited_intent_open_after_failed_startup_read() {
+    let mut rig = Rig::new(2);
+    let intent = rig
+        .appender
+        .smu_intent(
+            SmuCommand::Set {
+                core: core(1),
+                offset: target(-10),
+            },
+            &[],
+        )
+        .unwrap()
+        .intent();
+    rig.sim.interrupt_smu(|operation: &SmuOperation| {
+        if operation.op == SimOp::Read
+            && operation.core == Some(core(1))
+            && operation.phase == HookPhase::Before
+        {
+            return Err(Error::Other("mailbox timeout".into()));
+        }
+        Ok(())
+    });
+    super::read_all(&mut rig.appender, &mut *rig.smu, &mut rig.hardware).unwrap_err();
+    let facts = togi_journal::State::replay(rig.events()).unwrap();
+    assert_eq!(facts.in_flight().map(|open| open.seq), Some(intent));
+    let [_, _, observed, error] = rig.events() else {
+        panic!("expected one observation and one error");
+    };
+    assert!(
+        matches!(&observed.payload, Payload::SmuReadback(readback) if readback.core == core(0))
+    );
+    let Payload::SmuError(failed) = &error.payload else {
+        panic!("expected the failed read to record a diagnostic");
+    };
+    assert_eq!(
+        (failed.op, failed.core, failed.offset),
+        (SmuOp::Read, Some(core(1)), None)
+    );
+    assert_eq!(error.cause, []);
+    assert_eq!(rig.hardware.slot(core(1)), Some(Slot::Unknown));
+    assert_fold_consistent(&rig.appender);
 }

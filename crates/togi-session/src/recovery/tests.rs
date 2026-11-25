@@ -8,14 +8,14 @@ use togi_journal::{
     DeadEndCondition, DefectId, Event, EventKind, FixStamp, HuntGroup, HuntStage, Mce, Outcome,
     Payload, ProfileApplied, ProfileRestored, RetryTarget, SCHEMA, Seq, SessionBaseline,
     SessionStart, SessionWarning, Shutdown, ShutdownReason, SmuError, SmuOp, SmuReadback, Stamp,
-    TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
+    State, TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
 };
 use togi_machine::{
     Backend, BankType, BootId, CcdId, Condition, CoreInfo, CoreSet, CpuId, KernelCursor,
     ObservedOffset, PerCore, Regime, ResetKind, Signal, pick_workload,
 };
 
-use super::{IntentKind, RecoveryState};
+use super::RecoveryState;
 use crate::error::FoldError;
 use crate::testing::{build, core, target};
 
@@ -246,6 +246,14 @@ impl Log {
 
     pub(crate) fn state(&self) -> RecoveryState {
         RecoveryState::replay(&self.events).unwrap()
+    }
+
+    fn facts(&self) -> State {
+        State::replay(&self.events).unwrap()
+    }
+
+    fn in_flight_on(&self, name: &str) -> Option<Seq> {
+        self.facts().in_flight_on(&boot(name)).map(|open| open.seq)
     }
 }
 
@@ -556,28 +564,25 @@ fn the_latest_unanswered_intent_of_a_boot_is_found_not_the_last_event() {
     log.baseline(&[(0, 0), (8, 0)]);
     let smu = log.intent(0, -10, &[]);
     log.add(warning("noise"), &[]);
-    let state = log.state();
-    assert_eq!(state.latest_unmatched_intent(&boot("b0")), Some(smu));
-    assert_eq!(state.latest_unmatched_intent(&boot("b1")), None);
-    let kinds: Vec<_> = state
-        .unmatched_intents()
+    assert_eq!(log.in_flight_on("b0"), Some(smu));
+    assert_eq!(log.in_flight_on("b1"), None);
+    let kinds: Vec<_> = log
+        .facts()
+        .open
         .iter()
-        .map(|open| open.kind.clone())
+        .map(togi_journal::InFlight::kind)
         .collect();
-    assert_eq!(kinds, [IntentKind::Smu]);
+    assert_eq!(kinds, [EventKind::SmuIntent]);
 
     let write = log.written(0, -10, smu);
-    assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
+    assert_eq!(log.in_flight_on("b0"), None);
     log.readback(0, -10, -10, write);
     log.add(applied(Condition::Together), &[write]);
     let trial = log.trial_intent("0001", None, Regime::R1);
     log.add(warning("noise"), &[]);
-    assert_eq!(
-        log.state().latest_unmatched_intent(&boot("b0")),
-        Some(trial)
-    );
+    assert_eq!(log.in_flight_on("b0"), Some(trial));
     log.ended("0001", Outcome::Pass, &[]);
-    assert_eq!(log.state().latest_unmatched_intent(&boot("b0")), None);
+    assert_eq!(log.in_flight_on("b0"), None);
 }
 
 #[test]
@@ -586,35 +591,26 @@ fn two_interrupted_writes_replay_without_inventing_a_completion() {
     log.baseline(&[(0, 0), (8, 0)]);
     let first = log.intent(0, -10, &[]);
     let second = log.intent(8, -5, &[]);
-    let state = log.state();
+    let facts = log.facts();
     assert_eq!(
-        state
-            .unmatched_intents()
-            .iter()
-            .map(|open| open.seq)
-            .collect::<Vec<_>>(),
+        facts.open.iter().map(|open| open.seq).collect::<Vec<_>>(),
         vec![first, second]
     );
-    assert_eq!(state.latest_unmatched_intent(&boot("b0")), Some(second));
-    assert_eq!(state.smu_evidence(), None);
+    assert_eq!(facts.in_flight_on(&boot("b0")).unwrap().seq, second);
+    assert_eq!(log.state().smu_evidence(), None);
 
     log.written(8, -5, second);
-    let state = log.state();
-    let facts = togi_journal::State::replay(&log.events).unwrap();
-    assert_eq!(state.unmatched_intents().len(), 1);
-    assert_eq!(state.latest_unmatched_intent(&boot("b0")), Some(first));
+    let facts = log.facts();
+    assert_eq!(facts.open.len(), 1);
+    assert_eq!(facts.in_flight_on(&boot("b0")).unwrap().seq, first);
     assert_eq!(facts.in_flight().unwrap().seq, first);
 
     log.at("b1", 0).written(0, -10, first);
-    assert_eq!(
-        log.state().latest_unmatched_intent(&boot("b0")),
-        Some(first)
-    );
+    assert_eq!(log.in_flight_on("b0"), Some(first));
     let current = log.intent(0, 0, &[]);
     log.crashed("b0", &[]);
-    let state = log.state();
-    assert_eq!(state.latest_unmatched_intent(&boot("b0")), None);
-    assert_eq!(state.latest_unmatched_intent(&boot("b1")), Some(current));
+    assert_eq!(log.in_flight_on("b0"), None);
+    assert_eq!(log.in_flight_on("b1"), Some(current));
 }
 
 #[test_case(true, true; "same boot cited error")]
@@ -640,15 +636,14 @@ fn a_failed_command_does_not_resolve_another_write_intent(same_boot: bool, cited
             &[]
         },
     );
-    let state = log.state();
     let remaining = if same_boot && cited {
         vec![first]
     } else {
         vec![first, second]
     };
     assert_eq!(
-        state
-            .unmatched_intents()
+        log.facts()
+            .open
             .iter()
             .map(|open| open.seq)
             .collect::<Vec<_>>(),
@@ -681,10 +676,7 @@ fn startup_readback_resolves_only_a_cited_same_boot_smu_intent(
             &[]
         },
     );
-    assert_eq!(
-        log.state().latest_unmatched_intent(&boot("b0")),
-        still_open.then_some(intent)
-    );
+    assert_eq!(log.in_flight_on("b0"), still_open.then_some(intent));
 }
 
 #[test]
